@@ -18,7 +18,11 @@ REMOTE_TARGET_DIR = "/home/sr5/s.hun.lee/ML_ev/SimulGen_VAE/v2/PCB_slit/484_data
 
 def download_github_zip(url, dest_path):
     print(f"Downloading {url} ...")
-    response = requests.get(url)
+    try:
+        response = requests.get(url, verify=r"C:/DigitalCity.crt")
+    except requests.exceptions.SSLError as e:
+        print(f"SSL error: {e}")
+        return
     if response.status_code == 200:
         with open(dest_path, 'wb') as f:
             f.write(response.content)
@@ -145,6 +149,12 @@ def main():
         print(f"Deleted ZIP file: {ZIP_PATH}")
     except Exception as e:
         print(f"Could not delete ZIP file: {e}")
+    # Delete the unzipped folder
+    try:
+        shutil.rmtree(UNZIP_DIR)
+        print(f"Deleted unzipped folder: {UNZIP_DIR}")
+    except Exception as e:
+        print(f"Could not delete unzipped folder: {e}")
     print("Done.")
 
 if __name__ == "__main__":
