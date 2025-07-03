@@ -19,7 +19,7 @@ class VAE(nn.Module):
 
     def forward(self, x):
         mu, log_var, xs=self.encoder(x)
-        z = reparametrize(mu, torch.exp(0.5*log_var))
+        z = reparameterize(mu, torch.exp(0.5*log_var))
 
         decoder_output, kl_losses = self.decoder(z, xs)
 
