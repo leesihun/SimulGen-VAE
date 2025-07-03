@@ -79,7 +79,9 @@ def main():
     # Now you can access values by key, e.g.:
     num_param = int(params['Dim1'])
     num_time = int(params['Dim2'])
+    num_time_to = int(params['Dim2_red'])
     num_node = int(params['Dim3'])
+    num_node_to = int(params['Dim3_red'])
     num_var = int(params['num_var'])
     n_epochs = int(params['Training_epochs'])
     batch_size = int(params['Batch_size'])

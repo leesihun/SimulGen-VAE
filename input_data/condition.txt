@@ -23,8 +23,8 @@ num_aug_a	0
 rec_graph	0
 Recon_iter	1
 % For shortend_dataset(GPU_RAM_OUT)
-Dim2		200
-Dim3		95008
+Dim2_red		200
+Dim3_red		95008
 '
 %PINN
 num_param	1
