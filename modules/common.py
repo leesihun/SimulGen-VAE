@@ -37,16 +37,16 @@ class ResidualBlock(nn.Module):
 
         if small:
             self._seq = nn.Sequential(
-                nn.Conv1d(dim, dim, kernal_size=3, padding=1),
+                nn.Conv1d(dim, dim, kernel_size=3, padding=1),
                 # nn.LayerNorm(dim), 
                 nn.GELU(),
             )
         else:
             self._seq = nn.Sequential(
-                nn.Conv1d(dim, dim, kernal_size=3, padding=1),
+                nn.Conv1d(dim, dim, kernel_size=3, padding=1),
                 # nn.LayerNorm(dim), 
                 nn.GELU(),
-                nn.Conv1d(dim, dim, kernal_size=3, padding=1),
+                nn.Conv1d(dim, dim, kernel_size=3, padding=1),
                 # nn.LayerNorm(dim), 
                 nn.GELU(),
             )
@@ -60,14 +60,14 @@ class EncoderResidualBlock(nn.Module):
 
         if small:
             self.seq = nn.Sequential(
-                nn.Conv1d(input, input, kernal_size=3, padding=1),
+                nn.Conv1d(input, input, kernel_size=3, padding=1),
                 nn.GELU(),
             )
         else:
             self.seq = nn.Sequential(
-                nn.Conv1d(input, input, kernal_size=3, padding=1),
+                nn.Conv1d(input, input, kernel_size=3, padding=1),
                 nn.GELU(),
-                nn.Conv1d(input, input, kernal_size=3, padding=1),
+                nn.Conv1d(input, input, kernel_size=3, padding=1),
                 nn.GELU(),
             )
 
@@ -81,22 +81,22 @@ class DecoderResidualBlock(nn.Module):
 
         if small:
             self.seq = nn.Sequential(
-                nn.Conv1d(input, dim, kernal_size=1),
+                nn.Conv1d(input, dim, kernel_size=1),
                 nn.GELU(),
-                nn.Conv1d(dim, dim*multiple, kernal_size=5, padding=2),
+                nn.Conv1d(dim, dim*multiple, kernel_size=5, padding=2),
                 nn.GELU(),
-                nn.Conv1d(dim*multiple, input, kernal_size=1, padding=0),
+                nn.Conv1d(dim*multiple, input, kernel_size=1, padding=0),
                 nn.GELU(),
             )
         else:
             self.seq = nn.Sequential(
-                nn.Conv1d(input, dim, kernal_size=1),
+                nn.Conv1d(input, dim, kernel_size=1),
                 nn.GELU(),
-                nn.Conv1d(dim, dim*multiple, kernal_size=5, padding=2),
+                nn.Conv1d(dim, dim*multiple, kernel_size=5, padding=2),
                 nn.GELU(),
-                nn.Conv1d(dim, dim*multiple, kernal_size=5, padding=2),
+                nn.Conv1d(dim, dim*multiple, kernel_size=5, padding=2),
                 nn.GELU(),
-                nn.Conv1d(dim*multiple, input, kernal_size=1, padding=0),
+                nn.Conv1d(dim*multiple, input, kernel_size=1, padding=0),
                 nn.GELU(),
             )
 
