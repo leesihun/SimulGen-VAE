@@ -112,7 +112,7 @@ def main():
     if load_all_num=='1':
         load_all = True
     else:
-        laod_all = False
+        load_all = False
     
     if size=='small':
         small=True
