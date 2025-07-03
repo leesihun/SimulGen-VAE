@@ -4,8 +4,8 @@ import zipfile
 import paramiko
 
 # ========== CONFIGURABLE VARIABLES ==========
-ZIP_PATH = r"C:/user/s.hun.lee/downloads/SimulGen-VAE-main.zip"
-UNZIP_DIR = r"C:/user/s.hun.lee/downloads/SimulGen-VAE-main"
+ZIP_PATH = r"C:/Users/s.hun.lee/Downloads/SimulGen-VAE-main.zip"
+UNZIP_DIR = r"C:/Users/s.hun.lee/Downloads/SimulGen-VAE-main"
 LOCAL_TARGET_DIR = r"D:/AI_projects/PCB_slit/ANN2"
 REMOTE_HOST = "202.20.185.100"
 REMOTE_PORT = 22
@@ -51,8 +51,25 @@ def main():
     print(f"Uploading {LOCAL_TARGET_DIR} to {REMOTE_HOST}:{REMOTE_TARGET_DIR}...")
     ssh = paramiko.SSHClient()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    ssh.connect(REMOTE_HOST, port=REMOTE_PORT, username=REMOTE_USER, password=REMOTE_PASS)
-    sftp = ssh.open_sftp()
+    try:
+        ssh.connect(REMOTE_HOST, port=REMOTE_PORT, username=REMOTE_USER, password=REMOTE_PASS, timeout=10)
+        print("SSH connection established.")
+    except paramiko.AuthenticationException:
+        print("Authentication failed, please verify your credentials.")
+        return
+    except paramiko.SSHException as sshException:
+        print(f"Unable to establish SSH connection: {sshException}")
+        return
+    except Exception as e:
+        print(f"Exception in connecting to the server: {e}")
+        return
+    try:
+        sftp = ssh.open_sftp()
+        print("SFTP session established.")
+    except Exception as e:
+        print(f"Failed to open SFTP session: {e}")
+        ssh.close()
+        return
     # Ensure remote target dir exists
     try:
         sftp.stat(REMOTE_TARGET_DIR)
@@ -65,10 +82,37 @@ def main():
             try:
                 sftp.stat(path)
             except FileNotFoundError:
-                sftp.mkdir(path)
-    sftp_upload_dir(sftp, LOCAL_TARGET_DIR, REMOTE_TARGET_DIR)
+                try:
+                    sftp.mkdir(path)
+                    print(f"Created remote directory: {path}")
+                except Exception as e:
+                    print(f"Failed to create remote directory {path}: {e}")
+                    sftp.close()
+                    ssh.close()
+                    return
+    try:
+        sftp_upload_dir(sftp, LOCAL_TARGET_DIR, REMOTE_TARGET_DIR)
+        print("Upload completed.")
+    except Exception as e:
+        print(f"Error during file upload: {e}")
+        sftp.close()
+        ssh.close()
+        return
+    # Verification: List remote files
+    try:
+        print("Remote directory contents after upload:")
+        for entry in sftp.listdir_attr(REMOTE_TARGET_DIR):
+            print(f"  {entry.filename}")
+    except Exception as e:
+        print(f"Could not list remote directory: {e}")
     sftp.close()
     ssh.close()
+    # Delete the ZIP file
+    try:
+        os.remove(ZIP_PATH)
+        print(f"Deleted ZIP file: {ZIP_PATH}")
+    except Exception as e:
+        print(f"Could not delete ZIP file: {e}")
     print("Done.")
 
 if __name__ == "__main__":
