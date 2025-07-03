@@ -116,6 +116,7 @@ def main():
     
     if size=='small':
         small=True
+        print('Small network? :', small)
     elif size=='large':
         small=False
     else:
