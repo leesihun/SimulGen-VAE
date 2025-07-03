@@ -38,7 +38,7 @@ class Decoder(nn.Module):
 
         self.decoder_blocks = nn.ModuleList()
         for i in range(len(num_filter_dec)-1):
-            self.decoder_blocks.append(DecoderBlock(num_filter_dec[i], num_filter_dec[i+1], small))
+            self.decoder_blocks.append(DecoderBlock([num_filter_dec[i], num_filter_dec[i+1]], small))
 
         self.decoder_residual_blocks = nn.ModuleList()
         for i in range(len(num_filter_dec)-1):
