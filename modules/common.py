@@ -75,28 +75,28 @@ class EncoderResidualBlock(nn.Module):
         return x+0.1*self.seq(x)
     
 class DecoderResidualBlock(nn.Module):
-    def __init__(self, dim, n_group, input, small):
+    def __init__(self, input, small):
         super().__init__()
         multiple=5
 
         if small:
             self.seq = nn.Sequential(
-                nn.Conv1d(input, dim, kernel_size=1),
+                nn.Conv1d(input, input, kernel_size=1),
                 nn.GELU(),
-                nn.Conv1d(dim, dim*multiple, kernel_size=5, padding=2),
+                nn.Conv1d(input, input*multiple, kernel_size=5, padding=2),
                 nn.GELU(),
-                nn.Conv1d(dim*multiple, input, kernel_size=1, padding=0),
+                nn.Conv1d(input*multiple, input, kernel_size=1, padding=0),
                 nn.GELU(),
             )
         else:
             self.seq = nn.Sequential(
-                nn.Conv1d(input, dim, kernel_size=1),
+                nn.Conv1d(input, input, kernel_size=1),
                 nn.GELU(),
-                nn.Conv1d(dim, dim*multiple, kernel_size=5, padding=2),
+                nn.Conv1d(input, input*multiple, kernel_size=5, padding=2),
                 nn.GELU(),
-                nn.Conv1d(dim, dim*multiple, kernel_size=5, padding=2),
+                nn.Conv1d(input, input*multiple, kernel_size=5, padding=2),
                 nn.GELU(),
-                nn.Conv1d(dim*multiple, input, kernel_size=1, padding=0),
+                nn.Conv1d(input*multiple, input, kernel_size=1, padding=0),
                 nn.GELU(),
             )
 
