@@ -18,11 +18,16 @@ REMOTE_TARGET_DIR = "/home/sr5/s.hun.lee/ML_ev/SimulGen_VAE/v2/PCB_slit/484_data
 
 def download_github_zip(url, dest_path):
     print(f"Downloading {url} ...")
+    proxies = {
+        "http": "http://168.219.61.252:8080",
+        "https": "http://168.219.61.252:8080"
+    }
     try:
-        response = requests.get(url, verify=r"C:/DigitalCity.crt")
+        response = requests.get(url, verify=r"C:/DigitalCity.crt", proxies=proxies)
     except requests.exceptions.SSLError as e:
         print(f"SSL error: {e}")
-        return
+        print("Retrying without certificate verification (NOT SECURE).")
+        response = requests.get(url, verify=False, proxies=proxies)
     if response.status_code == 200:
         with open(dest_path, 'wb') as f:
             f.write(response.content)
