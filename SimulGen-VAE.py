@@ -119,6 +119,7 @@ def main():
         print('Small network? :', small)
     elif size=='large':
         small=False
+        print('Small network? :', small)
     else:
         NotImplementedError('Unrecoginized size arg')
 

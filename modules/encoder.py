@@ -51,9 +51,9 @@ class Encoder(nn.Module):
 
         for i in range(0, len(num_filter_enc)):
             if i==len(num_filter_enc):
-                self.encoder_residual_blocks.append(EncoderResidualBlock([num_filter_enc[i], num_filter_enc[i]], small))
+                self.encoder_residual_blocks.append(EncoderResidualBlock(num_filter_enc[i], num_filter_enc[i], small))
             else:
-                self.encoder_residual_blocks.append(EncoderResidualBlock([num_filter_enc[i], num_filter_enc[i]], small))
+                self.encoder_residual_blocks.append(EncoderResidualBlock(num_filter_enc[i], num_filter_enc[i], small))
 
         self.z_dim = z_dim
         self.num_filter_enc = num_filter_enc
