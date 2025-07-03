@@ -187,7 +187,7 @@ def main():
         dataloader = DataLoader(train_dataset, batch_size = batch_size, shuffle =True, num_workers = 0, pin_memory = True, drop_last = False)
         val_dataloader = DataLoader(validation_dataset, batch_size = batch_size, shuffle =True, num_workers = 0, pin_memory = True, drop_last = False)
     
-    del train_Dataset, validation_dataset
+    del train_dataset, validation_dataset
 
     print('Dataloader initiated...')
 
