@@ -31,6 +31,9 @@ def copy_all(src, dst):
 
 def sftp_upload_dir(sftp, local_dir, remote_dir):
     # Recursively upload a directory to the remote server, overwriting files
+    total_files = 0
+    success_files = 0
+    failed_files = 0
     for root, dirs, files in os.walk(local_dir):
         rel_path = os.path.relpath(root, local_dir)
         remote_path = os.path.join(remote_dir, rel_path).replace('\\', '/')
@@ -39,9 +42,24 @@ def sftp_upload_dir(sftp, local_dir, remote_dir):
         except FileNotFoundError:
             sftp.mkdir(remote_path)
         for file in files:
+            total_files += 1
             local_file = os.path.join(root, file)
             remote_file = os.path.join(remote_path, file).replace('\\', '/')
-            sftp.put(local_file, remote_file)
+            try:
+                sftp.put(local_file, remote_file)
+                # Verify file size
+                local_size = os.path.getsize(local_file)
+                remote_size = sftp.stat(remote_file).st_size
+                if local_size == remote_size:
+                    print(f"Uploaded and verified: {remote_file}")
+                    success_files += 1
+                else:
+                    print(f"WARNING: Size mismatch for {remote_file} (local: {local_size}, remote: {remote_size})")
+                    failed_files += 1
+            except Exception as e:
+                print(f"Failed to upload {local_file} to {remote_file}: {e}")
+                failed_files += 1
+    print(f"Upload summary: {success_files}/{total_files} files succeeded, {failed_files} failed.")
 
 def main():
     print(f"Unzipping {ZIP_PATH} to {UNZIP_DIR}...")
