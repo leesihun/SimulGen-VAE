@@ -10,10 +10,10 @@ RESERVED	0
 %LSH-VAE parameters
 Training_epochs	10002
 Batch_size	32
-LearningR	0.000002
+LearningR	0.00005
 Latent_dim	8	# Hierarchical latent Dim1
 Latent_dim_end	32 # Main latent Dim1
-Loss_type	1	# 1: MSE, 2, MAE
+Loss_type	4	# 1: MSE, 2, MAE
 Stretch	0
 RESERVED	0
 RESERVED	0
