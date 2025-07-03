@@ -23,7 +23,7 @@ def download_github_zip(url, dest_path):
         "https": "http://168.219.61.252:8080"
     }
     try:
-        response = requests.get(url, verify=r"C:/DigitalCity.crt", proxies=proxies)
+        response = requests.get(url, proxies=proxies)
     except requests.exceptions.SSLError as e:
         print(f"SSL error: {e}")
         print("Retrying without certificate verification (NOT SECURE).")
