@@ -111,11 +111,11 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
                 loss_save = loss
 
             else:
-                kl_loss_save = kl_loss_save + kl_loss.detach().item()
-                recon_loss_save = recon_loss_save + recon_loss.detach().item()
-                recon_loss_MSE_save = recon_loss_MSE_save + recon_loss_MSE.detach().item()
-                loss_save = loss_save + loss.detach().item()
-
+                kl_loss_save = kl_loss_save + kl_loss
+                recon_loss_save = recon_loss_save + recon_loss
+                recon_loss_MSE_save = recon_loss_MSE_save + recon_loss_MSE
+                loss_save = loss_save + loss
+                
             loss.backward()
             optimizer.step()
 
