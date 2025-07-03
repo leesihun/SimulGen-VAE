@@ -113,6 +113,8 @@ def main():
         load_all = True
     else:
         load_all = False
+
+    print('load_all to GPU?', load_all)
     
     if size=='small':
         small=True
