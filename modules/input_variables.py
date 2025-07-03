@@ -33,7 +33,7 @@ def input_dataset(num_param, num_time, num_node, data_No):
     print('Opening dataset file: dataset%d.pickle' % data_No)
 
     with open('dataset%d.pickle' % data_No, 'rb') as fr:
-        data_save = pickle(load(fr))
+        data_save = pickle.load(fr)
 
     end = time.time()
     print('Time taken to load dataset: %f seconds' % (end-start))
