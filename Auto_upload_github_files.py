@@ -2,8 +2,10 @@ import os
 import shutil
 import zipfile
 import paramiko
+import requests
 
 # ========== CONFIGURABLE VARIABLES ==========
+GITHUB_ZIP_URL = "https://github.com/leesihun/SimulGen-VAE/archive/refs/heads/main.zip"
 ZIP_PATH = r"C:/Users/s.hun.lee/Downloads/SimulGen-VAE-main.zip"
 UNZIP_DIR = r"C:/Users/s.hun.lee/Downloads/SimulGen-VAE-main"
 LOCAL_TARGET_DIR = r"D:/AI_projects/PCB_slit/ANN2"
@@ -13,6 +15,16 @@ REMOTE_USER = "s.hun.lee"
 REMOTE_PASS = "atleast12!"
 REMOTE_TARGET_DIR = "/home/sr5/s.hun.lee/ML_ev/SimulGen_VAE/v2/PCB_slit/484_dataset/github"
 # ============================================
+
+def download_github_zip(url, dest_path):
+    print(f"Downloading {url} ...")
+    response = requests.get(url)
+    if response.status_code == 200:
+        with open(dest_path, 'wb') as f:
+            f.write(response.content)
+        print(f"Downloaded to {dest_path}")
+    else:
+        print(f"Failed to download: {response.status_code}")
 
 def unzip_file(zip_path, extract_to):
     if os.path.exists(extract_to):
@@ -62,6 +74,8 @@ def sftp_upload_dir(sftp, local_dir, remote_dir):
     print(f"Upload summary: {success_files}/{total_files} files succeeded, {failed_files} failed.")
 
 def main():
+    print(f"Downloading {GITHUB_ZIP_URL} to {ZIP_PATH}...")
+    download_github_zip(GITHUB_ZIP_URL, ZIP_PATH)
     print(f"Unzipping {ZIP_PATH} to {UNZIP_DIR}...")
     unzip_file(ZIP_PATH, UNZIP_DIR)
     print(f"Copying files from {UNZIP_DIR} to {LOCAL_TARGET_DIR}...")
