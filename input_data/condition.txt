@@ -1,0 +1,36 @@
+Common params
+Dim1		484 # number of parameters
+Dim2		200 # number of timesteps
+Dim3		95008 # num nodes
+num_var 1
+RESERVED	0
+RESERVED	0
+RESERVED	0
+'
+%LSH-VAE parameters
+Training_epochs	10002
+Batch_size	16
+LearningR	0.00001
+Latent_dim	8	# Hierarchical latent Dim1
+Latent_dim_end	32 # Main latent Dim1
+Loss_type	1	# 1: MSE, 2, MAE
+Stretch	0
+RESERVED	0
+RESERVED	0
+alpha		1000000
+num_aug_f	0
+num_aug_a	0
+rec_graph	0
+Recon_iter	1
+% For shortend_dataset(GPU_RAM_OUT)
+Dim2		200
+Dim3		95008
+'
+%PINN
+num_param	1
+n_sample	484
+param_dir	/images .png
+n_epoch	20000
+pinn_lr	0.002
+pinn_batch	16
+input_type	image	#images, csvs

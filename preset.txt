@@ -1,0 +1,5 @@
+data_No, init_beta_divisior, num_filter_enc, pinn_filter
+1
+0
+2048 1024 512 256 128 64 32
+16 32 64
