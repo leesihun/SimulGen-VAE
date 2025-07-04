@@ -28,8 +28,6 @@ class WarmupKLLoss:
 
         if step<self.start_warmup:
             beta = self.init_beta
-            if step<0.01*self.start_warmup:
-                beta=self.beta_target
 
         elif self.start_warmup<=step<self.end_warmup:
             beta = (step-self.start_warmup)*(self.beta_target-self.init_beta)/(self.end_warmup-self.start_warmup)+self.init_beta

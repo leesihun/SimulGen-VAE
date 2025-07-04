@@ -160,6 +160,21 @@ def main():
     warm_up_rate = 1
 
     # Display lots of data
+    print('SimulGen-VAE params')
+    print('num_param: ', num_param)
+    print('num_time: ', num_time)
+    print('num_node: ', num_node)
+    print('Encoder layers: ', num_filter_enc)
+    print('num layer encoder: ', num_layer_enc)
+    print('Decoder layers: ', num_filter_dec)
+    print('num layer decoder: ', num_layer_dec)
+    print('simulgen-vae epochs: ', n_epochs)
+    print('batch size: ', batch_size)
+    print('learning rate: ', LR)
+    print('latent dim: ', latent_dim)
+    print('latent dim end: ', latent_dim_end)
+    print('loss type: ', loss)
+    print('init beta: ', init_beta)
 
     print_graph = args.plot
 

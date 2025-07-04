@@ -15,11 +15,11 @@ def add_sn(m):
 
 def initialize_weights_He(m):
     if isinstance(m, (nn.Conv1d, nn.ConvTranspose1d)):
-        nn.init.kaiming_uniform_(m.weight, nonlinearity='relu')
+        nn.init.kaiming_uniform_(m.weight.data, nonlinearity='relu')
         if m.bias is not None:
             nn.init.constant_(m.bias.data, 0)
     elif isinstance(m, nn.Linear):
-        nn.init.kaiming_uniform_(m.weight.data, nonlinearity='relu')
+        nn.init.kaiming_uniform_(m.weight.data)
         nn.init.constant_(m.bias.data, 0)
     
 import math
