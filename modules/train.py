@@ -88,8 +88,10 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
     recon_loss_val_print = np.zeros(epochs)
 
     model.train(True)
+    import time
 
     for epoch in range(epochs):
+        start_time = time.time()
         model.train()
 
         for i, image in enumerate(train_dataloader):
@@ -109,26 +111,53 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
 
             if i==0:
                 kl_loss_save = kl_loss
-                recon_loss_save = recon_loss.cpu().item()
-                recon_loss_MSE_save = recon_loss_MSE.cpu().item()
-                loss_save = loss.cpu().item()
+                recon_loss_save = recon_loss.detach().item()
+                recon_loss_MSE_save = recon_loss_MSE.detach().item()
+                loss_save = loss.detach().item()
+
             else:
-                kl_loss_save += kl_loss
-                recon_loss_save += recon_loss.cpu().item()
-                recon_loss_MSE_save += recon_loss_MSE.cpu().item()
-                loss_save += loss.cpu().item()
+                kl_loss_save = kl_loss_save + kl_loss
+                recon_loss_save = recon_loss_save + recon_loss.detach().item()
+                recon_loss_MSE_save = recon_loss_MSE_save + recon_loss_MSE.detach().item()
+                loss_save = loss_save + loss.detach().item()
 
             loss.backward()
             optimizer.step()
 
             del image, loss
             del recon_loss, kl_losses, recon_loss_MSE, kl_loss
+        num = i
 
-        loss_print[epoch] = loss_save/(i+1)
+        for i, image in enumerate(val_dataloader):
+            model.eval()
+            with torch.no_grad():
+                if load_all==False:
+                    image = image.to(device)
+
+                _, recon_loss, kl_losses, recon_loss_MSE = model(image)
+
+                beta, kl_loss = warmup_kl.get_loss(epoch, kl_losses)
+
+                kl_loss = kl_loss*beta
+                recon_loss = recon_loss*alpha
+                recon_loss_MSE = recon_loss_MSE*alpha
+                loss = recon_loss + kl_loss
+
+                if i==0:
+                    recon_loss_save_val = recon_loss.detach().item()
+                    loss_save_val = loss.detach().item()
+                else:
+                    recon_loss_save_val = recon_loss_save_val + recon_loss.detach().item()
+                    loss_save_val = loss_save_val + loss.detach().item()
+                
+                del image, loss
+                del recon_loss, kl_losses, recon_loss_MSE, kl_loss
+
+        loss_print[epoch] = loss_save/(num+1)
         loss_val_print[epoch] = loss_save_val/(i+1)
-        recon_print[epoch] = recon_loss_save/(i+1)
-        kl_print[epoch] = kl_loss_save/beta/(i+1)
-        recon_loss_MSE_print[epoch] = recon_loss_MSE_save/(i+1)
+        recon_print[epoch] = recon_loss_save/(num+1)
+        kl_print[epoch] = kl_loss_save/beta/(num+1)
+        recon_loss_MSE_print[epoch] = recon_loss_MSE_save/(num+1)
         recon_loss_val_print[epoch] = recon_loss_save_val/(i+1)
 
         current_lr = optimizer.param_groups[0]['lr']
