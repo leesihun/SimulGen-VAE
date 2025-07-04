@@ -44,7 +44,7 @@ def main():
     from modules.pinn import PINN_img, train_pinn, read_pinn_dataset_img, read_pinn_dataset, PINN
     from modules.plotter import temporal_plotter
     from modules.VAE_network import VAE
-    from modules.train import train
+    from modules.train import train, print_gpu_mem_checkpoint
     from modules.utils import MyBaseDataset, get_latest_file, PINNDataset
 
     from torchinfo import summary
