@@ -112,13 +112,6 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
             recon_loss_MSE = recon_loss_MSE*alpha
             loss = recon_loss + kl_loss
 
-            # Check for types and if its on CPU or GPU
-            print(f'recon_loss type: {type(recon_loss)}')
-            print(f'recon_loss_MSE type: {type(recon_loss_MSE)}')
-            print(f'loss type: {type(loss)}')
-            print(f'recon_loss device: {recon_loss.device}')
-            print(f'recon_loss_MSE device: {recon_loss_MSE.device}')
-
             if i==0:
                 kl_loss_save = kl_loss
                 recon_loss_save = recon_loss.cpu().item()
@@ -159,11 +152,11 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
                 loss = recon_loss + kl_loss
 
                 if i==0:
-                    recon_loss_save_val = recon_loss
-                    loss_save_val = loss
+                    recon_loss_save_val = recon_loss.cpu().item()
+                    loss_save_val = loss.cpu().item()
                 else:
-                    recon_loss_save_val = recon_loss_save_val + recon_loss
-                    loss_save_val = loss_save_val + loss
+                    recon_loss_save_val = recon_loss_save_val + recon_loss.cpu().item()
+                    loss_save_val = loss_save_val + loss.cpu().item()
                 
                 del image, loss
                 del recon_loss, kl_losses, recon_loss_MSE, kl_loss
