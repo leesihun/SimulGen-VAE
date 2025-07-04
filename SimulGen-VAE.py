@@ -58,6 +58,13 @@ def main():
     parser.add_argument("--load_all", dest = "load_all", action = "store")
     args = parser.parse_args()
 
+    def print_gpu_mem_checkpoint(msg):
+        if torch.cuda.is_available():
+            allocated = torch.cuda.memory_allocated() / 1024**2
+            max_allocated = torch.cuda.max_memory_allocated() / 1024**2
+            print(f"[GPU MEM] {msg}: Allocated={allocated:.2f}MB, Max Allocated={max_allocated:.2f}MB")
+            torch.cuda.reset_peak_memory_stats()
+
     def parse_condition_file(filepath):
         params = {}
         with open(filepath, encoding='utf-8') as f:
