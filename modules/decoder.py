@@ -36,11 +36,11 @@ class Decoder(nn.Module):
     def __init__(self, z_dim, hierarchical_dim, num_filter_dec, num_node, num_time, batch_size, small):
         super().__init__()
 
-        self.decoder_blocks = nn.ModuleList()
+        self.decoder_blocks = nn.ModuleList([])
         for i in range(len(num_filter_dec)-1):
             self.decoder_blocks.append(DecoderBlock([num_filter_dec[i], num_filter_dec[i+1]], small))
 
-        self.decoder_residual_blocks = nn.ModuleList()
+        self.decoder_residual_blocks = nn.ModuleList([])
         for i in range(len(num_filter_dec)-1):
             self.decoder_residual_blocks.append(DecoderResidualBlock(num_filter_dec[i+1], small))
 
@@ -66,7 +66,7 @@ class Decoder(nn.Module):
         ))
 
         self.xs_sequence = nn.ModuleList([])
-        for i in range(len(self.num_filter_dec)-1):
+        for i in range(len(num_filter_dec)-1):
             self.xs_sequence.append(nn.Sequential(
                 nn.Linear(hierarchical_dim, hierarchical_dim*num_time),
                 nn.Unflatten(1, (hierarchical_dim, num_time)),
@@ -90,7 +90,7 @@ class Decoder(nn.Module):
 
         self.small = small
 
-    def forward(self, z, xs=None, mode = "randmom", freeze_level = -1):
+    def forward(self, z, xs=None, mode = "random", freeze_level = -1):
 
         kl_losses = []
 
@@ -113,7 +113,7 @@ class Decoder(nn.Module):
                 xs_sample = self.xs_sequence[i](xs[i])
 
                 delta_mu, delta_log_var = self.condition_xz[i](torch.cat([xs_sample, decoder_out], dim=1)).chunk(2, dim=1)
-                kl_losses.append(kl_2(mu, log_var, delta_mu, delta_log_var))
+                kl_losses.append(kl_2(delta_mu, delta_log_var, mu, log_var))
 
                 mu = mu + delta_mu
                 log_var = log_var + delta_log_var
