@@ -97,8 +97,7 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
         model.train()
 
         for i, image in enumerate(train_dataloader):
-            if i % 10 == 0:
-                print_gpu_mem_checkpoint(f'Train loop, epoch {epoch+1}, batch {i}')
+            print_gpu_mem_checkpoint(f'Train loop, epoch {epoch+1}, batch {i} START')
             if load_all==False:
                 image = image.to(device)
 
@@ -125,17 +124,20 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
                 recon_loss_MSE_save = recon_loss_MSE_save + recon_loss_MSE
                 loss_save = loss_save + loss
 
+            print_gpu_mem_checkpoint(f'Train loop, epoch {epoch+1}, batch {i} before backward')
             loss.backward()
+            print_gpu_mem_checkpoint(f'Train loop, epoch {epoch+1}, batch {i} after backward')
             optimizer.step()
+            print_gpu_mem_checkpoint(f'Train loop, epoch {epoch+1}, batch {i} after optimizer step')
 
             del image, loss
             del recon_loss, kl_losses, recon_loss_MSE, kl_loss
+            print_gpu_mem_checkpoint(f'Train loop, epoch {epoch+1}, batch {i} END')
         num = i
         print_gpu_mem_checkpoint(f'Training epoch {epoch+1} end')
 
         for i, image in enumerate(val_dataloader):
-            if i % 10 == 0:
-                print_gpu_mem_checkpoint(f'Validation loop, epoch {epoch+1}, batch {i}')
+            print_gpu_mem_checkpoint(f'Validation loop, epoch {epoch+1}, batch {i} START')
             model.eval()
             with torch.no_grad():
                 if load_all==False:
@@ -159,7 +161,7 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
                 
                 del image, loss
                 del recon_loss, kl_losses, recon_loss_MSE, kl_loss
-            print_gpu_mem_checkpoint(f'Validation epoch {epoch+1} end')
+            print_gpu_mem_checkpoint(f'Validation loop, epoch {epoch+1}, batch {i} END')
 
         loss_print[epoch] = loss_save/(num+1)
         loss_val_print[epoch] = loss_save_val/(i+1)

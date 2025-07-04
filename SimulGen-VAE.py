@@ -209,6 +209,35 @@ def main():
     del train_dataset, validation_dataset
 
     print('Dataloader initiated...')
+    print_gpu_mem_checkpoint('After dataloader creation')
+    # Estimate and print input data GPU memory usage
+    def get_tensor_mem_mb(tensor):
+        if isinstance(tensor, torch.Tensor):
+            return tensor.element_size() * tensor.nelement() / 1024**2
+        elif isinstance(tensor, np.ndarray):
+            return tensor.nbytes / 1024**2
+        else:
+            return 0
+
+    # new_x_train is a numpy array
+    print(f"[INFO] new_x_train shape: {new_x_train.shape}, dtype: {new_x_train.dtype}, estimated GPU memory: {get_tensor_mem_mb(new_x_train):.2f} MB")
+    # If dataset.x_data is a tensor or numpy array
+    if hasattr(dataset, 'x_data'):
+        print(f"[INFO] dataset.x_data type: {type(dataset.x_data)}, estimated GPU memory: {get_tensor_mem_mb(dataset.x_data):.2f} MB")
+    # If dataloader is a DataLoader, we can't know exact memory, but can print batch size and shape
+    if hasattr(dataloader, 'batch_size'):
+        print(f"[INFO] dataloader batch_size: {dataloader.batch_size}")
+        try:
+            first_batch = next(iter(dataloader))
+            if isinstance(first_batch, (list, tuple)):
+                batch_mem = sum(get_tensor_mem_mb(x) for x in first_batch if isinstance(x, (torch.Tensor, np.ndarray)))
+            else:
+                batch_mem = get_tensor_mem_mb(first_batch)
+            print(f"[INFO] Example batch estimated GPU memory: {batch_mem:.2f} MB")
+        except Exception as e:
+            print(f"[INFO] Could not estimate batch memory: {e}")
+
+    print_gpu_mem_checkpoint('Before training starts (after data and dataloader setup)')
 
     # VAE training
     if train_pinn_only ==0:
