@@ -113,16 +113,15 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
             loss = recon_loss + kl_loss
 
             if i==0:
-                kl_loss_save = kl_loss
-                recon_loss_save = recon_loss
-                recon_loss_MSE_save = recon_loss_MSE
-                loss_save = loss
-
+                kl_loss_save = kl_loss.item()
+                recon_loss_save = recon_loss.item()
+                recon_loss_MSE_save = recon_loss_MSE.item()
+                loss_save = loss.item()
             else:
-                kl_loss_save = kl_loss_save + kl_loss
-                recon_loss_save = recon_loss_save + recon_loss
-                recon_loss_MSE_save = recon_loss_MSE_save + recon_loss_MSE
-                loss_save = loss_save + loss
+                kl_loss_save = kl_loss_save + kl_loss.item()
+                recon_loss_save = recon_loss_save + recon_loss.item()
+                recon_loss_MSE_save = recon_loss_MSE_save + recon_loss_MSE.item()
+                loss_save = loss_save + loss.item()
 
             print_gpu_mem_checkpoint(f'Train loop, epoch {epoch+1}, batch {i} before backward')
             loss.backward()
