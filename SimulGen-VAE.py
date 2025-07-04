@@ -233,32 +233,33 @@ def main():
 
         for j, image in enumerate(dataloader2):
             loss_save[:]=100
-            x = image.to(device)
-            del image
+            with torch.no_grad():
+                x = image.to(device)
+                del image
 
-            mu, log_var, xs = VAE.encoder(x)
-            for i in range(recon_iter):
-                std = torch.exp(0.5*log_var)
-                latent_vector = reparameterize(mu, std)
+                mu, log_var, xs = VAE.encoder(x)
+                for i in range(recon_iter):
+                    std = torch.exp(0.5*log_var)
+                    latent_vector = reparameterize(mu, std)
 
-                gen_x, _ = VAE.decoder(latent_vector, xs, mode='random')
-                gen_x_np = gen_x.cpu().detach().numpy()
+                    gen_x, _ = VAE.decoder(latent_vector, xs, mode='random')
+                    gen_x_np = gen_x.cpu().detach().numpy()
 
-                loss = nn.MSELoss()(gen_x, x)
+                    loss = nn.MSELoss()(gen_x, x)
 
-                if loss<loss_save[0]:
-                    loss_save[0] = loss
-                    latent_vector_save = latent_vector
-                    latent_vectors[j,:] = latent_vector_save[0,:].cpu().detach().numpy()
+                    if loss<loss_save[0]:
+                        loss_save[0] = loss
+                        latent_vector_save = latent_vector
+                        latent_vectors[j,:] = latent_vector_save[0,:].cpu().detach().numpy()
 
-                    for k in range(len(xs)):
-                        hierarchical_latent_vectors[j,k,:] = xs[k].cpu().detach().numpy()[0]
+                        for k in range(len(xs)):
+                            hierarchical_latent_vectors[j,k,:] = xs[k].cpu().detach().numpy()[0]
 
-                    reconstruction_loss[j] = loss
+                        reconstruction_loss[j] = loss
 
-                    reconstructed[j,:,:] = gen_x_np[0,:,:]
+                        reconstructed[j,:,:] = gen_x_np[0,:,:]
 
-                    del latent_vector, x, mu, log_var, xs, std, gen_x, gen_x_np, latent_vector_save
+                        del latent_vector, x, mu, log_var, xs, std, gen_x, gen_x_np, latent_vector_save
 
             print('parameter {} is finished''-''MSE: {:.4E}'.format(j+1, loss))
             print('')
@@ -282,11 +283,13 @@ def main():
             plt.semilogy(loss_val_print, label = 'Validation')
             plt.legend()
             plt.show()
+            plt.close()
 
             plt.figure()
             plt.plot(reconstruction_loss, label = 'Reconstruction')
             plt.legend()
             plt.show()
+            plt.close()
 
             plt.figure()
             param_No = 0
@@ -295,6 +298,7 @@ def main():
             plt.plot(reconstructed[param_No,:,0], marker = 'o', label = 'Reconstructed')
             plt.legend()
             plt.show()
+            plt.close()
 
             plt.figure()
             param_No = 10
@@ -303,6 +307,7 @@ def main():
             plt.plot(reconstructed[param_No,:,0], marker = 'o', label = 'Reconstructed')
             plt.legend()
             plt.show()
+            plt.close()
 
             plt.figure()
             param_No = 0
@@ -312,6 +317,7 @@ def main():
             plt.plot(reconstructed[param_No,node_No,:], marker = 'o', label = 'Reconstructed')
             plt.legend()
             plt.show()
+            plt.close()
 
             plt.figure()
             param_No = 0
@@ -321,6 +327,7 @@ def main():
             plt.plot(reconstructed[param_No,node_No,:], marker = 'o', label = 'Reconstructed')
             plt.legend()
             plt.show()
+            plt.close()
 
             plt.figure()
             param_No = 0
@@ -333,6 +340,7 @@ def main():
             plt.plot(reconstructed[param_No+3, node_No, :], marker = 'o', label = 'Reconstructed')
             plt.legend()
             plt.show()
+            plt.close()
 
         elif train_pinn_only == 1:
             print('Training PINN only...')
@@ -404,49 +412,54 @@ def main():
         pinn_dataloader_eval = torch.utils.data.Dataloader(pinn_dataset, batch_size = 1, shuffle=False, num_workers = 0)
 
         for i, (x, y1, y2) in enumerate(pinn_dataloader_eval):
-            x = x.to(device)
+            with torch.no_grad():
+                x = x.to(device)
 
-            y_pred1, y_pred2 = pinn(x)
-            y_pred1 = y_pred1.cpu().detach().numpy()
-            y1 = y1.cpu().detach().numpy()
-            y_pred2 = y_pred2.cpu().detach().numpy()
-            y2 = y2.cpu().detach().numpy()
-            A = y2
+                y_pred1, y_pred2 = pinn(x)
+                y_pred1 = y_pred1.cpu().detach().numpy()
+                y1 = y1.cpu().detach().numpy()
+                y_pred2 = y_pred2.cpu().detach().numpy()
+                y2 = y2.cpu().detach().numpy()
+                A = y2
 
-            y2 = y2.reshape([1, -1])
-            latent_predict = latent_vectors_scaler.inverse_transform(y1)
-            xs_predict = xs_scaler.inverse_transform(y2)
-            xs_predict = xs_predict.reshape([-1, 1, A.shape[-1]])
-            latent_predict = torch.from_numpy(latent_predict)
-            xs_predict = torch.from_numpy(xs_predict)
-            xs_predict = xs_predict.to(device)
-            xs_predict = list(xs_predict)
-            latent_predict = latent_predict.to(device)
-            target_output, _ = VAE.decoder(latent_predict, xs_predict, mode='fix')
-            target_output_np = target_output.cpu().detach().numpy()
-            target_output_np = target_output_np.swapaxes(1,2)
-            target_output_np = target_output_np.reshape((-1, num_node))
-            target_output_np = np.reshape(target_output_np, [num_time, num_node, 1])
+                y2 = y2.reshape([1, -1])
+                latent_predict = latent_vectors_scaler.inverse_transform(y1)
+                xs_predict = xs_scaler.inverse_transform(y2)
+                xs_predict = xs_predict.reshape([-1, 1, A.shape[-1]])
+                latent_predict = torch.from_numpy(latent_predict)
+                xs_predict = torch.from_numpy(xs_predict)
+                xs_predict = xs_predict.to(device)
+                xs_predict = list(xs_predict)
+                latent_predict = latent_predict.to(device)
+                target_output, _ = VAE.decoder(latent_predict, xs_predict, mode='fix')
+                target_output_np = target_output.cpu().detach().numpy()
+                target_output_np = target_output_np.swapaxes(1,2)
+                target_output_np = target_output_np.reshape((-1, num_node))
+                target_output_np = np.reshape(target_output_np, [num_time, num_node, 1])
 
-            plt.figure()
-            plt.title('Main latent')
-            plt.plot(y1[0,:], '*', label = 'True')
-            plt.plot(y_pred1[0,:], 'o', label = 'Predicted')
-            plt.legend()
+                plt.figure()
+                plt.title('Main latent')
+                plt.plot(y1[0,:], '*', label = 'True')
+                plt.plot(y_pred1[0,:], 'o', label = 'Predicted')
+                plt.legend()
+                plt.show()
+                plt.close()
 
-            plt.figure()
-            plt.title('Hierarchical latent')
-            plt.plot(y2[0,:], '*', label = 'True')
-            plt.plot(y_pred2[0,0, :], 'o', label = 'Predicted')
-            plt.legend()
-            
-            plt.figure()
-            plt.title('Reconstruction')
-            plt.plot(target_output_np[0,:,0], '.', label = 'Recon')
-            plt.plot(new_x_train[i, :, int(num_time/2)], '.', label = 'True')
-            plt.legend()
-
-            plt.show()
+                plt.figure()
+                plt.title('Hierarchical latent')
+                plt.plot(y2[0,:], '*', label = 'True')
+                plt.plot(y_pred2[0,0, :], 'o', label = 'Predicted')
+                plt.legend()
+                plt.show()
+                plt.close()
+                
+                plt.figure()
+                plt.title('Reconstruction')
+                plt.plot(target_output_np[0,:,0], '.', label = 'Recon')
+                plt.plot(new_x_train[i, :, int(num_time/2)], '.', label = 'True')
+                plt.legend()
+                plt.show()
+                plt.close()
 
 if __name__ == '__main__':
     main()
