@@ -34,4 +34,4 @@ n_epoch	20000
 pinn_lr	0.002
 pinn_batch	16
 input_type	image	#images, csvs
-praam_data_type .png
+param_data_type .png
