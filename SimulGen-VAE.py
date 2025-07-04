@@ -37,6 +37,7 @@ def main():
     import argparse
     import matplotlib
     import matplotlib.pyplot as plt
+    import gc
 
     from modules.common import add_sn
     from modules.input_variables import input_user_variables, input_dataset
@@ -209,16 +210,22 @@ def main():
     del train_dataset, validation_dataset
 
     print('Dataloader initiated...')
+    print_gpu_mem_checkpoint('After dataloader creation')
 
     # VAE training
     if train_pinn_only ==0:
-
+        print_gpu_mem_checkpoint('Before VAE training')
         VAE_loss, reconstruction_error, KL_divergence, loss_val_print = train(n_epochs, batch_size, dataloader, val_dataloader, LR, num_filter_enc, num_filter_dec, num_node, latent_dim_end, latent_dim, num_time, alpha, loss, small, load_all)
+        print_gpu_mem_checkpoint('After VAE training')
         del dataloader, val_dataloader
+        gc.collect()
+        if torch.cuda.is_available(): torch.cuda.empty_cache()
+        print_gpu_mem_checkpoint('After dataloader deletion and cache clear')
 
         device = "cuda:0" if torch.cuda.is_available() else "cpu"
         VAE_trained = torch.load('./model_save/SimulGen-VAE', map_location= device, weights_only=False)
         VAE = VAE_trained.eval()
+        print_gpu_mem_checkpoint('After loading VAE model')
 
         from modules.decoder import reparameterize
 
@@ -232,7 +239,8 @@ def main():
         dataloader2 = DataLoader(dataset, batch_size = 1, shuffle =False, num_workers = 0, pin_memory = True, drop_last = False)
 
         for j, image in enumerate(dataloader2):
-            loss_save[:]=100
+            if j % 10 == 0:
+                print_gpu_mem_checkpoint(f'VAE inference loop, step {j}')
             with torch.no_grad():
                 x = image.to(device)
                 del image
@@ -263,11 +271,13 @@ def main():
 
             print('parameter {} is finished''-''MSE: {:.4E}'.format(j+1, loss))
             print('')
+            print_gpu_mem_checkpoint(f'After parameter {j+1} inference')
             loss_total = loss_total+loss.cpu().detach().numpy()
 
             del loss
 
         print('')
+        print_gpu_mem_checkpoint('After VAE inference loop')
 
         print('Total MSE loss: {:.3e}'.format(loss_total/num_param))
 
@@ -278,6 +288,7 @@ def main():
         np.savetxt(temp5, reconstruction_loss, fmt = '%e')
 
         if print_graph_recon == 1:
+            print_gpu_mem_checkpoint('Before plotting graphs')
             print('Printing graph...')
             plt.semilogy(VAE_loss, label = 'VAE')
             plt.semilogy(loss_val_print, label = 'Validation')
@@ -341,21 +352,24 @@ def main():
             plt.legend()
             plt.show()
             plt.close()
+            print_gpu_mem_checkpoint('After plotting graphs')
 
         elif train_pinn_only == 1:
             print('Training PINN only...')
+            print_gpu_mem_checkpoint('Before PINN only branch')
             latent_vectors = np.load('model_save/latent_vectors.npy')
             hierarchical_latent_vectors = np.load('model_save/xs.npy')
             device = "cpu"
             VAE_trained = torch.load('model_save/SimulGen-VAE', map_location= device, weights_only=False)
             VAE = VAE_trained.eval()
+            print_gpu_mem_checkpoint('After loading VAE model')
 
         else:
             raise Exception('Unrecoginized train_pinn_only arg')
 
         out_latent_vectors = latent_vectors.reshape([num_param, latent_dim_end])
         xs_vectors = hierarchical_latent_vectors.reshape([num_param, -1])
-
+        print_gpu_mem_checkpoint('After reshaping latent vectors')
 
         if pinn_data_type=='image':
             pinn_data, pinn_data_shape = read_pinn_dataset_img(param_dir, param_data_type)
@@ -378,13 +392,14 @@ def main():
         out_hierarchical_latent_vectors = out_hierarchical_latent_vectors.reshape([num_param, len(num_filter_enc)-1, latent_dim])
 
         pinn_dataset = PINNDataset(np.float32(physical_param_input), np.float32(out_latent_vectors), np.float32(out_hierarchical_latent_vectors))
+        print_gpu_mem_checkpoint('After creating PINNDataset')
 
         pinn_train_dataset, pinn_validation_dataset = random_split(pinn_dataset, [int(0.8*num_param), num_param - int(0.8*num_param)])
         pinn_dataloader = torch.utils.data.Dataloader(pinn_train_dataset, batch_size = pinn_batch_size, shuffle=True, num_workers = 0)
         pinn_validation_dataloader = torch.utils.data.Dataloader(pinn_validation_dataset, batch_size = pinn_batch_size, shuffle=False, num_workers = 0)
+        print_gpu_mem_checkpoint('After creating PINN dataloaders')
 
         size2 = len(num_filter_enc)-1
-
 
         if pinn_data_type=='image':
             pinn = PINN_img(pinn_filter, latent_dim_end, input_shape, latent_dim, size2, pinn_data_shape).to(device)
@@ -392,26 +407,32 @@ def main():
             pinn = PINN(pinn_filter, latent_dim_end, input_shape, latent_dim, size2).to(device)
         else:
             NotImplementedError('Unrecoginized pinn_data_type arg')
+        print_gpu_mem_checkpoint('After creating and moving PINN to device')
 
         print(pinn)
 
         PINN_loss = train_pinn(pinn_epoch, pinn_dataloader, pinn_validation_dataloader, pinn, pinn_lr)
+        print_gpu_mem_checkpoint('After PINN training')
 
         latent_x = np.linspace(0, latent_dim_end-1, latent_dim_end)
         latent_hierarchical_x = np.linspace(0, latent_dim-1, latent_dim)
 
         device = "cpu"
         pinn = pinn.to(device)
+        print_gpu_mem_checkpoint('After moving PINN to CPU')
 
         if VAE in globals():
             del VAE
 
         VAE_trained = torch.load('model_save/SimulGen-VAE', map_location= device, weights_only=False)
         VAE = VAE_trained.eval()
+        print_gpu_mem_checkpoint('After loading VAE model')
 
         pinn_dataloader_eval = torch.utils.data.Dataloader(pinn_dataset, batch_size = 1, shuffle=False, num_workers = 0)
 
         for i, (x, y1, y2) in enumerate(pinn_dataloader_eval):
+            if i % 10 == 0:
+                print_gpu_mem_checkpoint(f'PINN eval loop, step {i}')
             with torch.no_grad():
                 x = x.to(device)
 
@@ -461,5 +482,14 @@ def main():
                 plt.show()
                 plt.close()
 
+                print_gpu_mem_checkpoint(f'After PINN eval step {i}')
+
 if __name__ == '__main__':
     main()
+
+def print_gpu_mem_checkpoint(msg):
+    if torch.cuda.is_available():
+        allocated = torch.cuda.memory_allocated() / 1024**2
+        max_allocated = torch.cuda.max_memory_allocated() / 1024**2
+        print(f"[GPU MEM] {msg}: Allocated={allocated:.2f}MB, Max Allocated={max_allocated:.2f}MB")
+        torch.cuda.reset_peak_memory_stats()
