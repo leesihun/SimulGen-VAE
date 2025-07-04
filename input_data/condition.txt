@@ -29,8 +29,9 @@ Dim3_red		95008
 %PINN
 num_param	1
 n_sample	484
-param_dir	/images .png
+param_dir	/images
 n_epoch	20000
 pinn_lr	0.002
 pinn_batch	16
 input_type	image	#images, csvs
+praam_data_type .png
