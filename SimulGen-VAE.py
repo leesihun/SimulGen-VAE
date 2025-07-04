@@ -29,6 +29,14 @@ tensorboard --logdir=runs --port=6001
 tensorboard --logdir=PINNruns --port=6002
 """
 
+def print_gpu_mem_checkpoint(msg):
+    if torch.cuda.is_available():
+        allocated = torch.cuda.memory_allocated() / 1024**2
+        max_allocated = torch.cuda.max_memory_allocated() / 1024**2
+        print(f"[GPU MEM] {msg}: Allocated={allocated:.2f}MB, Max Allocated={max_allocated:.2f}MB")
+        torch.cuda.reset_peak_memory_stats()
+
+
 def main():
     import torch
     import torch.nn as nn
@@ -484,12 +492,7 @@ def main():
 
                 print_gpu_mem_checkpoint(f'After PINN eval step {i}')
 
+
+
 if __name__ == '__main__':
     main()
-
-def print_gpu_mem_checkpoint(msg):
-    if torch.cuda.is_available():
-        allocated = torch.cuda.memory_allocated() / 1024**2
-        max_allocated = torch.cuda.max_memory_allocated() / 1024**2
-        print(f"[GPU MEM] {msg}: Allocated={allocated:.2f}MB, Max Allocated={max_allocated:.2f}MB")
-        torch.cuda.reset_peak_memory_stats()
