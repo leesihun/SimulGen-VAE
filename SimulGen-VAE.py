@@ -102,7 +102,7 @@ def main():
     pinn_lr = float(params['pinn_lr'])
     pinn_batch_size = int(params['pinn_batch'])
     pinn_data_type = params['input_type']
-
+    param_data_type = params['param_data_type']
 
     input_shape = num_physical_param
 
@@ -185,11 +185,11 @@ def main():
     train_dataset, validation_dataset = random_split(dataset, [int(0.8*num_param), num_param - int(0.8*num_param)])
 
     if load_all:
-        dataloader = DataLoader(train_dataset, batch_size = batch_size, shuffle =True, num_workers = 0, pin_memory = False, drop_last = False)
-        val_dataloader = DataLoader(validation_dataset, batch_size = batch_size, shuffle =True, num_workers = 0, pin_memory = False, drop_last = False)
+        dataloader = DataLoader(train_dataset, batch_size = batch_size, shuffle =True, num_workers = 0, pin_memory = False, drop_last = True)
+        val_dataloader = DataLoader(validation_dataset, batch_size = batch_size, shuffle =True, num_workers = 0, pin_memory = False, drop_last = True)
     else:
-        dataloader = DataLoader(train_dataset, batch_size = batch_size, shuffle =True, num_workers = 0, pin_memory = True, drop_last = False)
-        val_dataloader = DataLoader(validation_dataset, batch_size = batch_size, shuffle =True, num_workers = 0, pin_memory = True, drop_last = False)
+        dataloader = DataLoader(train_dataset, batch_size = batch_size, shuffle =True, num_workers = 0, pin_memory = True, drop_last = True)
+        val_dataloader = DataLoader(validation_dataset, batch_size = batch_size, shuffle =True, num_workers = 0, pin_memory = True, drop_last = True)
     
     del train_dataset, validation_dataset
 
@@ -211,7 +211,7 @@ def main():
         gen_x_node = np.zeros([1, num_node, num_time])
         loss_total = 0
         loss_save = np.zeros([num_var])
-        reconstruction_loss = np.zeros([num_var])
+        reconstruction_loss = np.zeros([num_param])
         hierarchical_latent_vectors = np.zeros([num_param, len(num_filter_enc)-1, latent_dim])
         reconstructed = np.empty([num_param, num_node, num_time])
         dataloader2 = DataLoader(dataset, batch_size = 1, shuffle =False, num_workers = 0, pin_memory = True, drop_last = False)
@@ -224,10 +224,10 @@ def main():
             mu, log_var, xs = VAE.encoder(x)
             for i in range(recon_iter):
                 std = torch.exp(0.5*log_var)
-                latent_vector = reparametrize(mu, std)
+                latent_vector = reparameterize(mu, std)
 
                 gen_x, _ = VAE.decoder(latent_vector, xs, mode='random')
-                gen_x_np = gen_x.cpu().numpy()
+                gen_x_np = gen_x.cpu().detach().numpy()
 
                 loss = nn.MSELoss()(gen_x, x)
 
@@ -237,7 +237,7 @@ def main():
                     latent_vectors[j,:] = latent_vector_save[0,:].cpu().detach().numpy()
 
                     for k in range(len(xs)):
-                        hierarchical_latent_vectors[j,k,:] = xs[k].cpu().detach().numpy()
+                        hierarchical_latent_vectors[j,k,:] = xs[k].cpu().detach().numpy()[0]
 
                     reconstruction_loss[j] = loss
 
@@ -253,7 +253,7 @@ def main():
 
         print('')
 
-        print('Total loss: {:.3e}'.format(loss_total/num_param))
+        print('Total MSE loss: {:.3e}'.format(loss_total/num_param))
 
         np.save('model_save/latent_vectors', latent_vectors)
         np.save('model_save/xs', hierarchical_latent_vectors)
