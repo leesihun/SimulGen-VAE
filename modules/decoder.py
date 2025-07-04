@@ -91,7 +91,7 @@ class Decoder(nn.Module):
         self.small = small
 
     def forward(self, z, xs=None, mode = "random", freeze_level = -1):
-        self.zs = []  # Clear persistent tensor list to prevent memory leaks
+
         kl_losses = []
 
         for i in range(len(self.decoder_residual_blocks)):

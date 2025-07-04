@@ -36,6 +36,13 @@ class WarmupKLLoss:
 
         return [beta, loss]
 
+def print_gpu_mem_checkpoint(msg):
+    if torch.cuda.is_available():
+        allocated = torch.cuda.memory_allocated() / 1024**2
+        max_allocated = torch.cuda.max_memory_allocated() / 1024**2
+        print(f"[GPU MEM] {msg}: Allocated={allocated:.2f}MB, Max Allocated={max_allocated:.2f}MB")
+        torch.cuda.reset_peak_memory_stats()
+
 def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_enc, num_filter_dec, num_node, latent_dim, hierarchical_dim, num_time, alpha, lossfun, small, load_all):
     writer = SummaryWriter(log_dir = './runs', comment = 'VAE')
 
@@ -82,12 +89,16 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
 
     model.train(True)
 
+    print_gpu_mem_checkpoint('Before training loop')
     import time
     for epoch in range(epochs):
+        print_gpu_mem_checkpoint(f'Training epoch {epoch+1} start')
         start_time = time.time()
         model.train()
 
         for i, image in enumerate(train_dataloader):
+            if i % 10 == 0:
+                print_gpu_mem_checkpoint(f'Train loop, epoch {epoch+1}, batch {i}')
             if load_all==False:
                 image = image.to(device)
 
@@ -120,8 +131,11 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
             del image, loss
             del recon_loss, kl_losses, recon_loss_MSE, kl_loss
         num = i
+        print_gpu_mem_checkpoint(f'Training epoch {epoch+1} end')
 
         for i, image in enumerate(val_dataloader):
+            if i % 10 == 0:
+                print_gpu_mem_checkpoint(f'Validation loop, epoch {epoch+1}, batch {i}')
             model.eval()
             with torch.no_grad():
                 if load_all==False:
@@ -145,6 +159,7 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
                 
                 del image, loss
                 del recon_loss, kl_losses, recon_loss_MSE, kl_loss
+            print_gpu_mem_checkpoint(f'Validation epoch {epoch+1} end')
 
         loss_print[epoch] = loss_save/(num+1)
         loss_val_print[epoch] = loss_save_val/(i+1)
@@ -176,5 +191,6 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
     torch.save(model, 'model_save/SimulGen-VAE')
     torch.cuda.empty_cache()
 
+    print_gpu_mem_checkpoint('After training loop, before validation')
     return loss_print, recon_print, kl_print, loss_val_print
     

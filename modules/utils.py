@@ -24,7 +24,7 @@ class MyBaseDataset(Dataset):
         print('Loading data...')
         if load_all:
             print('Loading all data...')
-            self.x_data = torch.tensor(x_data)  # Store on CPU only
+            self.x_data = torch.tensor(x_data).to(device)
         else:
             self.x_data = x_data
 
@@ -40,9 +40,9 @@ from torchvision.transforms import v2
 
 class PINNDataset(Dataset):
     def __init__(self, x_data, y1_data, y2_data):
-        self.x_data = torch.tensor(x_data)  # Store on CPU only
-        self.y1_data = torch.tensor(y1_data)  # Store on CPU only
-        self.y2_data = torch.tensor(y2_data)  # Store on CPU only
+        self.x_data = torch.tensor(x_data).to(device)
+        self.y1_data = torch.tensor(y1_data).to(device)
+        self.y2_data = torch.tensor(y2_data).to(device)
 
     def __getitem__(self, index):
         x = self.x_data[index]

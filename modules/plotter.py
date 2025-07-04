@@ -11,4 +11,3 @@ def temporal_plotter(data, axis, a, c, print_graph, n):
     plt.legend()
     plt.title('Temporal data')
     plt.show()
-    plt.close()

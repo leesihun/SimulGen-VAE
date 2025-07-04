@@ -29,10 +29,6 @@ tensorboard --logdir=runs --port=6001
 tensorboard --logdir=PINNruns --port=6002
 """
 
-
-
-
-
 def main():
     import torch
     import torch.nn as nn
@@ -41,7 +37,6 @@ def main():
     import argparse
     import matplotlib
     import matplotlib.pyplot as plt
-    import gc
 
     from modules.common import add_sn
     from modules.input_variables import input_user_variables, input_dataset
@@ -62,13 +57,6 @@ def main():
     parser.add_argument("--size", dest = "size", action="store")
     parser.add_argument("--load_all", dest = "load_all", action = "store")
     args = parser.parse_args()
-
-    def print_gpu_mem_checkpoint(msg):
-        if torch.cuda.is_available():
-            allocated = torch.cuda.memory_allocated() / 1024**2
-            max_allocated = torch.cuda.max_memory_allocated() / 1024**2
-            print(f"[GPU MEM] {msg}: Allocated={allocated:.2f}MB, Max Allocated={max_allocated:.2f}MB")
-            torch.cuda.reset_peak_memory_stats()
 
     def parse_condition_file(filepath):
         params = {}
@@ -221,22 +209,16 @@ def main():
     del train_dataset, validation_dataset
 
     print('Dataloader initiated...')
-    print_gpu_mem_checkpoint('After dataloader creation')
 
     # VAE training
     if train_pinn_only ==0:
-        print_gpu_mem_checkpoint('Before VAE training')
+
         VAE_loss, reconstruction_error, KL_divergence, loss_val_print = train(n_epochs, batch_size, dataloader, val_dataloader, LR, num_filter_enc, num_filter_dec, num_node, latent_dim_end, latent_dim, num_time, alpha, loss, small, load_all)
-        print_gpu_mem_checkpoint('After VAE training')
         del dataloader, val_dataloader
-        gc.collect()
-        if torch.cuda.is_available(): torch.cuda.empty_cache()
-        print_gpu_mem_checkpoint('After dataloader deletion and cache clear')
 
         device = "cuda:0" if torch.cuda.is_available() else "cpu"
         VAE_trained = torch.load('./model_save/SimulGen-VAE', map_location= device, weights_only=False)
         VAE = VAE_trained.eval()
-        print_gpu_mem_checkpoint('After loading VAE model')
 
         from modules.decoder import reparameterize
 
@@ -250,45 +232,41 @@ def main():
         dataloader2 = DataLoader(dataset, batch_size = 1, shuffle =False, num_workers = 0, pin_memory = True, drop_last = False)
 
         for j, image in enumerate(dataloader2):
-            if j % 10 == 0:
-                print_gpu_mem_checkpoint(f'VAE inference loop, step {j}')
-            with torch.no_grad():
-                x = image.to(device)
-                del image
+            loss_save[:]=100
+            x = image.to(device)
+            del image
 
-                mu, log_var, xs = VAE.encoder(x)
-                for i in range(recon_iter):
-                    std = torch.exp(0.5*log_var)
-                    latent_vector = reparameterize(mu, std)
+            mu, log_var, xs = VAE.encoder(x)
+            for i in range(recon_iter):
+                std = torch.exp(0.5*log_var)
+                latent_vector = reparameterize(mu, std)
 
-                    gen_x, _ = VAE.decoder(latent_vector, xs, mode='random')
-                    gen_x_np = gen_x.cpu().detach().numpy()
+                gen_x, _ = VAE.decoder(latent_vector, xs, mode='random')
+                gen_x_np = gen_x.cpu().detach().numpy()
 
-                    loss = nn.MSELoss()(gen_x, x)
+                loss = nn.MSELoss()(gen_x, x)
 
-                    if loss<loss_save[0]:
-                        loss_save[0] = loss
-                        latent_vector_save = latent_vector
-                        latent_vectors[j,:] = latent_vector_save[0,:].cpu().detach().numpy()
+                if loss<loss_save[0]:
+                    loss_save[0] = loss
+                    latent_vector_save = latent_vector
+                    latent_vectors[j,:] = latent_vector_save[0,:].cpu().detach().numpy()
 
-                        for k in range(len(xs)):
-                            hierarchical_latent_vectors[j,k,:] = xs[k].cpu().detach().numpy()[0]
+                    for k in range(len(xs)):
+                        hierarchical_latent_vectors[j,k,:] = xs[k].cpu().detach().numpy()[0]
 
-                        reconstruction_loss[j] = loss
+                    reconstruction_loss[j] = loss
 
-                        reconstructed[j,:,:] = gen_x_np[0,:,:]
+                    reconstructed[j,:,:] = gen_x_np[0,:,:]
 
-                        del latent_vector, x, mu, log_var, xs, std, gen_x, gen_x_np, latent_vector_save
+                    del latent_vector, x, mu, log_var, xs, std, gen_x, gen_x_np, latent_vector_save
 
             print('parameter {} is finished''-''MSE: {:.4E}'.format(j+1, loss))
             print('')
-            print_gpu_mem_checkpoint(f'After parameter {j+1} inference')
             loss_total = loss_total+loss.cpu().detach().numpy()
 
             del loss
 
         print('')
-        print_gpu_mem_checkpoint('After VAE inference loop')
 
         print('Total MSE loss: {:.3e}'.format(loss_total/num_param))
 
@@ -299,19 +277,16 @@ def main():
         np.savetxt(temp5, reconstruction_loss, fmt = '%e')
 
         if print_graph_recon == 1:
-            print_gpu_mem_checkpoint('Before plotting graphs')
             print('Printing graph...')
             plt.semilogy(VAE_loss, label = 'VAE')
             plt.semilogy(loss_val_print, label = 'Validation')
             plt.legend()
             plt.show()
-            plt.close()
 
             plt.figure()
             plt.plot(reconstruction_loss, label = 'Reconstruction')
             plt.legend()
             plt.show()
-            plt.close()
 
             plt.figure()
             param_No = 0
@@ -320,7 +295,6 @@ def main():
             plt.plot(reconstructed[param_No,:,0], marker = 'o', label = 'Reconstructed')
             plt.legend()
             plt.show()
-            plt.close()
 
             plt.figure()
             param_No = 10
@@ -329,7 +303,6 @@ def main():
             plt.plot(reconstructed[param_No,:,0], marker = 'o', label = 'Reconstructed')
             plt.legend()
             plt.show()
-            plt.close()
 
             plt.figure()
             param_No = 0
@@ -339,7 +312,6 @@ def main():
             plt.plot(reconstructed[param_No,node_No,:], marker = 'o', label = 'Reconstructed')
             plt.legend()
             plt.show()
-            plt.close()
 
             plt.figure()
             param_No = 0
@@ -349,7 +321,6 @@ def main():
             plt.plot(reconstructed[param_No,node_No,:], marker = 'o', label = 'Reconstructed')
             plt.legend()
             plt.show()
-            plt.close()
 
             plt.figure()
             param_No = 0
@@ -362,25 +333,21 @@ def main():
             plt.plot(reconstructed[param_No+3, node_No, :], marker = 'o', label = 'Reconstructed')
             plt.legend()
             plt.show()
-            plt.close()
-            print_gpu_mem_checkpoint('After plotting graphs')
 
         elif train_pinn_only == 1:
             print('Training PINN only...')
-            print_gpu_mem_checkpoint('Before PINN only branch')
             latent_vectors = np.load('model_save/latent_vectors.npy')
             hierarchical_latent_vectors = np.load('model_save/xs.npy')
             device = "cpu"
             VAE_trained = torch.load('model_save/SimulGen-VAE', map_location= device, weights_only=False)
             VAE = VAE_trained.eval()
-            print_gpu_mem_checkpoint('After loading VAE model')
 
         else:
             raise Exception('Unrecoginized train_pinn_only arg')
 
         out_latent_vectors = latent_vectors.reshape([num_param, latent_dim_end])
         xs_vectors = hierarchical_latent_vectors.reshape([num_param, -1])
-        print_gpu_mem_checkpoint('After reshaping latent vectors')
+
 
         if pinn_data_type=='image':
             pinn_data, pinn_data_shape = read_pinn_dataset_img(param_dir, param_data_type)
@@ -403,14 +370,13 @@ def main():
         out_hierarchical_latent_vectors = out_hierarchical_latent_vectors.reshape([num_param, len(num_filter_enc)-1, latent_dim])
 
         pinn_dataset = PINNDataset(np.float32(physical_param_input), np.float32(out_latent_vectors), np.float32(out_hierarchical_latent_vectors))
-        print_gpu_mem_checkpoint('After creating PINNDataset')
 
         pinn_train_dataset, pinn_validation_dataset = random_split(pinn_dataset, [int(0.8*num_param), num_param - int(0.8*num_param)])
         pinn_dataloader = torch.utils.data.Dataloader(pinn_train_dataset, batch_size = pinn_batch_size, shuffle=True, num_workers = 0)
         pinn_validation_dataloader = torch.utils.data.Dataloader(pinn_validation_dataset, batch_size = pinn_batch_size, shuffle=False, num_workers = 0)
-        print_gpu_mem_checkpoint('After creating PINN dataloaders')
 
         size2 = len(num_filter_enc)-1
+
 
         if pinn_data_type=='image':
             pinn = PINN_img(pinn_filter, latent_dim_end, input_shape, latent_dim, size2, pinn_data_shape).to(device)
@@ -418,84 +384,69 @@ def main():
             pinn = PINN(pinn_filter, latent_dim_end, input_shape, latent_dim, size2).to(device)
         else:
             NotImplementedError('Unrecoginized pinn_data_type arg')
-        print_gpu_mem_checkpoint('After creating and moving PINN to device')
 
         print(pinn)
 
         PINN_loss = train_pinn(pinn_epoch, pinn_dataloader, pinn_validation_dataloader, pinn, pinn_lr)
-        print_gpu_mem_checkpoint('After PINN training')
 
         latent_x = np.linspace(0, latent_dim_end-1, latent_dim_end)
         latent_hierarchical_x = np.linspace(0, latent_dim-1, latent_dim)
 
         device = "cpu"
         pinn = pinn.to(device)
-        print_gpu_mem_checkpoint('After moving PINN to CPU')
 
         if VAE in globals():
             del VAE
 
         VAE_trained = torch.load('model_save/SimulGen-VAE', map_location= device, weights_only=False)
         VAE = VAE_trained.eval()
-        print_gpu_mem_checkpoint('After loading VAE model')
 
         pinn_dataloader_eval = torch.utils.data.Dataloader(pinn_dataset, batch_size = 1, shuffle=False, num_workers = 0)
 
         for i, (x, y1, y2) in enumerate(pinn_dataloader_eval):
-            if i % 10 == 0:
-                print_gpu_mem_checkpoint(f'PINN eval loop, step {i}')
-            with torch.no_grad():
-                x = x.to(device)
+            x = x.to(device)
 
-                y_pred1, y_pred2 = pinn(x)
-                y_pred1 = y_pred1.cpu().detach().numpy()
-                y1 = y1.cpu().detach().numpy()
-                y_pred2 = y_pred2.cpu().detach().numpy()
-                y2 = y2.cpu().detach().numpy()
-                A = y2
+            y_pred1, y_pred2 = pinn(x)
+            y_pred1 = y_pred1.cpu().detach().numpy()
+            y1 = y1.cpu().detach().numpy()
+            y_pred2 = y_pred2.cpu().detach().numpy()
+            y2 = y2.cpu().detach().numpy()
+            A = y2
 
-                y2 = y2.reshape([1, -1])
-                latent_predict = latent_vectors_scaler.inverse_transform(y1)
-                xs_predict = xs_scaler.inverse_transform(y2)
-                xs_predict = xs_predict.reshape([-1, 1, A.shape[-1]])
-                latent_predict = torch.from_numpy(latent_predict)
-                xs_predict = torch.from_numpy(xs_predict)
-                xs_predict = xs_predict.to(device)
-                xs_predict = list(xs_predict)
-                latent_predict = latent_predict.to(device)
-                target_output, _ = VAE.decoder(latent_predict, xs_predict, mode='fix')
-                target_output_np = target_output.cpu().detach().numpy()
-                target_output_np = target_output_np.swapaxes(1,2)
-                target_output_np = target_output_np.reshape((-1, num_node))
-                target_output_np = np.reshape(target_output_np, [num_time, num_node, 1])
+            y2 = y2.reshape([1, -1])
+            latent_predict = latent_vectors_scaler.inverse_transform(y1)
+            xs_predict = xs_scaler.inverse_transform(y2)
+            xs_predict = xs_predict.reshape([-1, 1, A.shape[-1]])
+            latent_predict = torch.from_numpy(latent_predict)
+            xs_predict = torch.from_numpy(xs_predict)
+            xs_predict = xs_predict.to(device)
+            xs_predict = list(xs_predict)
+            latent_predict = latent_predict.to(device)
+            target_output, _ = VAE.decoder(latent_predict, xs_predict, mode='fix')
+            target_output_np = target_output.cpu().detach().numpy()
+            target_output_np = target_output_np.swapaxes(1,2)
+            target_output_np = target_output_np.reshape((-1, num_node))
+            target_output_np = np.reshape(target_output_np, [num_time, num_node, 1])
 
-                plt.figure()
-                plt.title('Main latent')
-                plt.plot(y1[0,:], '*', label = 'True')
-                plt.plot(y_pred1[0,:], 'o', label = 'Predicted')
-                plt.legend()
-                plt.show()
-                plt.close()
+            plt.figure()
+            plt.title('Main latent')
+            plt.plot(y1[0,:], '*', label = 'True')
+            plt.plot(y_pred1[0,:], 'o', label = 'Predicted')
+            plt.legend()
 
-                plt.figure()
-                plt.title('Hierarchical latent')
-                plt.plot(y2[0,:], '*', label = 'True')
-                plt.plot(y_pred2[0,0, :], 'o', label = 'Predicted')
-                plt.legend()
-                plt.show()
-                plt.close()
-                
-                plt.figure()
-                plt.title('Reconstruction')
-                plt.plot(target_output_np[0,:,0], '.', label = 'Recon')
-                plt.plot(new_x_train[i, :, int(num_time/2)], '.', label = 'True')
-                plt.legend()
-                plt.show()
-                plt.close()
+            plt.figure()
+            plt.title('Hierarchical latent')
+            plt.plot(y2[0,:], '*', label = 'True')
+            plt.plot(y_pred2[0,0, :], 'o', label = 'Predicted')
+            plt.legend()
+            
+            plt.figure()
+            plt.title('Reconstruction')
+            plt.plot(target_output_np[0,:,0], '.', label = 'Recon')
+            plt.plot(new_x_train[i, :, int(num_time/2)], '.', label = 'True')
+            plt.legend()
 
-                print_gpu_mem_checkpoint(f'After PINN eval step {i}')
-
-
+            plt.show()
 
 if __name__ == '__main__':
     main()
