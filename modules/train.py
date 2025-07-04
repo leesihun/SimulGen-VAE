@@ -105,16 +105,16 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
             loss = recon_loss + kl_loss
 
             if i==0:
-                kl_loss_save = kl_loss.detach().item()
-                recon_loss_save = recon_loss.detach().item()
-                recon_loss_MSE_save = recon_loss_MSE.detach().item()
-                loss_save = loss.detach().item()
+                kl_loss_save = kl_loss
+                recon_loss_save = recon_loss
+                recon_loss_MSE_save = recon_loss_MSE
+                loss_save = loss
 
             else:
-                kl_loss_save = kl_loss_save + kl_loss.detach().item()
-                recon_loss_save = recon_loss_save + recon_loss.detach().item()
-                recon_loss_MSE_save = recon_loss_MSE_save + recon_loss_MSE.detach().item()
-                loss_save = loss_save + loss.detach().item()
+                kl_loss_save = kl_loss_save + kl_loss
+                recon_loss_save = recon_loss_save + recon_loss
+                recon_loss_MSE_save = recon_loss_MSE_save + recon_loss_MSE
+                loss_save = loss_save + loss
 
             loss.backward()
             optimizer.step()
@@ -139,11 +139,11 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
                 loss = recon_loss + kl_loss
 
                 if i==0:
-                    recon_loss_save_val = recon_loss.detach().item()
-                    loss_save_val = loss.detach().item()
+                    recon_loss_save_val = recon_loss
+                    loss_save_val = loss
                 else:
-                    recon_loss_save_val = recon_loss_save_val + recon_loss.detach().item()
-                    loss_save_val = loss_save_val + loss.detach().item()
+                    recon_loss_save_val = recon_loss_save_val + recon_loss
+                    loss_save_val = loss_save_val + loss
                 
                 del image, loss
                 del recon_loss, kl_losses, recon_loss_MSE, kl_loss
