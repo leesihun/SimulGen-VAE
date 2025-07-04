@@ -152,10 +152,10 @@ class PINN_img(nn.Module):
             modules.append(ConvBlock(self.pinn_filter[i-1], self.pinn_filter[i]))
 
         modules.append(nn.Flatten())
-        modules.append(nn.LazyLinear(self.latent_dim_end*self.size2*8))
+        modules.append(nn.LazyLinear(self.latent_dim*self.size2*8))
         modules.append(nn.GELU())
         modules.append(nn.Dropout(0.2))
-        modules.append(nn.Linear(self.latent_dim_end*self.size2*8, self.latent_dim_end*self.size2))
+        modules.append(nn.Linear(self.latent_dim*self.size2*8, self.latent_dim*self.size2))
         modules.append(nn.Unflatten(1, torch.size(self.size2, self.latent_dim)))
         modules.append(nn.Tanh())
 

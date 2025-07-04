@@ -59,7 +59,7 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
     torch.cuda.empty_cache()
 
     model.apply(initialize_weights_He)
-    model.to(device)
+    model.apply(add_sn)
 
     init_beta = 1e-4
     beta_target = 1.0
@@ -74,13 +74,13 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
     optimizer = torch.optim.AdamW(model.parameters(), lr=LR)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epoch, eta_min=0)
 
-    loss_print = np.zeros(epoch)
-    loss_val_print = np.zeros(epoch)
-    recon_print = np.zeros(epoch)
-    kl_print = np.zeros(epoch)
-    recon_loss_MSE_print = np.zeros(epoch)
-    loss_plot = np.zeros(epoch)
-    recon_loss_val_print = np.zeros(epoch)
+    loss_print = np.zeros(epochs)
+    loss_val_print = np.zeros(epochs)
+    recon_print = np.zeros(epochs)
+    kl_print = np.zeros(epochs)
+    recon_loss_MSE_print = np.zeros(epochs)
+    loss_plot = np.zeros(epochs)
+    recon_loss_val_print = np.zeros(epochs)
 
     model.train(True)
 
@@ -105,17 +105,17 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
             loss = recon_loss + kl_loss
 
             if i==0:
-                kl_loss_save = kl_loss
-                recon_loss_save = recon_loss
-                recon_loss_MSE_save = recon_loss_MSE
-                loss_save = loss
+                kl_loss_save = kl_loss.detach().item()
+                recon_loss_save = recon_loss.detach().item()
+                recon_loss_MSE_save = recon_loss_MSE.detach().item()
+                loss_save = loss.detach().item()
 
             else:
-                kl_loss_save = kl_loss_save + kl_loss
-                recon_loss_save = recon_loss_save + recon_loss
-                recon_loss_MSE_save = recon_loss_MSE_save + recon_loss_MSE
-                loss_save = loss_save + loss
-                
+                kl_loss_save = kl_loss_save + kl_loss.detach().item()
+                recon_loss_save = recon_loss_save + recon_loss.detach().item()
+                recon_loss_MSE_save = recon_loss_MSE_save + recon_loss_MSE.detach().item()
+                loss_save = loss_save + loss.detach().item()
+
             loss.backward()
             optimizer.step()
 
@@ -151,7 +151,7 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
         loss_print[epoch] = loss_save/(num+1)
         loss_val_print[epoch] = loss_save_val/(i+1)
         recon_print[epoch] = recon_loss_save/(num+1)
-        kl_print[epoch] = kl_loss_save/(num+1)
+        kl_print[epoch] = kl_loss_save/beta/(num+1)
         recon_loss_MSE_print[epoch] = recon_loss_MSE_save/(num+1)
         recon_loss_val_print[epoch] = recon_loss_save_val/(i+1)
 

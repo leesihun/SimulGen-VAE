@@ -1,6 +1,6 @@
 import numpy as np
 import warnings
-from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from pickle import dump
 from audiomentations import *
 
