@@ -69,7 +69,7 @@ class Decoder(nn.Module):
         for i in range(len(num_filter_dec)-1):
             self.xs_sequence.append(nn.Sequential(
                 nn.Linear(hierarchical_dim, hierarchical_dim*num_time),
-                nn.Unflatten(1, hierarchical_dim, num_time),
+                nn.Unflatten(1, (hierarchical_dim, num_time)),
                 nn.Conv1d(hierarchical_dim, self.num_filter_dec[i+1], kernel_size=5, padding=2),
                 nn.GELU(),
             ))
