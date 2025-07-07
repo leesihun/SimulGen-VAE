@@ -33,6 +33,9 @@ class WarmupKLLoss:
             beta = (step-self.start_warmup)*(self.beta_target-self.init_beta)/(self.end_warmup-self.start_warmup)+self.init_beta
         else:
             beta = self.beta_target
+        
+        print(losses)
+        print(loss)
 
         return [beta, loss]
 
