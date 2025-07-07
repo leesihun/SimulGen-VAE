@@ -369,7 +369,6 @@ def main():
             plt.plot(reconstructed[param_No+3, node_No, :], marker = 'o', label = 'Reconstructed')
             plt.legend()
             plt.show()
-
         elif train_pinn_only == 1:
             print('Training PINN only...')
             latent_vectors = np.load('model_save/latent_vectors.npy')
@@ -377,9 +376,6 @@ def main():
             device = "cpu"
             VAE_trained = torch.load('model_save/SimulGen-VAE', map_location= device, weights_only=False)
             VAE = VAE_trained.eval()
-
-        else:
-            raise Exception('Unrecoginized train_pinn_only arg')
 
         out_latent_vectors = latent_vectors.reshape([num_param, latent_dim_end])
         xs_vectors = hierarchical_latent_vectors.reshape([num_param, -1])
