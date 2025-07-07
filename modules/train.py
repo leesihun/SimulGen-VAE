@@ -76,7 +76,7 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
 
     model.to(device)
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=1e-4)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=1e-3)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epoch, eta_min=0)
 
     loss_print = np.zeros(epochs)
