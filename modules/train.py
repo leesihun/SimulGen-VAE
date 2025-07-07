@@ -24,7 +24,7 @@ class WarmupKLLoss:
         loss = 0.
         for i, l in enumerate(losses):
             l = losses[i]
-            loss+=1
+            loss+=l
 
         if step<self.start_warmup:
             beta = self.init_beta
@@ -39,7 +39,7 @@ class WarmupKLLoss:
         print(loss)
         print(type(loss))
 
-        return beta, loss
+        return [beta, loss]
 
 def print_gpu_mem_checkpoint(msg):
     if torch.cuda.is_available():
