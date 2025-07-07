@@ -38,15 +38,18 @@ class ResidualBlock(nn.Module):
         if small:
             self._seq = nn.Sequential(
                 nn.Conv1d(dim, dim, kernel_size=3, padding=1),
+                nn.BatchNorm1d(dim),
                 # nn.LayerNorm(dim), 
                 nn.GELU(),
             )
         else:
             self._seq = nn.Sequential(
                 nn.Conv1d(dim, dim, kernel_size=3, padding=1),
+                nn.BatchNorm1d(dim),
                 # nn.LayerNorm(dim), 
                 nn.GELU(),
                 nn.Conv1d(dim, dim, kernel_size=3, padding=1),
+                nn.BatchNorm1d(dim),
                 # nn.LayerNorm(dim), 
                 nn.GELU(),
             )
@@ -61,13 +64,16 @@ class EncoderResidualBlock(nn.Module):
         if small:
             self.seq = nn.Sequential(
                 nn.Conv1d(input, input, kernel_size=3, padding=1),
+                nn.BatchNorm1d(input),
                 nn.GELU(),
             )
         else:
             self.seq = nn.Sequential(
                 nn.Conv1d(input, input, kernel_size=3, padding=1),
+                nn.BatchNorm1d(input),
                 nn.GELU(),
                 nn.Conv1d(input, input, kernel_size=3, padding=1),
+                nn.BatchNorm1d(input),
                 nn.GELU(),
             )
 
@@ -82,21 +88,28 @@ class DecoderResidualBlock(nn.Module):
         if small:
             self.seq = nn.Sequential(
                 nn.Conv1d(input, input, kernel_size=1),
+                nn.BatchNorm1d(input),
                 nn.GELU(),
                 nn.Conv1d(input, input*multiple, kernel_size=5, padding=2),
+                nn.BatchNorm1d(input*multiple),
                 nn.GELU(),
                 nn.Conv1d(input*multiple, input, kernel_size=1, padding=0),
+                nn.BatchNorm1d(input),
                 nn.GELU(),
             )
         else:
             self.seq = nn.Sequential(
                 nn.Conv1d(input, input, kernel_size=1),
+                nn.BatchNorm1d(input),
                 nn.GELU(),
                 nn.Conv1d(input, input*multiple, kernel_size=5, padding=2),
+                nn.BatchNorm1d(input*multiple),
                 nn.GELU(),
                 nn.Conv1d(input, input*multiple, kernel_size=5, padding=2),
+                nn.BatchNorm1d(input*multiple),
                 nn.GELU(),
                 nn.Conv1d(input*multiple, input, kernel_size=1, padding=0),
+                nn.BatchNorm1d(input),
                 nn.GELU(),
             )
 
