@@ -33,11 +33,8 @@ class WarmupKLLoss:
             beta = (step-self.start_warmup)*(self.beta_target-self.init_beta)/(self.end_warmup-self.start_warmup)+self.init_beta
         else:
             beta = self.beta_target
-        
-        print(losses)
-        print(loss)
 
-        return [beta, loss]
+        return beta, loss
 
 def print_gpu_mem_checkpoint(msg):
     if torch.cuda.is_available():
@@ -116,10 +113,6 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
             optimizer.step()
 
             if i==0:
-                print(f'kl_loss type: {type(kl_loss)}')
-                print(f'kl_loss device: {kl_loss.device}')
-                print(kl_loss)
-                print(kl_loss.detach().item())
                 kl_loss_save = kl_loss.detach().item()
                 recon_loss_save = recon_loss.detach().item()
                 recon_loss_MSE_save = recon_loss_MSE.detach().item()
