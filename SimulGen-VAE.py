@@ -265,7 +265,7 @@ def main():
         reconstruction_loss = np.zeros([num_param])
         hierarchical_latent_vectors = np.zeros([num_param, len(num_filter_enc)-1, latent_dim])
         reconstructed = np.empty([num_param, num_node, num_time])
-        dataloader2 = DataLoader(dataset, batch_size = 1, shuffle =False, num_workers = 0, pin_memory = True, drop_last = False)
+        dataloader2 = DataLoader(dataset, batch_size = 1, shuffle =False, num_workers = 0, pin_memory = False, drop_last = False)
 
         for j, image in enumerate(dataloader2):
             loss_save[:]=100
