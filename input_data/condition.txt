@@ -8,7 +8,7 @@ RESERVED	0
 RESERVED	0
 '
 %LSH-VAE parameters
-Training_epochs	50002
+Training_epochs	30002
 Batch_size	16
 LearningR	0.00005
 Latent_dim	8	# Hierarchical latent Dim1
@@ -31,7 +31,7 @@ num_param	1
 n_sample	484
 param_dir	/images
 n_epoch	20000
-pinn_lr	0.002
+pinn_lr	0.001
 pinn_batch	16
 input_type	image	#images, csvs
 param_data_type .png
