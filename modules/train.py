@@ -109,6 +109,9 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
             recon_loss_MSE = recon_loss_MSE*alpha
             loss = recon_loss + kl_loss
 
+            loss.backward()
+            optimizer.step()
+
             if i==0:
                 kl_loss_save = kl_loss
                 recon_loss_save = recon_loss.detach().item()
@@ -120,9 +123,6 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
                 recon_loss_save = recon_loss_save + recon_loss.detach().item()
                 recon_loss_MSE_save = recon_loss_MSE_save + recon_loss_MSE.detach().item()
                 loss_save = loss_save + loss.detach().item()
-
-            loss.backward()
-            optimizer.step()
 
             del image, loss
             del recon_loss, kl_losses, recon_loss_MSE, kl_loss
