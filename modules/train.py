@@ -113,13 +113,17 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
             optimizer.step()
 
             if i==0:
-                kl_loss_save = kl_loss
+                print(f'kl_loss type: {type(kl_loss)}')
+                print(f'kl_loss device: {kl_loss.device}')
+                print(kl_loss)
+                print(kl_loss.detach().item())
+                kl_loss_save = kl_loss.detach().item()
                 recon_loss_save = recon_loss.detach().item()
                 recon_loss_MSE_save = recon_loss_MSE.detach().item()
                 loss_save = loss.detach().item()
 
             else:
-                kl_loss_save = kl_loss_save + kl_loss
+                kl_loss_save = kl_loss_save + kl_loss.detach().item()
                 recon_loss_save = recon_loss_save + recon_loss.detach().item()
                 recon_loss_MSE_save = recon_loss_MSE_save + recon_loss_MSE.detach().item()
                 loss_save = loss_save + loss.detach().item()
