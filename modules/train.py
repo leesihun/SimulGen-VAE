@@ -34,6 +34,8 @@ class WarmupKLLoss:
         else:
             beta = self.beta_target
 
+        print('At warmup loss')
+        print(losses)
         print(loss)
         print(type(loss))
 
@@ -107,11 +109,12 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
 
             beta, kl_loss = warmup_kl.get_loss(epoch, kl_losses)
 
+            print('At train loss')
             print(kl_loss)
             print(type(kl_loss))
             print(kl_loss.detach().item())
 
-            
+
             kl_loss = kl_loss*beta
             recon_loss = recon_loss*alpha
             recon_loss_MSE = recon_loss_MSE*alpha
