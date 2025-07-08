@@ -102,14 +102,42 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
 
             _, recon_loss, kl_losses, recon_loss_MSE = model(image)
 
+            # Check for NaN in model outputs
+            if torch.isnan(recon_loss) or torch.isinf(recon_loss):
+                print(f"Warning: NaN/Inf in recon_loss at epoch {epoch}, batch {i}")
+                print(f"Input range: {image.min().item():.4f} to {image.max().item():.4f}")
+                continue
+                
+            # Check KL losses for NaN
+            for idx, kl_loss_item in enumerate(kl_losses):
+                if torch.isnan(kl_loss_item) or torch.isinf(kl_loss_item):
+                    print(f"Warning: NaN/Inf in kl_loss[{idx}] at epoch {epoch}, batch {i}")
+                    continue
+
             beta, kl_loss = warmup_kl.get_loss(epoch, kl_losses)
+
+            # Additional checks after scaling
+            if torch.isnan(kl_loss) or torch.isinf(kl_loss):
+                print(f"Warning: NaN/Inf in combined kl_loss at epoch {epoch}, batch {i}")
+                continue
 
             kl_loss = kl_loss*beta
             recon_loss = recon_loss*alpha
             recon_loss_MSE = recon_loss_MSE*alpha
             loss = recon_loss + kl_loss
 
+            # Check for NaN values before backpropagation
+            if torch.isnan(loss) or torch.isinf(loss):
+                print(f"Warning: NaN or Inf detected in loss at epoch {epoch}, batch {i}")
+                print(f"recon_loss: {recon_loss.item()}, kl_loss: {kl_loss.item()}")
+                print(f"beta: {beta}, alpha: {alpha}")
+                continue
+
             loss.backward()
+            
+            # Add gradient clipping to prevent exploding gradients
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            
             optimizer.step()
 
             if i==0:

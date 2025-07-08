@@ -140,7 +140,14 @@ class Decoder(nn.Module):
         return x_hat, kl_losses
 
 def reparameterize(mu, std):
+    # Clamp mu and std to prevent extreme values
+    mu = torch.clamp(mu, min=-10, max=10)
+    std = torch.clamp(std, min=1e-8, max=10)
+    
     eps = torch.randn_like(std)
     z = eps.mul(std).add_(mu)
-
+    
+    # Additional safety check
+    z = torch.clamp(z, min=-10, max=10)
+    
     return z
