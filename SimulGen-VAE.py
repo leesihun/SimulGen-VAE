@@ -110,6 +110,8 @@ def main():
     pinn_batch_size = int(params['pinn_batch'])
     pinn_data_type = params['input_type']
     param_data_type = params['param_data_type']
+    pinn_weight_decay = float(params.get('pinn_weight_decay', 1e-4))  # Default to 1e-4 if not specified
+    pinn_dropout_rate = float(params.get('pinn_dropout_rate', 0.3))  # Default to 0.3 if not specified
 
     input_shape = num_physical_param
 
@@ -377,6 +379,7 @@ def main():
             VAE_trained = torch.load('model_save/SimulGen-VAE', map_location= device, weights_only=False)
             VAE = VAE_trained.eval()
 
+        # PINN training (runs for both train_pinn_only == 0 and train_pinn_only == 1)
         out_latent_vectors = latent_vectors.reshape([num_param, latent_dim_end])
         xs_vectors = hierarchical_latent_vectors.reshape([num_param, -1])
 
@@ -404,14 +407,14 @@ def main():
         pinn_dataset = PINNDataset(np.float32(physical_param_input), np.float32(out_latent_vectors), np.float32(out_hierarchical_latent_vectors))
 
         pinn_train_dataset, pinn_validation_dataset = random_split(pinn_dataset, [int(0.8*num_param), num_param - int(0.8*num_param)])
-        pinn_dataloader = torch.utils.data.Dataloader(pinn_train_dataset, batch_size = pinn_batch_size, shuffle=True, num_workers = 0)
-        pinn_validation_dataloader = torch.utils.data.Dataloader(pinn_validation_dataset, batch_size = pinn_batch_size, shuffle=False, num_workers = 0)
+        pinn_dataloader = torch.utils.data.DataLoader(pinn_train_dataset, batch_size = pinn_batch_size, shuffle=True, num_workers = 0)
+        pinn_validation_dataloader = torch.utils.data.DataLoader(pinn_validation_dataset, batch_size = pinn_batch_size, shuffle=False, num_workers = 0)
 
         size2 = len(num_filter_enc)-1
 
 
         if pinn_data_type=='image':
-            pinn = PINN_img(pinn_filter, latent_dim_end, input_shape, latent_dim, size2, pinn_data_shape).to(device)
+            pinn = PINN_img(pinn_filter, latent_dim_end, input_shape, latent_dim, size2, pinn_data_shape, dropout_rate=pinn_dropout_rate).to(device)
         elif pinn_data_type=='csv':
             pinn = PINN(pinn_filter, latent_dim_end, input_shape, latent_dim, size2).to(device)
         else:
@@ -419,7 +422,7 @@ def main():
 
         print(pinn)
 
-        PINN_loss = train_pinn(pinn_epoch, pinn_dataloader, pinn_validation_dataloader, pinn, pinn_lr)
+        PINN_loss = train_pinn(pinn_epoch, pinn_dataloader, pinn_validation_dataloader, pinn, pinn_lr, weight_decay=pinn_weight_decay)
 
         latent_x = np.linspace(0, latent_dim_end-1, latent_dim_end)
         latent_hierarchical_x = np.linspace(0, latent_dim-1, latent_dim)
@@ -433,7 +436,7 @@ def main():
         VAE_trained = torch.load('model_save/SimulGen-VAE', map_location= device, weights_only=False)
         VAE = VAE_trained.eval()
 
-        pinn_dataloader_eval = torch.utils.data.Dataloader(pinn_dataset, batch_size = 1, shuffle=False, num_workers = 0)
+        pinn_dataloader_eval = torch.utils.data.DataLoader(pinn_dataset, batch_size = 1, shuffle=False, num_workers = 0)
 
         for i, (x, y1, y2) in enumerate(pinn_dataloader_eval):
             x = x.to(device)

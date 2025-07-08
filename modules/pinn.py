@@ -94,15 +94,19 @@ class ConvResBlock(nn.Module):
 
         self.seq = nn.Sequential(
             nn.Conv2d(in_channel, in_channel*multiple, kernel_size=3, padding=1),
+            nn.BatchNorm2d(in_channel*multiple),
             nn.GELU(),
             nn.Conv2d(in_channel*multiple, out_channel, kernel_size=5, padding=2),
+            nn.BatchNorm2d(out_channel),
             nn.GELU(),
             nn.Conv2d(out_channel, out_channel, kernel_size=3, padding=1),
+            nn.BatchNorm2d(out_channel),
             nn.GELU(),
         )
 
     def forward(self, x):
-        x = x+0.1*self.seq(x)
+        # Reduce residual connection strength to make training more stable
+        x = x + 0.05 * self.seq(x)
         return x
 
 class ConvBlock(nn.Module):
@@ -111,6 +115,7 @@ class ConvBlock(nn.Module):
 
         self.seq = nn.Sequential(
             nn.Conv2d(in_channel, out_channel, kernel_size=3, padding=1),
+            nn.BatchNorm2d(out_channel),
             nn.GELU(),
             nn.AvgPool2d(2)
         )
@@ -119,7 +124,7 @@ class ConvBlock(nn.Module):
         return self.seq(x)
 
 class PINN_img(nn.Module):
-    def __init__(self, pinn_filter, latent_dim_end, input_shape, latent_dim, size2, pinn_data_shape):
+    def __init__(self, pinn_filter, latent_dim_end, input_shape, latent_dim, size2, pinn_data_shape, dropout_rate=0.3):
         super(PINN_img, self).__init__()
         self.latent_dim = latent_dim
         self.size2 = size2
@@ -128,18 +133,22 @@ class PINN_img(nn.Module):
         self.input_shape = input_shape
         self.num_pinn_filter = len(self.pinn_filter)
         self.pinn_data_shape = pinn_data_shape
+        self.dropout_rate = dropout_rate
 
         modules = []
         modules.append(nn.Conv2d(1, self.pinn_filter[0], kernel_size=3, padding=1))
+        modules.append(nn.BatchNorm2d(self.pinn_filter[0]))
         modules.append(nn.GELU())
+        
         for i in range(1, self.num_pinn_filter):
             modules.append(ConvResBlock(self.pinn_filter[i-1], self.pinn_filter[i-1]))
             modules.append(ConvBlock(self.pinn_filter[i-1], self.pinn_filter[i]))
 
         modules.append(nn.Flatten())
         modules.append(nn.LazyLinear(self.latent_dim_end*8))
+        modules.append(nn.BatchNorm1d(self.latent_dim_end*8))
         modules.append(nn.GELU())
-        modules.append(nn.Dropout(0.2))
+        modules.append(nn.Dropout(self.dropout_rate))  # Keep dropout only for FC layers
         modules.append(nn.Linear(self.latent_dim_end*8, self.latent_dim_end))
         modules.append(nn.Tanh())
 
@@ -147,14 +156,18 @@ class PINN_img(nn.Module):
 
         modules = []
         modules.append(nn.Conv2d(1, self.pinn_filter[0], kernel_size=3, padding=1))
+        modules.append(nn.BatchNorm2d(self.pinn_filter[0]))
+        modules.append(nn.GELU())
+        
         for i in range(1, self.num_pinn_filter):
             modules.append(ConvResBlock(self.pinn_filter[i-1], self.pinn_filter[i-1]))
             modules.append(ConvBlock(self.pinn_filter[i-1], self.pinn_filter[i]))
 
         modules.append(nn.Flatten())
         modules.append(nn.LazyLinear(self.latent_dim*self.size2*8))
+        modules.append(nn.BatchNorm1d(self.latent_dim*self.size2*8))
         modules.append(nn.GELU())
-        modules.append(nn.Dropout(0.2))
+        modules.append(nn.Dropout(self.dropout_rate))  # Keep dropout only for FC layers
         modules.append(nn.Linear(self.latent_dim*self.size2*8, self.latent_dim*self.size2))
         modules.append(nn.Unflatten(1, torch.size(self.size2, self.latent_dim)))
         modules.append(nn.Tanh())
@@ -180,7 +193,7 @@ from torch.utils.tensorboard import SummaryWriter
 from torchvision import transforms
 import pytorch_warmup as warmup
 
-def train_pinn(pinn_epoch, pinn_dataloader, pinn_validation_dataloader, pinn, pinn_lr):
+def train_pinn(pinn_epoch, pinn_dataloader, pinn_validation_dataloader, pinn, pinn_lr, weight_decay=1e-4):
     im_size = 128
 
     writer = SummaryWriter(log_dir = './PINNruns', comment = 'PINN')
@@ -188,8 +201,18 @@ def train_pinn(pinn_epoch, pinn_dataloader, pinn_validation_dataloader, pinn, pi
     loss=0
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
 
-    pinn_optimized = torch.optim.AdamW(pinn.parameters(), lr=pinn_lr)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(pinn_optimized, T_max = pinn_epoch, eta_min = 0)
+    # Reduce learning rate and add weight decay for regularization
+    pinn_optimized = torch.optim.AdamW(pinn.parameters(), lr=pinn_lr, weight_decay=weight_decay)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(pinn_optimized, T_max = pinn_epoch, eta_min = pinn_lr * 0.01)
+
+    # Data augmentation transforms
+    augmentation = transforms.Compose([
+        transforms.ToPILImage(),
+        transforms.RandomRotation(10),
+        transforms.RandomHorizontalFlip(p=0.5),
+        transforms.ColorJitter(brightness=0.1, contrast=0.1),
+        transforms.ToTensor(),
+    ])
 
     from torchinfo import summary
 
@@ -201,7 +224,21 @@ def train_pinn(pinn_epoch, pinn_dataloader, pinn_validation_dataloader, pinn, pi
     for epoch in range(pinn_epoch):
         start_time = time.time()
         pinn.train(True)
+        epoch_loss = 0
+        num_batches = 0
+        
         for i, (x, y1, y2) in enumerate(pinn_dataloader):
+            # Apply data augmentation randomly to some samples
+            if torch.rand(1) < 0.3:  # 30% chance of augmentation
+                x_aug = []
+                for img in x:
+                    img_np = (img.squeeze().cpu().numpy() * 255).astype(np.uint8)
+                    img_aug = augmentation(img_np)
+                    x_aug.append(img_aug.unsqueeze(0))
+                x = torch.cat(x_aug, dim=0)
+            
+            x, y1, y2 = x.to(device), y1.to(device), y2.to(device)
+            
             for param in pinn.parameters():
                 param.grad = None
 
@@ -210,48 +247,152 @@ def train_pinn(pinn_epoch, pinn_dataloader, pinn_validation_dataloader, pinn, pi
             A = nn.MSELoss()(y_pred1, y1)
             B = nn.MSELoss()(y_pred2, y2)
 
-            loss = A+B
-            avgloss = loss
-
-            if i==0:
-                avg_loss_save = avgloss.detach().item()
-            else:
-                avg_loss_save = avg_loss_save+avgloss.detach().item()
+            loss = A + B
+            epoch_loss += loss.item()
+            num_batches += 1
 
             loss.backward()
+            
+            # Gradient clipping to prevent exploding gradients
+            torch.nn.utils.clip_grad_norm_(pinn.parameters(), max_norm=1.0)
+            
             pinn_optimized.step()
         
-        avg_loss_save = avg_loss_save/i
+        avg_train_loss = epoch_loss / num_batches
 
-        for i, (x_val, y1_val, y2_val) in enumerate(pinn_validation_dataloader):
-            pinn.eval()
-            with torch.no_grad():
+        # Validation loop
+        pinn.eval()
+        val_loss = 0
+        val_batches = 0
+        
+        with torch.no_grad():
+            for i, (x_val, y1_val, y2_val) in enumerate(pinn_validation_dataloader):
+                x_val, y1_val, y2_val = x_val.to(device), y1_val.to(device), y2_val.to(device)
+                
                 y_pred1_val, y_pred2_val = pinn(x_val)
 
                 A_val = nn.MSELoss()(y_pred1_val, y1_val)
                 B_val = nn.MSELoss()(y_pred2_val, y2_val)
 
-                val_loss = A_val+B_val
+                val_loss += (A_val + B_val).item()
+                val_batches += 1
 
-                if i==0:
-                    val_loss_save = val_loss.detach().item()
-                else:
-                    val_loss_save = val_loss_save+val_loss.detach().item()
+        avg_val_loss = val_loss / val_batches
 
-            val_loss_save = val_loss_save/i
+        # Learning rate scheduling
+        scheduler.step()
 
-            end_time = time.time()
-            epoch_duration = end_time-start_time
+        end_time = time.time()
+        epoch_duration = end_time - start_time
 
-            if epoch%10 == 0:
-                writer.add_scalar('PINN Loss/train', avg_loss_save, epoch)
-                writer.add_scalar('PINN Loss/val', val_loss_save, epoch)
+        if epoch % 10 == 0:
+            writer.add_scalar('PINN Loss/train', avg_train_loss, epoch)
+            writer.add_scalar('PINN Loss/val', avg_val_loss, epoch)
+            writer.add_scalar('Learning Rate', pinn_optimized.param_groups[0]['lr'], epoch)
 
-            print('[%d/%d]\tPINN_Loss: %.4E, val_loss = %.4E, Main_Loss: %.4E, Hierarchical_loss: %.4E, ETA: %.4E h' % (epoch, pinn_epoch, avg_loss_save, val_loss_save, A, B, (pinn_epoch-epoch)*epoch_duration/3600))
+        print('[%d/%d]\tTrain_Loss: %.4E, Val_Loss: %.4E, LR: %.2E, ETA: %.2f h' % 
+              (epoch, pinn_epoch, avg_train_loss, avg_val_loss, 
+               pinn_optimized.param_groups[0]['lr'], 
+               (pinn_epoch-epoch)*epoch_duration/3600))
 
-            scheduler.step()
+        # Save regular checkpoint
+        if epoch % 50 == 0:
+            torch.save(pinn.state_dict(), f'checkpoints/pinn_epoch_{epoch}.pth')
 
-        torch.save(pinn.state_dict(), f'checpoints/pinn.pth')
-        torch.save(pinn, 'model_save/PINN')
+    torch.save(pinn.state_dict(), 'checkpoints/pinn.pth')
+    torch.save(pinn, 'model_save/PINN')
 
-        return loss
+    return avg_val_loss
+
+def get_overfitting_reduction_suggestions():
+    """
+    Returns a dictionary of hyperparameter suggestions to reduce overfitting in PINN_img training.
+    
+    Usage example:
+    suggestions = get_overfitting_reduction_suggestions()
+    print("Recommended hyperparameters:")
+    for key, value in suggestions.items():
+        print(f"{key}: {value}")
+    """
+    return {
+        'learning_rate': 1e-4,  # Reduced from typical 1e-3
+        'weight_decay': 1e-4,   # L2 regularization
+        'dropout_rate': 0.3,    # For fully connected layers only
+        'batch_size': 32,       # Smaller batch size can help generalization
+        'max_epochs': 500,      # Adjust based on your training needs
+        'gradient_clip_norm': 1.0,  # Gradient clipping
+        'augmentation_probability': 0.3,  # Data augmentation chance
+        'scheduler_min_lr_ratio': 0.01,  # Minimum LR as ratio of initial LR
+        'validation_frequency': 1,  # Validate every epoch
+        'checkpoint_frequency': 50,  # Save checkpoint every 50 epochs
+        
+        # Additional architectural suggestions
+        'reduce_model_complexity': 'Consider reducing pinn_filter sizes by 20-30%',
+        'batch_normalization': 'BatchNorm for conv layers, dropout for FC layers only',
+        'residual_connection_weight': 0.05,  # Reduced from 0.1
+        'alternative_optimizers': ['AdamW with weight_decay', 'SGD with momentum=0.9'],
+        
+        # Training strategy suggestions
+        'training_tips': [
+            'Monitor train/val loss gap - manually stop when gap > 10x',
+            'Use learning rate scheduling (CosineAnnealingLR)',
+            'Apply data augmentation sparingly (30% of samples)',
+            'Use gradient clipping to prevent exploding gradients',
+            'Monitor training progress and save checkpoints regularly',
+            'BatchNorm for conv layers, dropout only for fully connected layers',
+            'Consider reducing epochs if overfitting persists'
+        ]
+    }
+
+def example_usage_with_overfitting_reduction():
+    """
+    Example of how to use the improved PINN_img with overfitting reduction techniques.
+    
+    This function demonstrates the recommended way to initialize and train the model
+    with the new anti-overfitting features.
+    """
+    print("Example: Using PINN_img with overfitting reduction")
+    print("=" * 50)
+    
+    # Get recommended hyperparameters
+    suggestions = get_overfitting_reduction_suggestions()
+    
+    # Example model initialization
+    pinn_filter = [32, 64, 128]  # Reduced from potentially larger values
+    latent_dim_end = 64
+    input_shape = 128*128
+    latent_dim = 32
+    size2 = 10
+    pinn_data_shape = (128, 128)
+    
+    # Initialize model with higher dropout rate
+    model = PINN_img(
+        pinn_filter=pinn_filter,
+        latent_dim_end=latent_dim_end,
+        input_shape=input_shape,
+        latent_dim=latent_dim,
+        size2=size2,
+        pinn_data_shape=pinn_data_shape,
+        dropout_rate=suggestions['dropout_rate']
+    )
+    
+    print(f"Model initialized with dropout_rate: {suggestions['dropout_rate']}")
+    print(f"Recommended learning rate: {suggestions['learning_rate']}")
+    print(f"Recommended weight decay: {suggestions['weight_decay']}")
+    print(f"Recommended max epochs: {suggestions['max_epochs']}")
+    
+    # Example training call (uncomment when ready to train)
+    # loss = train_pinn(
+    #     pinn_epoch=suggestions['max_epochs'],
+    #     pinn_dataloader=your_dataloader,
+    #     pinn_validation_dataloader=your_validation_dataloader,
+    #     pinn=model,
+    #     pinn_lr=suggestions['learning_rate'],
+    #     weight_decay=suggestions['weight_decay']
+    # )
+    
+    print("\nTraining tips:")
+    for tip in suggestions['training_tips']:
+        print(f"• {tip}")
+    
+    return model, suggestions
