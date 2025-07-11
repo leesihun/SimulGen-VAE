@@ -82,7 +82,7 @@ class Decoder(nn.Module):
             self.condition_z.append(nn.Sequential(
                 ResidualBlock(num_filter_dec[i+1], small),
                 nn.Conv1d(num_filter_dec[i+1], 2*num_filter_dec[i+1], kernel_size=3, padding=1),
-                nn.BatchNorm1d(2*num_filter_dec[i+1]),
+                # nn.BatchNorm1d(2*num_filter_dec[i+1]),
             ))
 
         self.condition_xz = nn.ModuleList([])
@@ -90,7 +90,7 @@ class Decoder(nn.Module):
             self.condition_xz.append(nn.Sequential(
                 ResidualBlock(2*num_filter_dec[i+1], small),
                 nn.Conv1d(2*num_filter_dec[i+1], 2*num_filter_dec[i+1], kernel_size=3, padding=1),
-                nn.BatchNorm1d(2*num_filter_dec[i+1]),
+                # nn.BatchNorm1d(2*num_filter_dec[i+1]),
             ))
 
         self.small = small
@@ -141,13 +141,13 @@ class Decoder(nn.Module):
 
 def reparameterize(mu, std):
     # Clamp mu and std to prevent extreme values
-    mu = torch.clamp(mu, min=-10, max=10)
-    std = torch.clamp(std, min=1e-8, max=10)
+    # mu = torch.clamp(mu, min=-10, max=10)
+    # std = torch.clamp(std, min=1e-8, max=10)
     
     eps = torch.randn_like(std)
     z = eps.mul(std).add_(mu)
     
     # Additional safety check
-    z = torch.clamp(z, min=-10, max=10)
+    # z = torch.clamp(z, min=-10, max=10)
     
     return z
