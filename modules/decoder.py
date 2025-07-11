@@ -81,6 +81,7 @@ class Decoder(nn.Module):
         for i in range(len(num_filter_dec)-1):
             self.condition_z.append(nn.Sequential(
                 ResidualBlock(num_filter_dec[i+1], small),
+                nn.GELU(),
                 nn.Conv1d(num_filter_dec[i+1], 2*num_filter_dec[i+1], kernel_size=3, padding=1),
                 # nn.BatchNorm1d(2*num_filter_dec[i+1]),
             ))
@@ -89,6 +90,7 @@ class Decoder(nn.Module):
         for i in range(len(num_filter_dec)-1):
             self.condition_xz.append(nn.Sequential(
                 ResidualBlock(2*num_filter_dec[i+1], small),
+                nn.GELU(),
                 nn.Conv1d(2*num_filter_dec[i+1], 2*num_filter_dec[i+1], kernel_size=3, padding=1),
                 # nn.BatchNorm1d(2*num_filter_dec[i+1]),
             ))

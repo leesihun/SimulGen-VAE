@@ -66,7 +66,7 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
     model.apply(initialize_weights_He)
     model.apply(add_sn)
 
-    init_beta = 1e-4
+    init_beta = 1e-5
     beta_target = 1.0
     epoch = epochs
     start_warmup =int(epoch*0.3)
@@ -93,7 +93,7 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
 
     for epoch in range(epochs):
         start_time = time.time()
-        model.train()
+        model.train(True)
 
         for i, image in enumerate(train_dataloader):
             if load_all==False:
@@ -137,7 +137,7 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
             loss.backward()
             
             # Add gradient clipping to prevent exploding gradients
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             
             optimizer.step()
 
