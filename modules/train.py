@@ -122,7 +122,8 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
 
         for i, image in enumerate(train_dataloader):
             if load_all ==False:
-                image = image.to(device)
+                # Use non_blocking=True for async GPU transfer when using pinned memory
+                image = image.to(device, non_blocking=True)
 
             optimizer.zero_grad(set_to_none=True)  # More memory efficient than zero_grad()
 
@@ -176,7 +177,8 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
         for i, image in enumerate(val_dataloader):
             with torch.no_grad():
                 if load_all ==False:
-                    image = image.to(device)
+                    # Use non_blocking=True for async GPU transfer when using pinned memory
+                    image = image.to(device, non_blocking=True)
 
                 # Use autocast for validation forward pass as well
                 with autocast():

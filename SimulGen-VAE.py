@@ -46,7 +46,7 @@ def main():
     from modules.plotter import temporal_plotter
     from modules.VAE_network import VAE
     from modules.train import train, print_gpu_mem_checkpoint
-    from modules.utils import MyBaseDataset, get_latest_file, PINNDataset
+    from modules.utils import MyBaseDataset, get_latest_file, PINNDataset, get_optimal_workers
 
     from torchinfo import summary
     from torch.utils.data import DataLoader, Dataset, random_split
@@ -209,12 +209,65 @@ def main():
     dataset = MyBaseDataset(new_x_train, load_all)
     train_dataset, validation_dataset = random_split(dataset, [int(0.8*num_param), num_param - int(0.8*num_param)])
     
+    # Optimize DataLoaders with intelligent worker detection
+    dataset_size = len(dataset)
+    optimal_workers = get_optimal_workers(dataset_size, load_all, batch_size)
+    
     if load_all:
-        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=0, pin_memory=False)
-        val_dataloader = DataLoader(validation_dataset, batch_size=batch_size, shuffle=True, num_workers=0, pin_memory=False)
+        # Data already on GPU, use minimal workers
+        dataloader = DataLoader(
+            train_dataset, 
+            batch_size=batch_size, 
+            shuffle=True, 
+            num_workers=0, 
+            pin_memory=False
+        )
+        val_dataloader = DataLoader(
+            validation_dataset, 
+            batch_size=batch_size, 
+            shuffle=True, 
+            num_workers=0, 
+            pin_memory=False
+        )
+        print(f"   ✓ VAE DataLoader: Data preloaded on GPU ({dataset_size} samples)")
+    elif optimal_workers == 0:
+        # Single-threaded for small datasets
+        dataloader = DataLoader(
+            train_dataset, 
+            batch_size=batch_size, 
+            shuffle=True, 
+            num_workers=0, 
+            pin_memory=True
+        )
+        val_dataloader = DataLoader(
+            validation_dataset, 
+            batch_size=batch_size, 
+            shuffle=True, 
+            num_workers=0, 
+            pin_memory=True
+        )
+        print(f"   ✓ VAE DataLoader: Single-threaded ({dataset_size} samples)")
     else:
-        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=0, pin_memory=True)
-        val_dataloader = DataLoader(validation_dataset, batch_size=batch_size, shuffle=True, num_workers=0, pin_memory=True)
+        # Multi-threaded for larger datasets - this reduces CPU to GPU bottleneck!
+        dataloader = DataLoader(
+            train_dataset, 
+            batch_size=batch_size, 
+            shuffle=True, 
+            num_workers=optimal_workers,
+            pin_memory=True,
+            persistent_workers=True,  # Keep workers alive between epochs
+            prefetch_factor=2         # Prefetch 2 batches per worker
+        )
+        val_dataloader = DataLoader(
+            validation_dataset, 
+            batch_size=batch_size, 
+            shuffle=True, 
+            num_workers=optimal_workers,
+            pin_memory=True,
+            persistent_workers=True,
+            prefetch_factor=2
+        )
+        print(f"   ✓ VAE DataLoader: {optimal_workers} workers ({dataset_size} samples)")
     
     del train_dataset, validation_dataset
 
