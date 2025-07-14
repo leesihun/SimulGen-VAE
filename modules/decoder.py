@@ -126,7 +126,7 @@ class Decoder(nn.Module):
                 log_var = log_var + delta_log_var
 
                 # Clamp log_var for numerical stability before computing std
-                log_var = torch.clamp(log_var, min=-20, max=20)
+                log_var = torch.clamp(log_var, min=-30, max=30)
                 std = torch.exp(0.5*log_var)
                 
                 if mode=="fix" and i<freeze_level:

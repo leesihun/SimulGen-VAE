@@ -24,7 +24,7 @@ class VAE(nn.Module):
         mu, log_var, xs = self.encoder(x)
         
         # Clamp log_var to prevent numerical instability before computing std
-        log_var = torch.clamp(log_var, min=-20, max=20)
+        log_var = torch.clamp(log_var, min=-30, max=30)
         std = torch.exp(0.5*log_var)
         z = reparameterize(mu, std)
         

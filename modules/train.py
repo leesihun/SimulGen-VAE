@@ -143,7 +143,9 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
             
             # Gradient clipping to prevent explosion
             scaler.unscale_(optimizer)
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            # Start with 5.0, reduce to 1.0 only if you still get NaN
+            # For VAEs, 2.0-5.0 is often a good balance
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
             
             # Mixed precision optimizer step
             scaler.step(optimizer)

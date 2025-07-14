@@ -7,15 +7,18 @@ import torch.nn.functional as F
 
 def kl(mu, log_var):
     # Clamp log_var to prevent numerical instability
-    log_var = torch.clamp(log_var, min=-20, max=20)
+    # Start with wider range [-30, 30], narrow to [-20, 20] only if needed
+    # This covers std from 6e-14 to 2.6e13 - should be sufficient for most cases
+    log_var = torch.clamp(log_var, min=-30, max=30)
     var = torch.exp(log_var)
     loss = 0.5*torch.sum(mu**2+var-log_var-1, dim=[1])
     return torch.mean(loss, dim=0)
 
 def kl_2(delta_mu, delta_log_var, mu, log_var):
     # Clamp log_var values to prevent numerical instability
-    log_var = torch.clamp(log_var, min=-20, max=20)
-    delta_log_var = torch.clamp(delta_log_var, min=-20, max=20)
+    # Start with wider range, tighten if you get NaN/Inf
+    log_var = torch.clamp(log_var, min=-30, max=30)
+    delta_log_var = torch.clamp(delta_log_var, min=-30, max=30)
     
     var = torch.exp(log_var)
     delta_var = torch.exp(delta_log_var)
