@@ -131,23 +131,8 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
         torch.cuda.empty_cache()
 
         for i, image in enumerate(train_dataloader):
-            # All data now comes from CPU (even with load_all=True) to avoid CUDA worker issues
-            # Use async transfer with dedicated stream for maximum overlap
-            if transfer_stream is not None:
-                with torch.cuda.stream(transfer_stream):
-                    if hasattr(train_dataloader.dataset.dataset, 'load_all') and train_dataloader.dataset.dataset.load_all:
-                        # For load_all=True: data is FP16 on CPU, convert to GPU
-                        image = image.to(device, dtype=torch.float16, non_blocking=True)
-                    else:
-                        # For load_all=False: data is FP32 on CPU, convert to GPU
-                        image = image.to(device, non_blocking=True)
-                # Synchronize to ensure data is ready before forward pass
-                torch.cuda.current_stream().wait_stream(transfer_stream)
-            else:
-                if hasattr(train_dataloader.dataset.dataset, 'load_all') and train_dataloader.dataset.dataset.load_all:
-                    image = image.to(device, dtype=torch.float16, non_blocking=True)
-                else:
-                    image = image.to(device, non_blocking=True)
+            if load_all ==False:
+                image = image.to(device)
 
             optimizer.zero_grad(set_to_none=True)  # More memory efficient than zero_grad()
 
@@ -194,13 +179,8 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
         
         for i, image in enumerate(val_dataloader):
             with torch.no_grad():
-                # All data now comes from CPU to avoid CUDA worker issues
-                if hasattr(val_dataloader.dataset.dataset, 'load_all') and val_dataloader.dataset.dataset.load_all:
-                    # For load_all=True: data is FP16 on CPU, convert to GPU
-                    image = image.to(device, dtype=torch.float16, non_blocking=True)
-                else:
-                    # For load_all=False: data is FP32 on CPU, convert to GPU
-                    image = image.to(device, non_blocking=True)
+                if load_all ==False:
+                    image = image.to(device)
 
                 # Use autocast for validation forward pass as well
                 with autocast():
