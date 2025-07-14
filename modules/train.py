@@ -26,7 +26,6 @@ class WarmupKLLoss:
 
     def get_loss(self, step, losses):
         # Initialize loss as tensor with same device/dtype as first loss
-        print(losses)
         for i, l in enumerate(losses):
             l = losses[i]
             loss += l
