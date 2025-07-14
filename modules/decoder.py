@@ -127,13 +127,13 @@ class Decoder(nn.Module):
 
                 if mode=="fix" and i<freeze_level:
                     if len(self.zs) < freeze_level+1:
-                        z = reparameterize(mu, 1e-10*torch.exp(0.5*log_var))
+                        z = reparameterize(mu, torch.exp(0.5*log_var))
                         self.zs.append(z)
                     else:
                         z = self.zs[i+1]
 
                 elif mode== "fix":
-                    z= reparameterize(mu, 1e-10*torch.exp(0.5*log_var))
+                    z= reparameterize(mu, torch.exp(0.5*log_var))
                 else:
                     z=reparameterize(mu, torch.exp(0.5*log_var))
 
@@ -142,21 +142,6 @@ class Decoder(nn.Module):
         return x_hat, kl_losses
 
 def reparameterize(mu, std):
-    # Check for NaN/Inf in inputs first
-    if torch.isnan(mu).any() or torch.isnan(std).any() or torch.isinf(mu).any() or torch.isinf(std).any():
-        print("Warning: NaN/Inf detected in reparameterize inputs")
-        mu = torch.nan_to_num(mu, nan=0.0, posinf=5.0, neginf=-5.0)
-        std = torch.nan_to_num(std, nan=1e-4, posinf=1.0, neginf=1e-8)
-    
-    # Only clamp if absolutely necessary - prevent extreme std values
-    std = torch.clamp(std, min=1e-8, max=10)
-    
     eps = torch.randn_like(std)
-    z = eps.mul(std).add_(mu)
-    
-    # Final NaN check only
-    if torch.isnan(z).any() or torch.isinf(z).any():
-        print("Warning: NaN/Inf detected in reparameterize output, fixing")
-        z = torch.nan_to_num(z, nan=0.0, posinf=5.0, neginf=-5.0)
-    
+    z = mu + eps*std
     return z

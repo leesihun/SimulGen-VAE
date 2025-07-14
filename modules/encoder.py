@@ -71,79 +71,24 @@ class Encoder(nn.Module):
         self.small = small
 
     def forward(self, x):
-        # Check input data quality
-        if torch.isnan(x).any() or torch.isinf(x).any():
-            print(f"Warning: NaN/Inf detected in encoder input data")
-            print(f"Input shape: {x.shape}")
-            print(f"Input stats: min={x.min().item():.4f}, max={x.max().item():.4f}")
-            x = torch.nan_to_num(x, nan=0.0, posinf=1.0, neginf=-1.0)
-        
         xs = []
-
         B, _, _ = x.shape
         i=0
 
         for encoder_block, residual_block in zip(self.encoder_blocks, self.encoder_residual_blocks):
-
             x=encoder_block(x)
-            
-            # Check for NaN after encoder block
-            if torch.isnan(x).any() or torch.isinf(x).any():
-                print(f"Warning: NaN/Inf detected after encoder block {i}")
-                x = torch.nan_to_num(x, nan=0.0, posinf=1.0, neginf=-1.0)
-            
             x=residual_block(x)
-            
-            # Check for NaN after residual block
-            if torch.isnan(x).any() or torch.isinf(x).any():
-                print(f"Warning: NaN/Inf detected after residual block {i}")
-                x = torch.nan_to_num(x, nan=0.0, posinf=1.0, neginf=-1.0)
-            
             last_x = x
 
             xs_reshaped = last_x.view(B, -1)
-            
-            # Check for NaN/Inf before hierarchical linear layer
-            if torch.isnan(xs_reshaped).any() or torch.isinf(xs_reshaped).any():
-                print(f"Warning: NaN/Inf in hierarchical input at block {i}")
-                print(f"Stats: min={xs_reshaped.min().item():.4f}, max={xs_reshaped.max().item():.4f}")
-                xs_reshaped = torch.nan_to_num(xs_reshaped, nan=0.0, posinf=1.0, neginf=-1.0)
-            
             xs_reshaped = self.xs_linear[i](xs_reshaped)
-            
-            # Check hierarchical linear output
-            if torch.isnan(xs_reshaped).any() or torch.isinf(xs_reshaped).any():
-                print(f"Warning: NaN/Inf in hierarchical linear output at block {i}")
-                xs_reshaped = torch.nan_to_num(xs_reshaped, nan=0.0, posinf=0.1, neginf=-0.1)
-            
             xs.append(xs_reshaped)
             i=i+1
 
         last_x = last_x.view(B, -1)
-        
-        # Check for NaN in encoder input to final linear layer
-        if torch.isnan(last_x).any() or torch.isinf(last_x).any():
-            print(f"Warning: NaN/Inf detected in encoder before final linear layer")
-            print(f"Input stats: min={last_x.min().item():.4f}, max={last_x.max().item():.4f}")
-            last_x = torch.nan_to_num(last_x, nan=0.0, posinf=1.0, neginf=-1.0)
-        
         last_x = self.last_x_linear(last_x)
-        
-        # Check and fix NaN in linear layer output
-        if torch.isnan(last_x).any() or torch.isinf(last_x).any():
-            print(f"Warning: NaN/Inf detected in encoder final linear output")
-            last_x = torch.nan_to_num(last_x, nan=0.0, posinf=0.1, neginf=-0.1)
         
         mu = last_x[:, :self.z_dim]
         log_var = last_x[:, self.z_dim:]
-        
-        # Only clamp log_var to prevent extreme variance, allow mu more freedom
-        log_var = torch.clamp(log_var, min=-10, max=5)  # Prevent extreme variance
-        
-        # Final NaN check
-        if torch.isnan(mu).any() or torch.isnan(log_var).any():
-            print(f"Warning: NaN in encoder outputs after processing")
-            mu = torch.nan_to_num(mu, nan=0.0)
-            log_var = torch.nan_to_num(log_var, nan=-2.0)  # log(0.135) ≈ -2
 
         return mu, log_var, xs[:-1][::-1]

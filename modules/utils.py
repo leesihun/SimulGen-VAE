@@ -66,37 +66,12 @@ class PINNDataset(Dataset):
     def __len__(self):
         return self.x_data.shape[0]
 
-def check_model_for_nan(model, description="Model"):
-    """Check if model parameters contain NaN values"""
-    nan_found = False
-    for name, param in model.named_parameters():
-        if torch.isnan(param).any():
-            print(f"NaN found in {description} parameter: {name}")
-            nan_found = True
-        if param.grad is not None and torch.isnan(param.grad).any():
-            print(f"NaN found in {description} gradient: {name}")
-            nan_found = True
-    return nan_found
-
-def check_tensor_stats(tensor, name="Tensor"):
-    """Print statistics about a tensor to help debug NaN issues"""
-    if tensor is None:
-        print(f"{name}: None")
-        return
+def get_latest_file(path, pattern):
+    """Get the most recently modified file matching pattern in path"""
+    import glob
+    import os
     
-    print(f"{name} stats:")
-    print(f"  Shape: {tensor.shape}")
-    print(f"  Min: {tensor.min().item():.6f}")
-    print(f"  Max: {tensor.max().item():.6f}")
-    print(f"  Mean: {tensor.mean().item():.6f}")
-    print(f"  Std: {tensor.std().item():.6f}")
-    print(f"  Has NaN: {torch.isnan(tensor).any().item()}")
-    print(f"  Has Inf: {torch.isinf(tensor).any().item()}")
-
-def safe_log(x, eps=1e-8):
-    """Safe logarithm that avoids log(0)"""
-    return torch.log(torch.clamp(x, min=eps))
-
-def safe_exp(x, max_val=10):
-    """Safe exponential that avoids overflow"""
-    return torch.exp(torch.clamp(x, max=max_val))
+    files = glob.glob(os.path.join(path, pattern))
+    if not files:
+        return None
+    return max(files, key=os.path.getctime)
