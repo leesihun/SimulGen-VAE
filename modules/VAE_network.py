@@ -9,18 +9,20 @@ import matplotlib.pyplot as plt
 from torchinfo import summary
 
 class VAE(nn.Module):
-    def __init__(self, latent_dim, hierarchical_dim, num_filter_enc, num_filter_dec, num_node, num_time, lossfun='MSE', batch_size=1, small=False):
+    def __init__(self, latent_dim, hierarchical_dim, num_filter_enc, num_filter_dec, num_node, num_time, lossfun='MSE', batch_size=1, small=False, use_checkpointing=False):
         super().__init__()
 
         self.latent_dim = latent_dim
         self.encoder = Encoder(latent_dim, hierarchical_dim, num_filter_enc, num_node, num_time, small)
         self.decoder = Decoder(latent_dim, hierarchical_dim, num_filter_dec, num_node, num_time, batch_size, small)
         self.lossfun = lossfun
+        # Checkpointing disabled for speed (user preference)
+        self.use_checkpointing = False
 
     def forward(self, x):
-        mu, log_var, xs=self.encoder(x)
+        # Always use regular forward pass - no speed trade-offs
+        mu, log_var, xs = self.encoder(x)
         z = reparameterize(mu, torch.exp(0.5*log_var))
-
         decoder_output, kl_losses = self.decoder(z, xs)
 
         if self.lossfun == 'MSE':
@@ -36,5 +38,6 @@ class VAE(nn.Module):
 
         kl_loss = kl(mu, log_var)
 
+        # Clean up intermediate variables to free memory faster
         del mu, log_var, xs, z
         return decoder_output, recon_loss, [kl_loss]+kl_losses, recon_loss_MSE

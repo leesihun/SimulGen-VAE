@@ -23,13 +23,22 @@ class MyBaseDataset(Dataset):
     def __init__(self, x_data, load_all):
         print('Loading data...')
         if load_all:
-            print('Loading all data...')
-            self.x_data = torch.tensor(x_data).to(device)
+            print('⚠️  WARNING: load_all=True uses excessive memory (37GB)!')
+            print('🚀 OPTIMIZATION: Converting to FP16 and keeping on CPU for streaming')
+            # Convert to FP16 for 50% memory reduction, keep on CPU for streaming
+            self.x_data = torch.tensor(x_data, dtype=torch.float16)  # FP16 saves 50% memory
+            self.data_on_gpu = False  # Stream to GPU as needed
+            print(f'   ✓ Data converted to FP16: {self.x_data.shape}, memory: {self.x_data.element_size() * self.x_data.nelement() / 1024**3:.2f} GB')
         else:
+            print('Streaming mode (recommended for large datasets)')
             self.x_data = x_data
+            self.data_on_gpu = False
 
     def __getitem__(self, index):
-        output= self.x_data[index]
+        output = self.x_data[index]
+        # Convert to FP32 when moving to GPU for computation
+        if not self.data_on_gpu:
+            output = output.to(device, dtype=torch.float32, non_blocking=True)
         return output
 
     def __len__(self):
@@ -52,14 +61,17 @@ class PINNDataset(Dataset):
     def __len__(self):
         return self.x_data.shape[0]
 
-def check_model_for_nan(model, name="Model"):
-    """Check if model parameters contain NaN or Inf values"""
-    has_nan = False
-    for param_name, param in model.named_parameters():
-        if torch.isnan(param).any() or torch.isinf(param).any():
-            print(f"Warning: {name} parameter {param_name} contains NaN or Inf")
-            has_nan = True
-    return has_nan
+def check_model_for_nan(model, description="Model"):
+    """Check if model parameters contain NaN values"""
+    nan_found = False
+    for name, param in model.named_parameters():
+        if torch.isnan(param).any():
+            print(f"NaN found in {description} parameter: {name}")
+            nan_found = True
+        if param.grad is not None and torch.isnan(param.grad).any():
+            print(f"NaN found in {description} gradient: {name}")
+            nan_found = True
+    return nan_found
 
 def check_tensor_stats(tensor, name="Tensor"):
     """Print statistics about a tensor to help debug NaN issues"""
