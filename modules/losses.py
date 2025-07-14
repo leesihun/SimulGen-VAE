@@ -6,13 +6,23 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 def kl(mu, log_var):
+    # Clamp log_var to prevent numerical instability
+    log_var = torch.clamp(log_var, min=-20, max=20)
     var = torch.exp(log_var)
     loss = 0.5*torch.sum(mu**2+var-log_var-1, dim=[1])
     return torch.mean(loss, dim=0)
 
 def kl_2(delta_mu, delta_log_var, mu, log_var):
+    # Clamp log_var values to prevent numerical instability
+    log_var = torch.clamp(log_var, min=-20, max=20)
+    delta_log_var = torch.clamp(delta_log_var, min=-20, max=20)
+    
     var = torch.exp(log_var)
     delta_var = torch.exp(delta_log_var)
+    
+    # Add small epsilon to prevent division by zero
+    eps = 1e-8
+    var = var + eps
     
     loss = 0.5*torch.sum(torch.div(delta_var, var)+torch.div((mu-delta_mu)**2, var)-delta_log_var+log_var-1, dim=[1,2])
     return torch.mean(loss, dim=0)

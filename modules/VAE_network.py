@@ -22,7 +22,12 @@ class VAE(nn.Module):
     def forward(self, x):
         # Always use regular forward pass - no speed trade-offs
         mu, log_var, xs = self.encoder(x)
-        z = reparameterize(mu, torch.exp(0.5*log_var))
+        
+        # Clamp log_var to prevent numerical instability before computing std
+        log_var = torch.clamp(log_var, min=-20, max=20)
+        std = torch.exp(0.5*log_var)
+        z = reparameterize(mu, std)
+        
         decoder_output, kl_losses = self.decoder(z, xs)
 
         if self.lossfun == 'MSE':

@@ -86,6 +86,9 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
     optimizer = torch.optim.AdamW(model.parameters(), lr=LR)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epoch, eta_min=0)
     
+    # Initialize GradScaler for mixed precision training
+    scaler = GradScaler()
+    
     loss_print = np.zeros(epochs)
     loss_val_print = np.zeros(epochs)
     recon_print = np.zeros(epochs)
@@ -137,6 +140,10 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
 
             # Mixed precision backward pass - scales gradients to prevent underflow
             scaler.scale(loss).backward()
+            
+            # Gradient clipping to prevent explosion
+            scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             
             # Mixed precision optimizer step
             scaler.step(optimizer)

@@ -125,23 +125,29 @@ class Decoder(nn.Module):
                 mu = mu + delta_mu
                 log_var = log_var + delta_log_var
 
+                # Clamp log_var for numerical stability before computing std
+                log_var = torch.clamp(log_var, min=-20, max=20)
+                std = torch.exp(0.5*log_var)
+                
                 if mode=="fix" and i<freeze_level:
                     if len(self.zs) < freeze_level+1:
-                        z = reparameterize(mu, torch.exp(0.5*log_var))
+                        z = reparameterize(mu, std)
                         self.zs.append(z)
                     else:
                         z = self.zs[i+1]
 
                 elif mode== "fix":
-                    z= reparameterize(mu, torch.exp(0.5*log_var))
+                    z= reparameterize(mu, std)
                 else:
-                    z=reparameterize(mu, torch.exp(0.5*log_var))
+                    z=reparameterize(mu, std)
 
         x_hat = self.recon(decoder_out)
 
         return x_hat, kl_losses
 
 def reparameterize(mu, std):
+    # Clamp std to prevent very small values that could cause numerical issues
+    std = torch.clamp(std, min=1e-8, max=10.0)
     eps = torch.randn_like(std)
     z = mu + eps*std
     return z
