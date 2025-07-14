@@ -209,35 +209,95 @@ def main():
     dataset = MyBaseDataset(new_x_train, load_all)
     train_dataset, validation_dataset = random_split(dataset, [int(0.8*num_param), num_param - int(0.8*num_param)])
 
+    # Intelligent DataLoader optimization based on dataset characteristics
+    def get_optimal_workers(dataset_size, load_all_mode, batch_size):
+        """
+        Determine optimal number of workers based on dataset characteristics
+        Multi-workers are beneficial when:
+        - Large datasets with significant I/O overhead
+        - Complex preprocessing operations
+        - Streaming from disk (load_all=False)
+        
+        Single worker (0) is often better when:
+        - Data already in memory (load_all=True)
+        - Small datasets
+        - Minimal preprocessing
+        - Fast storage/cached data
+        """
+        cpu_count = torch.multiprocessing.cpu_count()
+        
+        if load_all_mode:
+            # Data in memory - multi-workers often add overhead
+            if dataset_size < 1000:
+                return 0  # Small dataset - single worker
+            elif dataset_size < 10000:
+                return min(2, cpu_count)  # Medium dataset - minimal workers
+            else:
+                return min(4, cpu_count)  # Large dataset - moderate workers
+        else:
+            # Streaming from disk - multi-workers more beneficial
+            if dataset_size < 500:
+                return 0  # Very small - single worker
+            elif dataset_size < 5000:
+                return min(4, cpu_count)  # Medium - moderate workers
+            else:
+                return min(8, cpu_count)  # Large - more workers for I/O overlap
+    
     # Optimize DataLoader settings for multi-threaded CPU-to-GPU transfers
     # All data is now kept on CPU to avoid CUDA worker process issues
-    optimal_workers = min(8, torch.multiprocessing.cpu_count())  # Cap at 8 to avoid overhead
+    dataset_size = len(dataset)
+    optimal_workers = get_optimal_workers(dataset_size, load_all, batch_size)
     
-    dataloader = DataLoader(
-        train_dataset, 
-        batch_size=batch_size, 
-        shuffle=True, 
-        num_workers=optimal_workers,  # Multi-threaded for maximum throughput
-        pin_memory=True,  # Essential for fast CPU-GPU transfers
-        drop_last=True,
-        persistent_workers=True,  # Major speedup - keep workers alive
-        prefetch_factor=4  # Aggressive prefetching for optimal GPU utilization
-    )
-    val_dataloader = DataLoader(
-        validation_dataset, 
-        batch_size=batch_size, 
-        shuffle=True, 
-        num_workers=optimal_workers, 
-        pin_memory=True, 
-        drop_last=True,
-        persistent_workers=True,
-        prefetch_factor=4
-    )
+    # Override for testing - you can manually set this
+    # optimal_workers = 0  # Uncomment to force single-threaded
+    
+    if optimal_workers == 0:
+        # Single-threaded configuration - often fastest for in-memory data
+        dataloader = DataLoader(
+            train_dataset, 
+            batch_size=batch_size, 
+            shuffle=True, 
+            num_workers=0,  # Single-threaded
+            pin_memory=True,  # Still beneficial for CPU→GPU transfers
+            drop_last=True
+        )
+        val_dataloader = DataLoader(
+            validation_dataset, 
+            batch_size=batch_size, 
+            shuffle=True, 
+            num_workers=0, 
+            pin_memory=True, 
+            drop_last=True
+        )
+        print(f"   ✓ DataLoader: Single-threaded (optimal for in-memory data)")
+    else:
+        # Multi-threaded configuration
+        dataloader = DataLoader(
+            train_dataset, 
+            batch_size=batch_size, 
+            shuffle=True, 
+            num_workers=optimal_workers,  # Multi-threaded for maximum throughput
+            pin_memory=True,  # Essential for fast CPU-GPU transfers
+            drop_last=True,
+            persistent_workers=True,  # Major speedup - keep workers alive
+            prefetch_factor=2  # Reduced prefetch to avoid memory pressure
+        )
+        val_dataloader = DataLoader(
+            validation_dataset, 
+            batch_size=batch_size, 
+            shuffle=True, 
+            num_workers=optimal_workers, 
+            pin_memory=True, 
+            drop_last=True,
+            persistent_workers=True,
+            prefetch_factor=2
+        )
+        print(f"   ✓ DataLoader: {optimal_workers} workers (multi-threaded for I/O overlap)")
     
     if load_all:
-        print(f"   ✓ DataLoader: FP16 data with {optimal_workers} workers for max GPU utilization")
+        print(f"   ✓ Data mode: FP16 in-memory ({dataset_size} samples)")
     else:
-        print(f"   ✓ DataLoader: FP32 streaming with {optimal_workers} workers for max GPU utilization")
+        print(f"   ✓ Data mode: FP32 streaming ({dataset_size} samples)")
     
     del train_dataset, validation_dataset
 
@@ -291,16 +351,18 @@ def main():
         reconstruction_loss = np.zeros([num_param])
         hierarchical_latent_vectors = np.zeros([num_param, len(num_filter_enc)-1, latent_dim])
         reconstructed = np.empty([num_param, num_node, num_time])
-        # Optimize reconstruction DataLoader for inference speed
+        # Optimize reconstruction DataLoader with intelligent worker detection  
+        recon_optimal_workers = 0 if len(dataset) < 1000 else min(2, torch.multiprocessing.cpu_count())
+        
         dataloader2 = DataLoader(
             dataset, 
             batch_size=1, 
             shuffle=False, 
-            num_workers=2,  # Minimal workers for single-sample inference
-            pin_memory=True if not load_all else False, 
+            num_workers=recon_optimal_workers,
+            pin_memory=True if not load_all and recon_optimal_workers > 0 else False, 
             drop_last=False,
-            persistent_workers=True,
-            prefetch_factor=2
+            persistent_workers=True if recon_optimal_workers > 0 else False,
+            prefetch_factor=2 if recon_optimal_workers > 0 else None
         )
 
         for j, image in enumerate(dataloader2):
@@ -441,26 +503,48 @@ def main():
         pinn_dataset = PINNDataset(np.float32(physical_param_input), np.float32(out_latent_vectors), np.float32(out_hierarchical_latent_vectors))
 
         pinn_train_dataset, pinn_validation_dataset = random_split(pinn_dataset, [int(0.8*num_param), num_param - int(0.8*num_param)])
-        # Optimize PINN DataLoaders for maximum throughput
-        optimal_workers = min(6, torch.multiprocessing.cpu_count())  # Slightly fewer workers for PINN
-        pinn_dataloader = torch.utils.data.DataLoader(
-            pinn_train_dataset, 
-            batch_size=pinn_batch_size, 
-            shuffle=True, 
-            num_workers=optimal_workers,
-            pin_memory=True,  # PINN data is on GPU but transfers help with preprocessing
-            persistent_workers=True,
-            prefetch_factor=3
-        )
-        pinn_validation_dataloader = torch.utils.data.DataLoader(
-            pinn_validation_dataset, 
-            batch_size=pinn_batch_size, 
-            shuffle=False, 
-            num_workers=optimal_workers,
-            pin_memory=True,
-            persistent_workers=True,
-            prefetch_factor=3
-        )
+        # Optimize PINN DataLoaders with intelligent worker detection
+        pinn_dataset_size = len(pinn_dataset)
+        pinn_optimal_workers = get_optimal_workers(pinn_dataset_size, False, pinn_batch_size)  # PINN data is not load_all
+        
+        if pinn_optimal_workers == 0:
+            # Single-threaded PINN DataLoaders
+            pinn_dataloader = torch.utils.data.DataLoader(
+                pinn_train_dataset, 
+                batch_size=pinn_batch_size, 
+                shuffle=True, 
+                num_workers=0,
+                pin_memory=True
+            )
+            pinn_validation_dataloader = torch.utils.data.DataLoader(
+                pinn_validation_dataset, 
+                batch_size=pinn_batch_size, 
+                shuffle=False, 
+                num_workers=0,
+                pin_memory=True
+            )
+            print(f"   ✓ PINN DataLoader: Single-threaded ({pinn_dataset_size} samples)")
+        else:
+            # Multi-threaded PINN DataLoaders
+            pinn_dataloader = torch.utils.data.DataLoader(
+                pinn_train_dataset, 
+                batch_size=pinn_batch_size, 
+                shuffle=True, 
+                num_workers=pinn_optimal_workers,
+                pin_memory=True,
+                persistent_workers=True,
+                prefetch_factor=2
+            )
+            pinn_validation_dataloader = torch.utils.data.DataLoader(
+                pinn_validation_dataset, 
+                batch_size=pinn_batch_size, 
+                shuffle=False, 
+                num_workers=pinn_optimal_workers,
+                pin_memory=True,
+                persistent_workers=True,
+                prefetch_factor=2
+            )
+            print(f"   ✓ PINN DataLoader: {pinn_optimal_workers} workers ({pinn_dataset_size} samples)")
 
         size2 = len(num_filter_enc)-1
 
@@ -488,15 +572,17 @@ def main():
         VAE_trained = torch.load('model_save/SimulGen-VAE', map_location= device, weights_only=False)
         VAE = VAE_trained.eval()
 
-        # Optimize PINN evaluation DataLoader for inference speed
+        # Optimize PINN evaluation DataLoader with intelligent worker detection
+        pinn_eval_optimal_workers = 0 if len(pinn_dataset) < 1000 else min(2, torch.multiprocessing.cpu_count())
+        
         pinn_dataloader_eval = torch.utils.data.DataLoader(
             pinn_dataset, 
             batch_size=1, 
             shuffle=False, 
-            num_workers=2,  # Minimal workers for PINN evaluation
-            pin_memory=True,
-            persistent_workers=True,
-            prefetch_factor=2
+            num_workers=pinn_eval_optimal_workers,
+            pin_memory=True if pinn_eval_optimal_workers > 0 else False,
+            persistent_workers=True if pinn_eval_optimal_workers > 0 else False,
+            prefetch_factor=2 if pinn_eval_optimal_workers > 0 else None
         )
 
         for i, (x, y1, y2) in enumerate(pinn_dataloader_eval):
