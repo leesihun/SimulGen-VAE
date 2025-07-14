@@ -249,7 +249,7 @@ def main():
     optimal_workers = get_optimal_workers(dataset_size, load_all, batch_size)
     
     # Override for testing - you can manually set this
-    # optimal_workers = 0  # Uncomment to force single-threaded
+    optimal_workers = 0  # Uncomment to force single-threaded
     
     if optimal_workers == 0:
         # Single-threaded configuration - often fastest for in-memory data
