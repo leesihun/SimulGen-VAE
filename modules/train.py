@@ -43,6 +43,21 @@ def print_gpu_mem_checkpoint(msg):
         print(f"[GPU MEM] {msg}: Allocated={allocated:.2f}MB, Max Allocated={max_allocated:.2f}MB")
         torch.cuda.reset_peak_memory_stats()
 
+def stabilize_batchnorm(model):
+    """Stabilize BatchNorm running statistics to prevent NaN during evaluation"""
+    for module in model.modules():
+        if isinstance(module, (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d)):
+            # Clamp running mean and var to prevent extreme values
+            if module.running_mean is not None:
+                module.running_mean.data = torch.clamp(module.running_mean.data, min=-10, max=10)
+                # Replace NaN with zeros
+                module.running_mean.data = torch.nan_to_num(module.running_mean.data, nan=0.0)
+            
+            if module.running_var is not None:
+                module.running_var.data = torch.clamp(module.running_var.data, min=1e-8, max=100)
+                # Replace NaN with small positive values
+                module.running_var.data = torch.nan_to_num(module.running_var.data, nan=1.0)
+
 def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_enc, num_filter_dec, num_node, latent_dim, hierarchical_dim, num_time, alpha, lossfun, small, load_all):
     writer = SummaryWriter(log_dir = './runs', comment = 'VAE')
 
@@ -66,8 +81,8 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
     model.apply(initialize_weights_He)
     model.apply(add_sn)
 
-    init_beta = 1e-5
-    beta_target = 1.0
+    init_beta = 1e-8
+    beta_target = 1e-4
     epoch = epochs
     start_warmup =int(epoch*0.3)
     end_warmup = int(epoch*0.7)
@@ -157,37 +172,90 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
             del recon_loss, kl_losses, recon_loss_MSE, kl_loss
         num = i
 
+        # Check model parameters for NaN before validation
+        from modules.utils import check_model_for_nan
+        if check_model_for_nan(model, f"Model at epoch {epoch}"):
+            print(f"Critical: Model parameters contain NaN at epoch {epoch}. Stopping training.")
+            break
+        
+        # Stabilize BatchNorm statistics before evaluation
+        stabilize_batchnorm(model)
+        
+        # Validation loop with NaN checking
+        model.eval()  # Move outside the loop for efficiency
+        val_batches_processed = 0
+        recon_loss_save_val = 0.0
+        loss_save_val = 0.0
+        
         for i, image in enumerate(val_dataloader):
-            model.eval()
             with torch.no_grad():
                 if load_all==False:
                     image = image.to(device)
 
                 _, recon_loss, kl_losses, recon_loss_MSE = model(image)
 
+                # Check for NaN in validation outputs
+                if torch.isnan(recon_loss) or torch.isinf(recon_loss):
+                    print(f"Warning: NaN/Inf in validation recon_loss at epoch {epoch}, batch {i}")
+                    print(f"Validation input range: {image.min().item():.4f} to {image.max().item():.4f}")
+                    continue
+                    
+                # Check validation KL losses for NaN
+                kl_has_nan = False
+                for idx, kl_loss_item in enumerate(kl_losses):
+                    if torch.isnan(kl_loss_item) or torch.isinf(kl_loss_item):
+                        print(f"Warning: NaN/Inf in validation kl_loss[{idx}] at epoch {epoch}, batch {i}")
+                        kl_has_nan = True
+                        break
+                
+                if kl_has_nan:
+                    continue
+
                 beta, kl_loss = warmup_kl.get_loss(epoch, kl_losses)
+
+                # Additional checks after scaling
+                if torch.isnan(kl_loss) or torch.isinf(kl_loss):
+                    print(f"Warning: NaN/Inf in validation combined kl_loss at epoch {epoch}, batch {i}")
+                    continue
 
                 kl_loss = kl_loss*beta
                 recon_loss = recon_loss*alpha
                 recon_loss_MSE = recon_loss_MSE*alpha
                 loss = recon_loss + kl_loss
 
-                if i==0:
-                    recon_loss_save_val = recon_loss.detach().item()
-                    loss_save_val = loss.detach().item()
-                else:
-                    recon_loss_save_val = recon_loss_save_val + recon_loss.detach().item()
-                    loss_save_val = loss_save_val + loss.detach().item()
+                # Check final validation loss for NaN
+                if torch.isnan(loss) or torch.isinf(loss):
+                    print(f"Warning: NaN or Inf detected in validation loss at epoch {epoch}, batch {i}")
+                    print(f"val_recon_loss: {recon_loss.item()}, val_kl_loss: {kl_loss.item()}")
+                    print(f"beta: {beta}, alpha: {alpha}")
+                    continue
+
+                # Only accumulate if no NaN detected
+                recon_loss_save_val += recon_loss.detach().item()
+                loss_save_val += loss.detach().item()
+                val_batches_processed += 1
                 
                 del image, loss
                 del recon_loss, kl_losses, recon_loss_MSE, kl_loss
+        
+        # Handle case where all validation batches had NaN
+        if val_batches_processed == 0:
+            print(f"Warning: All validation batches had NaN at epoch {epoch}")
+            # Use previous epoch's validation loss or set to a large value
+            if epoch > 0:
+                loss_val_print[epoch] = loss_val_print[epoch-1]
+                recon_loss_val_print[epoch] = recon_loss_val_print[epoch-1]
+            else:
+                loss_val_print[epoch] = float('inf')
+                recon_loss_val_print[epoch] = float('inf')
+        else:
+            loss_val_print[epoch] = loss_save_val / val_batches_processed
+            recon_loss_val_print[epoch] = recon_loss_save_val / val_batches_processed
 
         loss_print[epoch] = loss_save/(num+1)
-        loss_val_print[epoch] = loss_save_val/(i+1)
         recon_print[epoch] = recon_loss_save/(num+1)
         kl_print[epoch] = kl_loss_save/beta/(num+1)
         recon_loss_MSE_print[epoch] = recon_loss_MSE_save/(num+1)
-        recon_loss_val_print[epoch] = recon_loss_save_val/(i+1)
 
         current_lr = optimizer.param_groups[0]['lr']
 

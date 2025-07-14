@@ -142,14 +142,25 @@ class Decoder(nn.Module):
         return x_hat, kl_losses
 
 def reparameterize(mu, std):
-    # Clamp mu and std to prevent extreme values
-    # mu = torch.clamp(mu, min=-10, max=10)
-    # std = torch.clamp(std, min=1e-8, max=10)
+    # Clamp mu and std to prevent extreme values and NaN
+    mu = torch.clamp(mu, min=-10, max=10)
+    std = torch.clamp(std, min=1e-8, max=10)
+    
+    # Check for NaN in inputs
+    if torch.isnan(mu).any() or torch.isnan(std).any():
+        print("Warning: NaN detected in reparameterize inputs")
+        mu = torch.nan_to_num(mu, nan=0.0, posinf=1.0, neginf=-1.0)
+        std = torch.nan_to_num(std, nan=1e-4, posinf=1.0, neginf=1e-8)
     
     eps = torch.randn_like(std)
     z = eps.mul(std).add_(mu)
     
-    # Additional safety check
-    # z = torch.clamp(z, min=-10, max=10)
+    # Additional safety check for output
+    z = torch.clamp(z, min=-10, max=10)
+    
+    # Final NaN check
+    if torch.isnan(z).any():
+        print("Warning: NaN detected in reparameterize output, replacing with zeros")
+        z = torch.nan_to_num(z, nan=0.0, posinf=1.0, neginf=-1.0)
     
     return z
