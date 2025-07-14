@@ -23,30 +23,26 @@ class MyBaseDataset(Dataset):
     def __init__(self, x_data, load_all):
         print('Loading data...')
         if load_all:
-            print('⚠️  WARNING: load_all=True uses excessive memory (37GB)!')
-            print('🚀 OPTIMIZATION: Converting to FP16 and keeping on CPU for streaming')
-            # Convert to FP16 for 50% memory reduction, keep on CPU for streaming
-            self.x_data = torch.tensor(x_data, dtype=torch.float16)  # FP16 saves 50% memory
-            self.data_on_gpu = False  # Stream to GPU as needed
-            print(f'   ✓ Data converted to FP16: {self.x_data.shape}, memory: {self.x_data.element_size() * self.x_data.nelement() / 1024**3:.2f} GB')
+            print('🚀 SPEED OPTIMIZED: Loading all data to GPU in FP16 for max performance')
+            # Load directly to GPU in FP16 - mixed precision will handle the rest
+            self.x_data = torch.tensor(x_data, dtype=torch.float16).to(device)
+            print(f'   ✓ Data loaded to GPU in FP16: {self.x_data.shape}')
+            print(f'   ✓ GPU memory used: {self.x_data.element_size() * self.x_data.nelement() / 1024**3:.2f} GB (50% reduction)')
+            self.data_on_gpu = True
         else:
-            print('Streaming mode (recommended for large datasets)')
+            print('Streaming mode (slower but low memory)')
             self.x_data = x_data
             self.data_on_gpu = False
 
     def __getitem__(self, index):
         output = self.x_data[index]
-        # Convert to FP32 when moving to GPU for computation
         if not self.data_on_gpu:
-            # Handle numpy arrays (when load_all=False)
+            # Only for load_all=False (slow path)
             if isinstance(output, np.ndarray):
-                output = torch.from_numpy(output.copy()).to(device, dtype=torch.float32, non_blocking=True)
+                output = torch.from_numpy(output).to(device, dtype=torch.float32, non_blocking=True)
             else:
-                # Handle torch tensors (when load_all=True, FP16 on CPU)
-                # Ensure tensor is contiguous for efficient transfer
-                if not output.is_contiguous():
-                    output = output.contiguous()
                 output = output.to(device, dtype=torch.float32, non_blocking=True)
+        # For load_all=True, data is already on GPU in FP16 - autocast will handle conversion
         return output
 
     def __len__(self):

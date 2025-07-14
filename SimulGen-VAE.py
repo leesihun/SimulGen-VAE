@@ -208,9 +208,15 @@ def main():
     dataset = MyBaseDataset(new_x_train, load_all)
     train_dataset, validation_dataset = random_split(dataset, [int(0.8*num_param), num_param - int(0.8*num_param)])
 
-    # Disable pin_memory since we handle GPU transfers manually for memory optimization
-    dataloader = DataLoader(train_dataset, batch_size = batch_size, shuffle =True, num_workers = 0, pin_memory = False, drop_last = True)
-    val_dataloader = DataLoader(validation_dataset, batch_size = batch_size, shuffle =True, num_workers = 0, pin_memory = False, drop_last = True)
+    # Optimize DataLoader settings based on load_all choice
+    if load_all:
+        # Data already on GPU - no pin_memory needed
+        dataloader = DataLoader(train_dataset, batch_size = batch_size, shuffle =True, num_workers = 0, pin_memory = False, drop_last = True)
+        val_dataloader = DataLoader(validation_dataset, batch_size = batch_size, shuffle =True, num_workers = 0, pin_memory = False, drop_last = True)
+    else:
+        # Streaming mode - use pin_memory for faster CPU->GPU transfers
+        dataloader = DataLoader(train_dataset, batch_size = batch_size, shuffle =True, num_workers = 0, pin_memory = True, drop_last = True)
+        val_dataloader = DataLoader(validation_dataset, batch_size = batch_size, shuffle =True, num_workers = 0, pin_memory = True, drop_last = True)
     
     del train_dataset, validation_dataset
 

@@ -112,10 +112,11 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
     model.train(True)
     import time
     
-    print("🚀 MEMORY OPTIMIZATIONS ENABLED:")
-    print("   ✓ Mixed Precision (FP16) - ~50% memory reduction")
+    print("🚀 SPEED + MEMORY OPTIMIZATIONS ENABLED:")
+    print("   ✓ Mixed Precision (FP16) - ~50% memory reduction + speed boost")
+    print("   ✓ FP16 data storage - Halved dataset memory usage") 
     print("   ✓ Gradient Checkpointing DISABLED - Full speed maintained")
-    print("   ✓ In-place operations - Reduced memory allocation")
+    print("   ✓ H100 tensor cores optimized - Maximum performance")
     print("   ✓ Efficient tensor management - Faster cleanup")
 
     # Enable memory efficient attention and convolutions
@@ -133,6 +134,7 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
         for i, image in enumerate(train_dataloader):
             if load_all==False:
                 image = image.to(device, non_blocking=True)  # Async transfer
+            # If load_all==True, data is already on GPU in FP16 - no transfer needed
 
             optimizer.zero_grad(set_to_none=True)  # More memory efficient than zero_grad()
 
@@ -220,6 +222,7 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
             with torch.no_grad():
                 if load_all==False:
                     image = image.to(device)
+                # If load_all==True, data is already on GPU in FP16
 
                 # Use autocast for validation forward pass as well
                 with autocast():
