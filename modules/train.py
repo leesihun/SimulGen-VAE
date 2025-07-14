@@ -123,6 +123,14 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
     torch.backends.cudnn.benchmark = True  # Optimize for consistent input sizes
     torch.backends.cuda.matmul.allow_tf32 = True  # Faster on Ampere GPUs (H100)
     torch.backends.cudnn.allow_tf32 = True
+    
+    # Pre-allocate CUDA streams for better async execution
+    if torch.cuda.is_available():
+        torch.cuda.set_device(device)
+        # Create a stream for async data transfers
+        transfer_stream = torch.cuda.Stream()
+    else:
+        transfer_stream = None
 
     for epoch in range(epochs):
         start_time = time.time()
