@@ -10,6 +10,7 @@ from modules.common import initialize_weights_He, add_sn
 from modules.VAE_network import VAE
 from modules.losses import kl
 from torchinfo import summary
+import torch.nn as nn
 from torch.utils.tensorboard import SummaryWriter
 
 class WarmupKLLoss:
