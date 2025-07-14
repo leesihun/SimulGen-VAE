@@ -209,56 +209,35 @@ def main():
     dataset = MyBaseDataset(new_x_train, load_all)
     train_dataset, validation_dataset = random_split(dataset, [int(0.8*num_param), num_param - int(0.8*num_param)])
 
-    # Optimize DataLoader settings based on load_all choice
+    # Optimize DataLoader settings for multi-threaded CPU-to-GPU transfers
+    # All data is now kept on CPU to avoid CUDA worker process issues
+    optimal_workers = min(8, torch.multiprocessing.cpu_count())  # Cap at 8 to avoid overhead
+    
+    dataloader = DataLoader(
+        train_dataset, 
+        batch_size=batch_size, 
+        shuffle=True, 
+        num_workers=optimal_workers,  # Multi-threaded for maximum throughput
+        pin_memory=True,  # Essential for fast CPU-GPU transfers
+        drop_last=True,
+        persistent_workers=True,  # Major speedup - keep workers alive
+        prefetch_factor=4  # Aggressive prefetching for optimal GPU utilization
+    )
+    val_dataloader = DataLoader(
+        validation_dataset, 
+        batch_size=batch_size, 
+        shuffle=True, 
+        num_workers=optimal_workers, 
+        pin_memory=True, 
+        drop_last=True,
+        persistent_workers=True,
+        prefetch_factor=4
+    )
+    
     if load_all:
-        # Data already on GPU in FP16 - still benefit from multi-worker prefetching for shuffling/batching
-        # Use fewer workers since data is already on GPU
-        dataloader = DataLoader(
-            train_dataset, 
-            batch_size=batch_size, 
-            shuffle=True, 
-            num_workers=2,  # Minimal workers for GPU-resident data
-            pin_memory=False,  # No CPU-GPU transfer needed
-            drop_last=True,
-            persistent_workers=True,  # Keep workers alive between epochs
-            prefetch_factor=2  # Small prefetch since data is on GPU
-        )
-        val_dataloader = DataLoader(
-            validation_dataset, 
-            batch_size=batch_size, 
-            shuffle=True, 
-            num_workers=2, 
-            pin_memory=False, 
-            drop_last=True,
-            persistent_workers=True,
-            prefetch_factor=2
-        )
-        print(f"   ✓ DataLoader: GPU-resident data with optimized multi-threading")
+        print(f"   ✓ DataLoader: FP16 data with {optimal_workers} workers for max GPU utilization")
     else:
-        # CPU data - aggressive multi-threading for fast CPU->GPU pipeline
-        # Use more workers to overlap CPU data prep with GPU computation
-        optimal_workers = min(8, torch.multiprocessing.cpu_count())  # Cap at 8 to avoid overhead
-        dataloader = DataLoader(
-            train_dataset, 
-            batch_size=batch_size, 
-            shuffle=True, 
-            num_workers=optimal_workers,  # Multi-threaded for maximum throughput
-            pin_memory=True,  # Essential for fast CPU-GPU transfers
-            drop_last=True,
-            persistent_workers=True,  # Major speedup - keep workers alive
-            prefetch_factor=4  # Aggressive prefetching for CPU data
-        )
-        val_dataloader = DataLoader(
-            validation_dataset, 
-            batch_size=batch_size, 
-            shuffle=True, 
-            num_workers=optimal_workers, 
-            pin_memory=True, 
-            drop_last=True,
-            persistent_workers=True,
-            prefetch_factor=4
-        )
-        print(f"   ✓ DataLoader: CPU data with {optimal_workers} workers, pinned memory, and aggressive prefetching")
+        print(f"   ✓ DataLoader: FP32 streaming with {optimal_workers} workers for max GPU utilization")
     
     del train_dataset, validation_dataset
 

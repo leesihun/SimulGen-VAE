@@ -132,16 +132,23 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
         torch.cuda.empty_cache()
 
         for i, image in enumerate(train_dataloader):
-            if load_all==False:
-                # Use async transfer with dedicated stream for maximum overlap
-                if transfer_stream is not None:
-                    with torch.cuda.stream(transfer_stream):
+            # All data now comes from CPU (even with load_all=True) to avoid CUDA worker issues
+            # Use async transfer with dedicated stream for maximum overlap
+            if transfer_stream is not None:
+                with torch.cuda.stream(transfer_stream):
+                    if hasattr(train_dataloader.dataset.dataset, 'load_all') and train_dataloader.dataset.dataset.load_all:
+                        # For load_all=True: data is FP16 on CPU, convert to GPU
+                        image = image.to(device, dtype=torch.float16, non_blocking=True)
+                    else:
+                        # For load_all=False: data is FP32 on CPU, convert to GPU
                         image = image.to(device, non_blocking=True)
-                    # Synchronize to ensure data is ready before forward pass
-                    torch.cuda.current_stream().wait_stream(transfer_stream)
+                # Synchronize to ensure data is ready before forward pass
+                torch.cuda.current_stream().wait_stream(transfer_stream)
+            else:
+                if hasattr(train_dataloader.dataset.dataset, 'load_all') and train_dataloader.dataset.dataset.load_all:
+                    image = image.to(device, dtype=torch.float16, non_blocking=True)
                 else:
                     image = image.to(device, non_blocking=True)
-            # If load_all==True, data is already on GPU in FP16 - no transfer needed
 
             optimizer.zero_grad(set_to_none=True)  # More memory efficient than zero_grad()
 
@@ -227,10 +234,13 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
         
         for i, image in enumerate(val_dataloader):
             with torch.no_grad():
-                if load_all==False:
-                    # Data comes as pinned CPU tensor - transfer to GPU
-                    image = image.to(device)
-                # If load_all==True, data is already on GPU in FP16
+                # All data now comes from CPU to avoid CUDA worker issues
+                if hasattr(val_dataloader.dataset.dataset, 'load_all') and val_dataloader.dataset.dataset.load_all:
+                    # For load_all=True: data is FP16 on CPU, convert to GPU
+                    image = image.to(device, dtype=torch.float16, non_blocking=True)
+                else:
+                    # For load_all=False: data is FP32 on CPU, convert to GPU
+                    image = image.to(device, non_blocking=True)
 
                 # Use autocast for validation forward pass as well
                 with autocast():
