@@ -37,6 +37,7 @@ def main():
     import argparse
     import matplotlib
     import matplotlib.pyplot as plt
+    import torch.multiprocessing  # For optimal DataLoader workers
 
     from modules.common import add_sn
     from modules.input_variables import input_user_variables, input_dataset
@@ -210,15 +211,54 @@ def main():
 
     # Optimize DataLoader settings based on load_all choice
     if load_all:
-        # Data already on GPU in FP16 - no pin_memory or transfers needed
-        dataloader = DataLoader(train_dataset, batch_size = batch_size, shuffle =True, num_workers = 0, pin_memory = False, drop_last = True)
-        val_dataloader = DataLoader(validation_dataset, batch_size = batch_size, shuffle =True, num_workers = 0, pin_memory = False, drop_last = True)
-        print(f"   ✓ DataLoader: GPU-resident data, no transfers needed")
+        # Data already on GPU in FP16 - still benefit from multi-worker prefetching for shuffling/batching
+        # Use fewer workers since data is already on GPU
+        dataloader = DataLoader(
+            train_dataset, 
+            batch_size=batch_size, 
+            shuffle=True, 
+            num_workers=2,  # Minimal workers for GPU-resident data
+            pin_memory=False,  # No CPU-GPU transfer needed
+            drop_last=True,
+            persistent_workers=True,  # Keep workers alive between epochs
+            prefetch_factor=2  # Small prefetch since data is on GPU
+        )
+        val_dataloader = DataLoader(
+            validation_dataset, 
+            batch_size=batch_size, 
+            shuffle=True, 
+            num_workers=2, 
+            pin_memory=False, 
+            drop_last=True,
+            persistent_workers=True,
+            prefetch_factor=2
+        )
+        print(f"   ✓ DataLoader: GPU-resident data with optimized multi-threading")
     else:
-        # CPU data - use pin_memory for efficient CPU->GPU transfers
-        dataloader = DataLoader(train_dataset, batch_size = batch_size, shuffle =True, num_workers = 0, pin_memory = True, drop_last = True)
-        val_dataloader = DataLoader(validation_dataset, batch_size = batch_size, shuffle =True, num_workers = 0, pin_memory = True, drop_last = True)
-        print(f"   ✓ DataLoader: CPU data with pinned memory for fast transfers")
+        # CPU data - aggressive multi-threading for fast CPU->GPU pipeline
+        # Use more workers to overlap CPU data prep with GPU computation
+        optimal_workers = min(8, torch.multiprocessing.cpu_count())  # Cap at 8 to avoid overhead
+        dataloader = DataLoader(
+            train_dataset, 
+            batch_size=batch_size, 
+            shuffle=True, 
+            num_workers=optimal_workers,  # Multi-threaded for maximum throughput
+            pin_memory=True,  # Essential for fast CPU-GPU transfers
+            drop_last=True,
+            persistent_workers=True,  # Major speedup - keep workers alive
+            prefetch_factor=4  # Aggressive prefetching for CPU data
+        )
+        val_dataloader = DataLoader(
+            validation_dataset, 
+            batch_size=batch_size, 
+            shuffle=True, 
+            num_workers=optimal_workers, 
+            pin_memory=True, 
+            drop_last=True,
+            persistent_workers=True,
+            prefetch_factor=4
+        )
+        print(f"   ✓ DataLoader: CPU data with {optimal_workers} workers, pinned memory, and aggressive prefetching")
     
     del train_dataset, validation_dataset
 
@@ -272,7 +312,17 @@ def main():
         reconstruction_loss = np.zeros([num_param])
         hierarchical_latent_vectors = np.zeros([num_param, len(num_filter_enc)-1, latent_dim])
         reconstructed = np.empty([num_param, num_node, num_time])
-        dataloader2 = DataLoader(dataset, batch_size = 1, shuffle =False, num_workers = 0, pin_memory = False, drop_last = False)
+        # Optimize reconstruction DataLoader for inference speed
+        dataloader2 = DataLoader(
+            dataset, 
+            batch_size=1, 
+            shuffle=False, 
+            num_workers=2,  # Minimal workers for single-sample inference
+            pin_memory=True if not load_all else False, 
+            drop_last=False,
+            persistent_workers=True,
+            prefetch_factor=2
+        )
 
         for j, image in enumerate(dataloader2):
             loss_save[:]=100
@@ -412,8 +462,26 @@ def main():
         pinn_dataset = PINNDataset(np.float32(physical_param_input), np.float32(out_latent_vectors), np.float32(out_hierarchical_latent_vectors))
 
         pinn_train_dataset, pinn_validation_dataset = random_split(pinn_dataset, [int(0.8*num_param), num_param - int(0.8*num_param)])
-        pinn_dataloader = torch.utils.data.DataLoader(pinn_train_dataset, batch_size = pinn_batch_size, shuffle=True, num_workers = 0)
-        pinn_validation_dataloader = torch.utils.data.DataLoader(pinn_validation_dataset, batch_size = pinn_batch_size, shuffle=False, num_workers = 0)
+        # Optimize PINN DataLoaders for maximum throughput
+        optimal_workers = min(6, torch.multiprocessing.cpu_count())  # Slightly fewer workers for PINN
+        pinn_dataloader = torch.utils.data.DataLoader(
+            pinn_train_dataset, 
+            batch_size=pinn_batch_size, 
+            shuffle=True, 
+            num_workers=optimal_workers,
+            pin_memory=True,  # PINN data is on GPU but transfers help with preprocessing
+            persistent_workers=True,
+            prefetch_factor=3
+        )
+        pinn_validation_dataloader = torch.utils.data.DataLoader(
+            pinn_validation_dataset, 
+            batch_size=pinn_batch_size, 
+            shuffle=False, 
+            num_workers=optimal_workers,
+            pin_memory=True,
+            persistent_workers=True,
+            prefetch_factor=3
+        )
 
         size2 = len(num_filter_enc)-1
 
@@ -441,7 +509,16 @@ def main():
         VAE_trained = torch.load('model_save/SimulGen-VAE', map_location= device, weights_only=False)
         VAE = VAE_trained.eval()
 
-        pinn_dataloader_eval = torch.utils.data.DataLoader(pinn_dataset, batch_size = 1, shuffle=False, num_workers = 0)
+        # Optimize PINN evaluation DataLoader for inference speed
+        pinn_dataloader_eval = torch.utils.data.DataLoader(
+            pinn_dataset, 
+            batch_size=1, 
+            shuffle=False, 
+            num_workers=2,  # Minimal workers for PINN evaluation
+            pin_memory=True,
+            persistent_workers=True,
+            prefetch_factor=2
+        )
 
         for i, (x, y1, y2) in enumerate(pinn_dataloader_eval):
             x = x.to(device)

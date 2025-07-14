@@ -84,8 +84,8 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
     model.apply(initialize_weights_He)
     model.apply(add_sn)
 
-    init_beta = 1e-8
-    beta_target = 1e-4
+    init_beta = 1e-7
+    beta_target = 1e-3
     epoch = epochs
     start_warmup =int(epoch*0.3)
     end_warmup = int(epoch*0.7)
@@ -133,8 +133,14 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
 
         for i, image in enumerate(train_dataloader):
             if load_all==False:
-                # Data comes as pinned CPU tensor - fast async transfer to GPU
-                image = image.to(device, non_blocking=True)
+                # Use async transfer with dedicated stream for maximum overlap
+                if transfer_stream is not None:
+                    with torch.cuda.stream(transfer_stream):
+                        image = image.to(device, non_blocking=True)
+                    # Synchronize to ensure data is ready before forward pass
+                    torch.cuda.current_stream().wait_stream(transfer_stream)
+                else:
+                    image = image.to(device, non_blocking=True)
             # If load_all==True, data is already on GPU in FP16 - no transfer needed
 
             optimizer.zero_grad(set_to_none=True)  # More memory efficient than zero_grad()
@@ -143,25 +149,25 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
             with autocast():
                 _, recon_loss, kl_losses, recon_loss_MSE = model(image)
 
-            # Check for NaN in model outputs (outside autocast for debugging)
-            if torch.isnan(recon_loss) or torch.isinf(recon_loss):
-                print(f"Warning: NaN/Inf in recon_loss at epoch {epoch}, batch {i}")
-                print(f"Input range: {image.min().item():.4f} to {image.max().item():.4f}")
-                optimizer.zero_grad(set_to_none=True)  # Clear any partial gradients
-                continue
+            # # Check for NaN in model outputs (outside autocast for debugging)
+            # if torch.isnan(recon_loss) or torch.isinf(recon_loss):
+            #     print(f"Warning: NaN/Inf in recon_loss at epoch {epoch}, batch {i}")
+            #     print(f"Input range: {image.min().item():.4f} to {image.max().item():.4f}")
+            #     optimizer.zero_grad(set_to_none=True)  # Clear any partial gradients
+            #     continue
                 
             # Check KL losses for NaN
-            for idx, kl_loss_item in enumerate(kl_losses):
-                if torch.isnan(kl_loss_item) or torch.isinf(kl_loss_item):
-                    print(f"Warning: NaN/Inf in kl_loss[{idx}] at epoch {epoch}, batch {i}")
-                    continue
+            # for idx, kl_loss_item in enumerate(kl_losses):
+            #     if torch.isnan(kl_loss_item) or torch.isinf(kl_loss_item):
+            #         print(f"Warning: NaN/Inf in kl_loss[{idx}] at epoch {epoch}, batch {i}")
+            #         continue
 
             beta, kl_loss = warmup_kl.get_loss(epoch, kl_losses)
 
             # Additional checks after scaling
-            if torch.isnan(kl_loss) or torch.isinf(kl_loss):
-                print(f"Warning: NaN/Inf in combined kl_loss at epoch {epoch}, batch {i}")
-                continue
+            # if torch.isnan(kl_loss) or torch.isinf(kl_loss):
+            #     print(f"Warning: NaN/Inf in combined kl_loss at epoch {epoch}, batch {i}")
+            #     continue
 
             # Loss calculation in FP32 for stability
             kl_loss = kl_loss*beta
@@ -170,12 +176,12 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
             loss = recon_loss + kl_loss
 
             # Check for NaN values before backpropagation
-            if torch.isnan(loss) or torch.isinf(loss):
-                print(f"Warning: NaN or Inf detected in loss at epoch {epoch}, batch {i}")
-                print(f"recon_loss: {recon_loss.item()}, kl_loss: {kl_loss.item()}")
-                print(f"beta: {beta}, alpha: {alpha}")
-                optimizer.zero_grad(set_to_none=True)  # Clear any partial gradients
-                continue
+            # if torch.isnan(loss) or torch.isinf(loss):
+            #     print(f"Warning: NaN or Inf detected in loss at epoch {epoch}, batch {i}")
+            #     print(f"recon_loss: {recon_loss.item()}, kl_loss: {kl_loss.item()}")
+            #     print(f"beta: {beta}, alpha: {alpha}")
+            #     optimizer.zero_grad(set_to_none=True)  # Clear any partial gradients
+            #     continue
 
             # Mixed precision backward pass - scales gradients to prevent underflow
             scaler.scale(loss).backward()
@@ -205,13 +211,13 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
         num = i
 
         # Check model parameters for NaN before validation
-        from modules.utils import check_model_for_nan
-        if check_model_for_nan(model, f"Model at epoch {epoch}"):
-            print(f"Critical: Model parameters contain NaN at epoch {epoch}. Stopping training.")
-            break
+        # from modules.utils import check_model_for_nan
+        # if check_model_for_nan(model, f"Model at epoch {epoch}"):
+        #     print(f"Critical: Model parameters contain NaN at epoch {epoch}. Stopping training.")
+        #     break
         
         # Only stabilize BatchNorm if there are actual NaN values - don't clamp normal values
-        stabilize_batchnorm(model)
+        # stabilize_batchnorm(model)
         
         # Validation loop with NaN checking
         model.eval()  # Move outside the loop for efficiency
@@ -231,28 +237,28 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
                     _, recon_loss, kl_losses, recon_loss_MSE = model(image)
 
                 # Check for NaN in validation outputs
-                if torch.isnan(recon_loss) or torch.isinf(recon_loss):
-                    print(f"Warning: NaN/Inf in validation recon_loss at epoch {epoch}, batch {i}")
-                    print(f"Validation input range: {image.min().item():.4f} to {image.max().item():.4f}")
-                    continue
+                # if torch.isnan(recon_loss) or torch.isinf(recon_loss):
+                #     print(f"Warning: NaN/Inf in validation recon_loss at epoch {epoch}, batch {i}")
+                #     print(f"Validation input range: {image.min().item():.4f} to {image.max().item():.4f}")
+                #     continue
                     
                 # Check validation KL losses for NaN
-                kl_has_nan = False
-                for idx, kl_loss_item in enumerate(kl_losses):
-                    if torch.isnan(kl_loss_item) or torch.isinf(kl_loss_item):
-                        print(f"Warning: NaN/Inf in validation kl_loss[{idx}] at epoch {epoch}, batch {i}")
-                        kl_has_nan = True
-                        break
+                # kl_has_nan = False
+                # for idx, kl_loss_item in enumerate(kl_losses):
+                #     if torch.isnan(kl_loss_item) or torch.isinf(kl_loss_item):
+                #         print(f"Warning: NaN/Inf in validation kl_loss[{idx}] at epoch {epoch}, batch {i}")
+                #         kl_has_nan = True
+                #         break
                 
-                if kl_has_nan:
-                    continue
+                # if kl_has_nan:
+                #     continue
 
                 beta, kl_loss = warmup_kl.get_loss(epoch, kl_losses)
 
                 # Additional checks after scaling
-                if torch.isnan(kl_loss) or torch.isinf(kl_loss):
-                    print(f"Warning: NaN/Inf in validation combined kl_loss at epoch {epoch}, batch {i}")
-                    continue
+                # if torch.isnan(kl_loss) or torch.isinf(kl_loss):
+                #     print(f"Warning: NaN/Inf in validation combined kl_loss at epoch {epoch}, batch {i}")
+                #     continue
 
                 kl_loss = kl_loss*beta
                 recon_loss = recon_loss*alpha
@@ -260,11 +266,11 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
                 loss = recon_loss + kl_loss
 
                 # Check final validation loss for NaN
-                if torch.isnan(loss) or torch.isinf(loss):
-                    print(f"Warning: NaN or Inf detected in validation loss at epoch {epoch}, batch {i}")
-                    print(f"val_recon_loss: {recon_loss.item()}, val_kl_loss: {kl_loss.item()}")
-                    print(f"beta: {beta}, alpha: {alpha}")
-                    continue
+                # if torch.isnan(loss) or torch.isinf(loss):
+                #     print(f"Warning: NaN or Inf detected in validation loss at epoch {epoch}, batch {i}")
+                #     print(f"val_recon_loss: {recon_loss.item()}, val_kl_loss: {kl_loss.item()}")
+                #     print(f"beta: {beta}, alpha: {alpha}")
+                #     continue
 
                 # Only accumulate if no NaN detected
                 recon_loss_save_val += recon_loss.detach().item()
@@ -275,18 +281,18 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
                 del recon_loss, kl_losses, recon_loss_MSE, kl_loss
         
         # Handle case where all validation batches had NaN
-        if val_batches_processed == 0:
-            print(f"Warning: All validation batches had NaN at epoch {epoch}")
-            # Use previous epoch's validation loss or set to a large value
-            if epoch > 0:
-                loss_val_print[epoch] = loss_val_print[epoch-1]
-                recon_loss_val_print[epoch] = recon_loss_val_print[epoch-1]
-            else:
-                loss_val_print[epoch] = float('inf')
-                recon_loss_val_print[epoch] = float('inf')
-        else:
-            loss_val_print[epoch] = loss_save_val / val_batches_processed
-            recon_loss_val_print[epoch] = recon_loss_save_val / val_batches_processed
+        # if val_batches_processed == 0:
+        #     print(f"Warning: All validation batches had NaN at epoch {epoch}")
+        #     # Use previous epoch's validation loss or set to a large value
+        #     if epoch > 0:
+        #         loss_val_print[epoch] = loss_val_print[epoch-1]
+        #         recon_loss_val_print[epoch] = recon_loss_val_print[epoch-1]
+        #     else:
+        #         loss_val_print[epoch] = float('inf')
+        #         recon_loss_val_print[epoch] = float('inf')
+        # else:
+        #     loss_val_print[epoch] = loss_save_val / val_batches_processed
+        #     recon_loss_val_print[epoch] = recon_loss_save_val / val_batches_processed
 
         loss_print[epoch] = loss_save/(num+1)
         recon_print[epoch] = recon_loss_save/(num+1)
