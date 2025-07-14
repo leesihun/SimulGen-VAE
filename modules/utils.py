@@ -38,7 +38,12 @@ class MyBaseDataset(Dataset):
         output = self.x_data[index]
         # Convert to FP32 when moving to GPU for computation
         if not self.data_on_gpu:
-            output = output.to(device, dtype=torch.float32, non_blocking=True)
+            # Handle numpy arrays (when load_all=False)
+            if isinstance(output, np.ndarray):
+                output = torch.from_numpy(output).to(device, dtype=torch.float32, non_blocking=True)
+            else:
+                # Handle torch tensors (when load_all=True, FP16 on CPU)
+                output = output.to(device, dtype=torch.float32, non_blocking=True)
         return output
 
     def __len__(self):
