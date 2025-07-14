@@ -87,10 +87,10 @@ class DecoderResidualBlock(nn.Module):
 
         if small:
             self.seq = nn.Sequential(
-                nn.Conv1d(input, input, kernel_size=1),
-                nn.BatchNorm1d(input),
+                nn.Conv1d(input, input*multiple, kernel_size=1),
+                nn.BatchNorm1d(input*multiple),
                 nn.GELU(),
-                nn.Conv1d(input, input*multiple, kernel_size=5, padding=2),
+                nn.Conv1d(input*multiple, input*multiple, kernel_size=5, padding=2),
                 nn.BatchNorm1d(input*multiple),
                 nn.GELU(),
                 nn.Conv1d(input*multiple, input, kernel_size=1, padding=0),
@@ -105,7 +105,7 @@ class DecoderResidualBlock(nn.Module):
                 nn.Conv1d(input, input*multiple, kernel_size=5, padding=2),
                 nn.BatchNorm1d(input*multiple),
                 nn.GELU(),
-                nn.Conv1d(input, input*multiple, kernel_size=5, padding=2),
+                nn.Conv1d(input*multiple, input*multiple, kernel_size=5, padding=2),
                 nn.BatchNorm1d(input*multiple),
                 nn.GELU(),
                 nn.Conv1d(input*multiple, input, kernel_size=1, padding=0),
