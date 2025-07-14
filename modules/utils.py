@@ -40,9 +40,12 @@ class MyBaseDataset(Dataset):
         if not self.data_on_gpu:
             # Handle numpy arrays (when load_all=False)
             if isinstance(output, np.ndarray):
-                output = torch.from_numpy(output).to(device, dtype=torch.float32, non_blocking=True)
+                output = torch.from_numpy(output.copy()).to(device, dtype=torch.float32, non_blocking=True)
             else:
                 # Handle torch tensors (when load_all=True, FP16 on CPU)
+                # Ensure tensor is contiguous for efficient transfer
+                if not output.is_contiguous():
+                    output = output.contiguous()
                 output = output.to(device, dtype=torch.float32, non_blocking=True)
         return output
 
