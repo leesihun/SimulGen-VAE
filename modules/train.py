@@ -86,9 +86,6 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
     optimizer = torch.optim.AdamW(model.parameters(), lr=LR)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epoch, eta_min=0)
     
-    # Initialize mixed precision scaler - MAJOR memory savings with no speed loss
-    scaler = GradScaler()
-
     loss_print = np.zeros(epochs)
     loss_val_print = np.zeros(epochs)
     recon_print = np.zeros(epochs)
@@ -100,16 +97,6 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
     model.train(True)
     import time
     
-    print("🚀 MAXIMUM PERFORMANCE MODE ENABLED:")
-    print("   ✓ Mixed Precision (FP16) - ~50% memory reduction + speed boost")
-    print("   ✓ FP16 data storage - Halved dataset memory usage") 
-    print("   ✓ Gradient Checkpointing DISABLED - Full speed maintained")
-    print("   ✓ H100 tensor cores optimized - Maximum performance")
-    print("   ✓ Efficient tensor management - Faster cleanup")
-    print("   ✓ Multi-threaded DataLoaders - CPU-GPU overlap maximized")
-    print("   ✓ Persistent workers - No worker recreation overhead")
-    print("   ✓ ALL NaN CHECKS REMOVED - Pure speed, no safety overhead")
-
     # Enable memory efficient attention and convolutions
     torch.backends.cudnn.benchmark = True  # Optimize for consistent input sizes
     torch.backends.cuda.matmul.allow_tf32 = True  # Faster on Ampere GPUs (H100)

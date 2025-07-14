@@ -21,5 +21,3 @@ def log_sum_exp(x):
     m2 = torch.max(x, dim=1, keepdim=True)[0]
     m=m2.unsqueeze(1)
     return m+torch.log(torch.sum(torch.exp(x-m2), dim=1))
-    
-
