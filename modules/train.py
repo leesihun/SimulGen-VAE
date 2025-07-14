@@ -107,6 +107,16 @@ def monitor_forward_pass_memory(model, image, step_name="Forward"):
         
         output = model(image)
         
+        # Debug: check output structure
+        print(f"Model output type: {type(output)}")
+        if isinstance(output, (tuple, list)):
+            print(f"Model output length: {len(output)}")
+            for i, item in enumerate(output):
+                if hasattr(item, 'shape'):
+                    print(f"  Output[{i}]: {type(item)} shape {item.shape}")
+                else:
+                    print(f"  Output[{i}]: {type(item)} value {item}")
+        
         torch.cuda.synchronize()
         end_mem = torch.cuda.memory_allocated() / 1024**2
         peak_mem = torch.cuda.max_memory_allocated() / 1024**2
@@ -138,7 +148,16 @@ def monitor_training_step_memory(model, image, optimizer, step_idx, epoch):
     print_gpu_mem_checkpoint("After zero_grad()")
     
     # Forward pass with detailed monitoring
-    _, recon_loss, kl_losses, recon_loss_MSE = monitor_forward_pass_memory(model, image, "Forward")
+    model_output = monitor_forward_pass_memory(model, image, "Forward")
+    
+    # Handle unpacking safely
+    if len(model_output) == 4:
+        decoder_output, recon_loss, kl_losses, recon_loss_MSE = model_output
+    elif len(model_output) == 3:
+        recon_loss, kl_losses, recon_loss_MSE = model_output
+    else:
+        print(f"Warning: Unexpected model output length: {len(model_output)}")
+        return model_output
     
     # Loss computation monitoring
     print_gpu_mem_checkpoint("After loss computation")
@@ -149,15 +168,13 @@ def stabilize_batchnorm(model):
     """Stabilize BatchNorm running statistics to prevent NaN during evaluation"""
     for module in model.modules():
         if isinstance(module, (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d)):
-            # Clamp running mean and var to prevent extreme values
-            if module.running_mean is not None:
-                module.running_mean.data = torch.clamp(module.running_mean.data, min=-10, max=10)
-                # Replace NaN with zeros
+            # Only fix actual NaN values, don't clamp reasonable values
+            if module.running_mean is not None and torch.isnan(module.running_mean).any():
+                print("Warning: NaN detected in BatchNorm running_mean, replacing with zeros")
                 module.running_mean.data = torch.nan_to_num(module.running_mean.data, nan=0.0)
             
-            if module.running_var is not None:
-                module.running_var.data = torch.clamp(module.running_var.data, min=1e-8, max=100)
-                # Replace NaN with small positive values
+            if module.running_var is not None and torch.isnan(module.running_var).any():
+                print("Warning: NaN detected in BatchNorm running_var, replacing with ones")
                 module.running_var.data = torch.nan_to_num(module.running_var.data, nan=1.0)
 
 def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_enc, num_filter_dec, num_node, latent_dim, hierarchical_dim, num_time, alpha, lossfun, small, load_all):
@@ -233,11 +250,20 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
 
             # Detailed memory monitoring for first few steps
             if monitoring_step_count < DETAILED_MONITORING_STEPS:
-                _, recon_loss, kl_losses, recon_loss_MSE = monitor_training_step_memory(model, image, optimizer, i, epoch)
+                recon_loss, kl_losses, recon_loss_MSE = monitor_training_step_memory(model, image, optimizer, i, epoch)
                 monitoring_step_count += 1
             else:
                 optimizer.zero_grad()
-                _, recon_loss, kl_losses, recon_loss_MSE = model(image)
+                
+                # Safe model forward pass
+                model_output = model(image)
+                if len(model_output) == 4:
+                    _, recon_loss, kl_losses, recon_loss_MSE = model_output
+                elif len(model_output) == 3:
+                    recon_loss, kl_losses, recon_loss_MSE = model_output
+                else:
+                    print(f"Warning: Unexpected model output length in regular training: {len(model_output)}")
+                    continue
                 
                 # Quick memory check every 10 steps
                 if i % 10 == 0:
@@ -314,7 +340,7 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
             print(f"Critical: Model parameters contain NaN at epoch {epoch}. Stopping training.")
             break
         
-        # Stabilize BatchNorm statistics before evaluation
+        # Only stabilize BatchNorm if there are actual NaN values - don't clamp normal values
         stabilize_batchnorm(model)
         
         # Validation loop with NaN checking
@@ -328,7 +354,15 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
                 if load_all==False:
                     image = image.to(device)
 
-                _, recon_loss, kl_losses, recon_loss_MSE = model(image)
+                # Safe model forward pass for validation
+                model_output = model(image)
+                if len(model_output) == 4:
+                    _, recon_loss, kl_losses, recon_loss_MSE = model_output
+                elif len(model_output) == 3:
+                    recon_loss, kl_losses, recon_loss_MSE = model_output
+                else:
+                    print(f"Warning: Unexpected model output length in validation: {len(model_output)}")
+                    continue
 
                 # Check for NaN in validation outputs
                 if torch.isnan(recon_loss) or torch.isinf(recon_loss):
