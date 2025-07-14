@@ -208,96 +208,13 @@ def main():
     
     dataset = MyBaseDataset(new_x_train, load_all)
     train_dataset, validation_dataset = random_split(dataset, [int(0.8*num_param), num_param - int(0.8*num_param)])
-
-    # Intelligent DataLoader optimization based on dataset characteristics
-    def get_optimal_workers(dataset_size, load_all_mode, batch_size):
-        """
-        Determine optimal number of workers based on dataset characteristics
-        Multi-workers are beneficial when:
-        - Large datasets with significant I/O overhead
-        - Complex preprocessing operations
-        - Streaming from disk (load_all=False)
-        
-        Single worker (0) is often better when:
-        - Data already in memory (load_all=True)
-        - Small datasets
-        - Minimal preprocessing
-        - Fast storage/cached data
-        """
-        cpu_count = torch.multiprocessing.cpu_count()
-        
-        if load_all_mode:
-            # Data in memory - multi-workers often add overhead
-            if dataset_size < 1000:
-                return 0  # Small dataset - single worker
-            elif dataset_size < 10000:
-                return min(2, cpu_count)  # Medium dataset - minimal workers
-            else:
-                return min(4, cpu_count)  # Large dataset - moderate workers
-        else:
-            # Streaming from disk - multi-workers more beneficial
-            if dataset_size < 500:
-                return 0  # Very small - single worker
-            elif dataset_size < 5000:
-                return min(4, cpu_count)  # Medium - moderate workers
-            else:
-                return min(8, cpu_count)  # Large - more workers for I/O overlap
-    
-    # Optimize DataLoader settings for multi-threaded CPU-to-GPU transfers
-    # All data is now kept on CPU to avoid CUDA worker process issues
-    dataset_size = len(dataset)
-    optimal_workers = get_optimal_workers(dataset_size, load_all, batch_size)
-    
-    # Override for testing - you can manually set this
-    optimal_workers = 0  # Uncomment to force single-threaded
-    
-    if optimal_workers == 0:
-        # Single-threaded configuration - often fastest for in-memory data
-        dataloader = DataLoader(
-            train_dataset, 
-            batch_size=batch_size, 
-            shuffle=True, 
-            num_workers=0,  # Single-threaded
-            pin_memory=True,  # Still beneficial for CPU→GPU transfers
-            drop_last=True
-        )
-        val_dataloader = DataLoader(
-            validation_dataset, 
-            batch_size=batch_size, 
-            shuffle=True, 
-            num_workers=0, 
-            pin_memory=True, 
-            drop_last=True
-        )
-        print(f"   ✓ DataLoader: Single-threaded (optimal for in-memory data)")
-    else:
-        # Multi-threaded configuration
-        dataloader = DataLoader(
-            train_dataset, 
-            batch_size=batch_size, 
-            shuffle=True, 
-            num_workers=optimal_workers,  # Multi-threaded for maximum throughput
-            pin_memory=True,  # Essential for fast CPU-GPU transfers
-            drop_last=True,
-            persistent_workers=True,  # Major speedup - keep workers alive
-            prefetch_factor=2  # Reduced prefetch to avoid memory pressure
-        )
-        val_dataloader = DataLoader(
-            validation_dataset, 
-            batch_size=batch_size, 
-            shuffle=True, 
-            num_workers=optimal_workers, 
-            pin_memory=True, 
-            drop_last=True,
-            persistent_workers=True,
-            prefetch_factor=2
-        )
-        print(f"   ✓ DataLoader: {optimal_workers} workers (multi-threaded for I/O overlap)")
     
     if load_all:
-        print(f"   ✓ Data mode: FP16 in-memory ({dataset_size} samples)")
+        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=0, pin_memory=False)
+        val_dataloader = DataLoader(validation_dataset, batch_size=batch_size, shuffle=True, num_workers=0, pin_memory=False)
     else:
-        print(f"   ✓ Data mode: FP32 streaming ({dataset_size} samples)")
+        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=0, pin_memory=True)
+        val_dataloader = DataLoader(validation_dataset, batch_size=batch_size, shuffle=True, num_workers=0, pin_memory=True)
     
     del train_dataset, validation_dataset
 
