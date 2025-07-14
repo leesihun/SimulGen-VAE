@@ -210,13 +210,15 @@ def main():
 
     # Optimize DataLoader settings based on load_all choice
     if load_all:
-        # Data already on GPU - no pin_memory needed
+        # Data already on GPU in FP16 - no pin_memory or transfers needed
         dataloader = DataLoader(train_dataset, batch_size = batch_size, shuffle =True, num_workers = 0, pin_memory = False, drop_last = True)
         val_dataloader = DataLoader(validation_dataset, batch_size = batch_size, shuffle =True, num_workers = 0, pin_memory = False, drop_last = True)
+        print(f"   ✓ DataLoader: GPU-resident data, no transfers needed")
     else:
-        # Streaming mode - use pin_memory for faster CPU->GPU transfers
+        # CPU data - use pin_memory for efficient CPU->GPU transfers
         dataloader = DataLoader(train_dataset, batch_size = batch_size, shuffle =True, num_workers = 0, pin_memory = True, drop_last = True)
         val_dataloader = DataLoader(validation_dataset, batch_size = batch_size, shuffle =True, num_workers = 0, pin_memory = True, drop_last = True)
+        print(f"   ✓ DataLoader: CPU data with pinned memory for fast transfers")
     
     del train_dataset, validation_dataset
 

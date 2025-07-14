@@ -37,11 +37,10 @@ class MyBaseDataset(Dataset):
     def __getitem__(self, index):
         output = self.x_data[index]
         if not self.data_on_gpu:
-            # Only for load_all=False (slow path)
+            # For load_all=False: Return CPU tensor - let DataLoader handle GPU transfer
             if isinstance(output, np.ndarray):
-                output = torch.from_numpy(output).to(device, dtype=torch.float32, non_blocking=True)
-            else:
-                output = output.to(device, dtype=torch.float32, non_blocking=True)
+                output = torch.from_numpy(output).float()  # Keep on CPU as FP32
+            # Don't transfer to GPU here - let the training loop handle it
         # For load_all=True, data is already on GPU in FP16 - autocast will handle conversion
         return output
 

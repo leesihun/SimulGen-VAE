@@ -133,7 +133,8 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
 
         for i, image in enumerate(train_dataloader):
             if load_all==False:
-                image = image.to(device, non_blocking=True)  # Async transfer
+                # Data comes as pinned CPU tensor - fast async transfer to GPU
+                image = image.to(device, non_blocking=True)
             # If load_all==True, data is already on GPU in FP16 - no transfer needed
 
             optimizer.zero_grad(set_to_none=True)  # More memory efficient than zero_grad()
@@ -221,6 +222,7 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
         for i, image in enumerate(val_dataloader):
             with torch.no_grad():
                 if load_all==False:
+                    # Data comes as pinned CPU tensor - transfer to GPU
                     image = image.to(device)
                 # If load_all==True, data is already on GPU in FP16
 
