@@ -25,10 +25,11 @@ class WarmupKLLoss:
         self.beta_target = beta_target
 
     def get_loss(self, step, losses):
-        loss = 0.
+        # Initialize loss as tensor with same device/dtype as first loss
+        loss = torch.zeros_like(losses[0])
         for i, l in enumerate(losses):
             l = losses[i]
-            loss+=l
+            loss += l
 
         if step<self.start_warmup:
             beta = self.init_beta
