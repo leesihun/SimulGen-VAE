@@ -248,26 +248,32 @@ def main():
         )
         print(f"   ✓ VAE DataLoader: Single-threaded ({dataset_size} samples)")
     else:
-        # Multi-threaded for larger datasets - this reduces CPU to GPU bottleneck!
+        # Multi-threaded for larger datasets - optimized for large data transfers
+        # Use more workers and higher prefetch for large datasets like yours
+        optimized_workers = min(optimal_workers, 4)  # Cap at 4 for stability
+        prefetch_factor = 4 if dataset_size > 400 else 2  # Higher prefetch for large datasets
+        
         dataloader = DataLoader(
             train_dataset, 
             batch_size=batch_size, 
             shuffle=True, 
-            num_workers=optimal_workers,
+            num_workers=optimized_workers,
             pin_memory=True,
             persistent_workers=True,  # Keep workers alive between epochs
-            prefetch_factor=2         # Prefetch 2 batches per worker
+            prefetch_factor=prefetch_factor,  # Prefetch more batches for large data
+            drop_last=True  # Avoid variable batch sizes for consistency
         )
         val_dataloader = DataLoader(
             validation_dataset, 
             batch_size=batch_size, 
             shuffle=True, 
-            num_workers=optimal_workers,
+            num_workers=optimized_workers,
             pin_memory=True,
             persistent_workers=True,
-            prefetch_factor=2
+            prefetch_factor=prefetch_factor,
+            drop_last=False  # Keep all validation data
         )
-        print(f"   ✓ VAE DataLoader: {optimal_workers} workers ({dataset_size} samples)")
+        print(f"   ✓ VAE DataLoader: {optimized_workers} workers, {prefetch_factor}x prefetch ({dataset_size} samples)")
     
     del train_dataset, validation_dataset
 
