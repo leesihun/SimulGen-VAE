@@ -137,7 +137,8 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
     mse_accumulator = torch.zeros(1, device=device)
     
     # CUDA Graphs setup
-    use_cuda_graphs = torch.cuda.is_available() and hasattr(torch.cuda, 'CUDAGraph')
+    # Disable CUDA graphs to fix the in-place operation error
+    use_cuda_graphs = False  # Set to False to avoid in-place operation errors
     cuda_graph_batch = None
     cuda_graph = None
     static_input = None
@@ -145,7 +146,7 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
     static_recon_loss = None
     static_kl_losses = None
     static_recon_loss_MSE = None
-    
+
     # Initialize CUDA graph after a few warm-up iterations
     cuda_graph_warmup = 10
     cuda_graph_initialized = False
@@ -188,8 +189,10 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
 
             # Use CUDA graph if initialized and batch size matches
             if use_cuda_graphs and cuda_graph_initialized and image.shape[0] == cuda_graph_batch:
-                # Copy input data to static tensor
-                static_input.copy_(image)
+                # Create a detached copy instead of modifying in-place
+                static_input_copy = image.detach().clone()
+                # Copy input data to static tensor - FIXED: Use copy() instead of copy_()
+                static_input.copy_(static_input_copy)
                 
                 # Execute the captured graph
                 cuda_graph.replay()
