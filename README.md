@@ -12,10 +12,12 @@ This repository also includes a Physics-Inspired Neural Network (PINN) that can 
 4. [Dataset & Configuration](#dataset--configuration)  
 5. [Quick-Start Examples](#quick-start-examples)  
 6. [Running With Optimisations](#running-with-optimisations)  
-7. [Command-line Arguments](#command-line-arguments)  
-8. [Monitoring & Visualisation](#monitoring--visualisation)  
-9. [Troubleshooting](#troubleshooting)  
-10. [Acknowledgements](#acknowledgements)
+7. [Performance Optimizations](#performance-optimizations)
+8. [Command-line Arguments](#command-line-arguments)  
+9. [Multi-GPU Training](#multi-gpu-training)
+10. [Monitoring & Visualisation](#monitoring--visualisation)  
+11. [Troubleshooting](#troubleshooting)  
+12. [Acknowledgements](#acknowledgements)
 
 ---
 
@@ -41,6 +43,7 @@ SimulGenVAE/
 * **Python ≥ 3.9** (tested on 3.10)  
 * **PyTorch ≥ 2.0** with CUDA support (for `torch.compile` & mixed precision)  
 * A CUDA-capable GPU with ≥12 GB memory *(RTX 30/40-series, A100, H100 recommended)*
+* For multi-GPU training: NCCL backend support
 
 Install NVIDIA driver + CUDA Toolkit beforehand (see [PyTorch installation guide](https://pytorch.org/)).
 
@@ -123,6 +126,12 @@ python accelerate_training.py --scenario maximum_speed
 # The script prints the fully-qualified command to run
 ```
 
+### 4. Multi-GPU training with DDP
+```bash
+# Train on multiple GPUs using Distributed Data Parallel
+python -m torch.distributed.launch --nproc_per_node=NUM_GPUS SimulGen-VAE.py --use_ddp --preset=1 --plot=2 --train_pinn_only=0 --size=small --load_all=1
+```
+
 ---
 
 ## Running With Optimisations
@@ -148,6 +157,32 @@ If compilation fails the model **automatically falls back** to an un-compiled ve
 
 ---
 
+## Performance Optimizations
+
+SimulGen-VAE includes several advanced optimizations for maximum training speed:
+
+### 1. Data Loading Optimizations
+- **GPU Prefetching**: Automatically preloads entire dataset to GPU when `--load_all=1`
+- **Pinned Memory**: Uses pinned CPU memory for faster CPU→GPU transfers when `--load_all=0`
+- **Async Data Transfers**: Non-blocking transfers with `non_blocking=True`
+
+### 2. Model Architecture Optimizations
+- **Channels Last Memory Format**: Automatically converts tensors to channels_last format for better GPU memory access patterns
+- **Mixed Precision Training**: Uses FP16/BF16 for forward pass and FP32 for critical operations
+- **TF32 Support**: Enables TF32 on Ampere+ GPUs (A100, H100, RTX 30/40 series)
+
+### 3. Training Loop Optimizations
+- **CUDA Graphs**: Captures and replays computation graphs for operations with consistent shapes
+- **Gradient Accumulation**: Available via optimization configs for larger effective batch sizes
+- **Memory-Efficient Operations**: Uses `set_to_none=True` for zero_grad and other memory optimizations
+
+### 4. Multi-GPU Support
+- **Distributed Data Parallel (DDP)**: Scales training across multiple GPUs
+- **Automatic Batch Size Adjustment**: Maintains global batch size across GPUs
+- **Efficient Parameter Synchronization**: Uses NCCL backend for fast GPU-to-GPU communication
+
+---
+
 ## Command-line Arguments
 | Flag | Description | Example |
 |------|-------------|---------|
@@ -156,8 +191,37 @@ If compilation fails the model **automatically falls back** to an un-compiled ve
 | `--train_pinn_only` | 1 = skip VAE and train only PINN | `--train_pinn_only=0` |
 | `--size` | Network size preset (`small` / `large`) | `--size=small` |
 | `--load_all` | 1 = preload entire dataset to GPU | `--load_all=1` |
+| `--use_ddp` | Enable distributed data parallel training | `--use_ddp` |
+| `--local_rank` | Local rank for distributed training (auto-set by torch.distributed.launch) | `--local_rank=0` |
 
 PINN-specific flags can be edited inside `condition.txt`.
+
+---
+
+## Multi-GPU Training
+
+SimulGen-VAE supports efficient multi-GPU training using PyTorch's Distributed Data Parallel (DDP):
+
+### Setup and Launch
+```bash
+# Train on N GPUs (replace NUM_GPUS with the number of GPUs you want to use)
+python -m torch.distributed.launch --nproc_per_node=NUM_GPUS SimulGen-VAE.py --use_ddp --preset=1 --plot=2 --train_pinn_only=0 --size=small --load_all=1
+```
+
+### Key Features
+- **Automatic Batch Size Scaling**: Global batch size is maintained by dividing by the number of GPUs
+- **Efficient Gradient Synchronization**: Uses NCCL backend for optimal GPU-to-GPU communication
+- **Model Replication**: Each GPU maintains its own copy of the model with synchronized gradients
+- **Dataset Partitioning**: Data is automatically sharded across GPUs using DistributedSampler
+
+### Requirements
+- Multiple CUDA-capable GPUs on the same machine
+- NCCL backend support (installed with PyTorch CUDA)
+- Sufficient CPU memory to hold the entire dataset during initialization
+
+### Performance Expectations
+- Near-linear scaling with number of GPUs for compute-bound workloads
+- 1.8-1.9x speedup with 2 GPUs, 3.5-3.8x with 4 GPUs (typical values)
 
 ---
 
@@ -186,12 +250,13 @@ Generated artefacts:
 | **NaN losses** | Lower `gradient_clipping` in `modules/train.py` (default 5.0 → 1.0) |
 | **Slow first epoch** | Expected if compilation is enabled (one-off cost) |
 | **torch.compile error (permute dims)** | Switch to safe mode (`compile_model=False`) |
+| **CUDA Graph errors** | Set `use_cuda_graphs = False` in `modules/train.py` |
+| **DDP initialization failures** | Check that all GPUs are visible with `nvidia-smi` and NCCL is properly installed |
+| **Different results across GPUs** | Set `torch.backends.cudnn.deterministic = True` for reproducibility (at cost of performance) |
 
 ---
 
 ## Acknowledgements
-* **SiHun Lee, Ph.D.** – Original LSH-VAE implementation  
+* **SiHun Lee, Ph.D.** – Original LSH-VAE implementation, Developer of this code
 * **PyTorch 2.0** – `torch.compile`, mixed-precision, and TF32 support  
 * **NVIDIA** – CUDA/cuDNN performance libraries
-
-Feel free to open issues or pull-requests for improvements ❤️ 
