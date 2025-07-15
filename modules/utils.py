@@ -9,30 +9,23 @@ import multiprocessing
 
 def get_optimal_workers(dataset_size, load_all, batch_size):
     """
-    Intelligently determine optimal number of DataLoader workers based on:
-    - Dataset size
-    - Whether data is preloaded (load_all)
-    - System capabilities
-    - Batch size
+    Determines optimal number of DataLoader workers based on dataset characteristics.
+    For small datasets with large batches, fewer workers are often better.
     """
+    import torch
+    
     if load_all:
-        # Data already on GPU, no need for workers
+        # Data already on GPU, no workers needed
         return 0
     
-    # Get CPU count, but cap it reasonably
-    cpu_count = multiprocessing.cpu_count()
-    
-    # For small datasets, use fewer workers to avoid overhead
-    if dataset_size < 500:
-        return 0
+    # For small datasets with large batches, minimize overhead
+    if dataset_size < 500:  # Small variety case
+        return 0  # Single-threaded is often faster
     elif dataset_size < 2000:
-        return min(2, cpu_count)
-    elif dataset_size < 10000:
-        return min(4, cpu_count)
+        return min(2, torch.multiprocessing.cpu_count())
     else:
-        # For large datasets, use more workers but not too many
-        # Rule of thumb: 1 worker per 2-4 CPU cores, capped at 8
-        optimal = min(max(cpu_count // 2, 2), 8)
+        # For larger datasets, use more workers
+        optimal = min(4, torch.multiprocessing.cpu_count())
         return optimal
 
 def get_latest_file(directory):
@@ -100,3 +93,46 @@ def get_latest_file(path, pattern):
     if not files:
         return None
     return max(files, key=os.path.getctime)
+
+class CachedDataset(Dataset):
+    """
+    A dataset that caches frequently accessed samples in memory.
+    Ideal for small datasets with large batches.
+    """
+    def __init__(self, x_data, load_all=False, cache_size=None):
+        print('Loading data with smart caching...')
+        self.load_all = load_all
+        
+        if load_all:
+            # Full GPU preloading for small datasets
+            self.x_data = torch.tensor(x_data).to(device)
+            self.cache = None
+        else:
+            # Keep original data as numpy for memory efficiency
+            self.x_data = x_data
+            # Cache for frequently accessed samples
+            self.cache_size = cache_size or min(len(x_data), 1000)
+            self.cache = {}
+            self.access_count = {}
+            
+    def __getitem__(self, index):
+        if self.load_all:
+            return self.x_data[index]
+        
+        # Check cache first
+        if index in self.cache:
+            self.access_count[index] = self.access_count.get(index, 0) + 1
+            return self.cache[index]
+        
+        # Convert and potentially cache
+        output = torch.from_numpy(self.x_data[index].copy()).float()
+        
+        # Cache if we have space or if this is frequently accessed
+        if len(self.cache) < self.cache_size:
+            self.cache[index] = output
+            self.access_count[index] = 1
+        
+        return output
+    
+    def __len__(self):
+        return len(self.x_data)

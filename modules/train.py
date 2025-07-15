@@ -81,6 +81,9 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
     warmup_kl = WarmupKLLoss(epoch, init_beta, start_warmup, end_warmup, beta_target)
 
     model.to(device)
+    
+    # Compile model for better performance on consistent input sizes
+    model.compile_model()
 
     # optimizer = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=1e-4)
     optimizer = torch.optim.AdamW(model.parameters(), lr=LR)
@@ -105,6 +108,15 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
     torch.backends.cuda.matmul.allow_tf32 = True  # Faster on Ampere GPUs (H100)
     torch.backends.cudnn.allow_tf32 = True
     
+    # Additional optimizations for small variety datasets
+    if torch.cuda.is_available():
+        # Enable persistent RNN for consistent sequence lengths
+        torch.backends.cudnn.deterministic = False  # Allow non-deterministic ops for speed
+        torch.backends.cudnn.enabled = True
+        
+        # Set memory allocation strategy for better performance
+        torch.cuda.set_per_process_memory_fraction(0.95)  # Use most GPU memory
+    
     # Pre-allocate CUDA streams for better async execution
     if torch.cuda.is_available():
         torch.cuda.set_device(device)
@@ -112,10 +124,22 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
         transfer_stream = torch.cuda.Stream()
     else:
         transfer_stream = None
+        
+    # Pre-allocate tensors for loss accumulation (memory efficiency)
+    loss_accumulator = torch.zeros(1, device=device)
+    recon_accumulator = torch.zeros(1, device=device)
+    kl_accumulator = torch.zeros(1, device=device)
+    mse_accumulator = torch.zeros(1, device=device)
 
     for epoch in range(epochs):
         start_time = time.time()
         model.train(True)
+        
+        # Reset accumulators
+        loss_accumulator.zero_()
+        recon_accumulator.zero_()
+        kl_accumulator.zero_()
+        mse_accumulator.zero_()
         
         # Clear cache at start of each epoch
         torch.cuda.empty_cache()
@@ -152,21 +176,21 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
             scaler.step(optimizer)
             scaler.update()
 
-            if i==0:
-                kl_loss_save = kl_loss.detach().item()
-                recon_loss_save = recon_loss.detach().item()
-                recon_loss_MSE_save = recon_loss_MSE.detach().item()
-                loss_save = loss.detach().item()
-
-            else:
-                kl_loss_save = kl_loss_save + kl_loss.detach().item()
-                recon_loss_save = recon_loss_save + recon_loss.detach().item()
-                recon_loss_MSE_save = recon_loss_MSE_save + recon_loss_MSE.detach().item()
-                loss_save = loss_save + loss.detach().item()
+            # Accumulate losses efficiently
+            loss_accumulator += loss.detach()
+            recon_accumulator += recon_loss.detach()
+            kl_accumulator += kl_loss.detach()
+            mse_accumulator += recon_loss_MSE.detach()
 
             # More efficient memory cleanup - delete in reverse order of creation
             del loss, recon_loss_MSE, kl_loss, recon_loss, kl_losses, image
         num = i
+
+        # Convert accumulated losses to final values
+        loss_save = loss_accumulator.item()
+        recon_loss_save = recon_accumulator.item()
+        kl_loss_save = kl_accumulator.item()
+        recon_loss_MSE_save = mse_accumulator.item()
 
         # Validation loop
         model.eval()

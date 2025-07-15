@@ -18,6 +18,15 @@ class VAE(nn.Module):
         self.lossfun = lossfun
         # Checkpointing disabled for speed (user preference)
         self.use_checkpointing = False
+        
+        # Pre-compile loss functions for efficiency
+        self.loss_functions = {
+            'MSE': nn.MSELoss(),
+            'MAE': nn.L1Loss(), 
+            'smoothL1': nn.SmoothL1Loss(),
+            'Huber': nn.HuberLoss()
+        }
+        self.mse_loss = nn.MSELoss()  # Always needed for recon_loss_MSE
 
     def forward(self, x):
         # Always use regular forward pass - no speed trade-offs
@@ -30,19 +39,30 @@ class VAE(nn.Module):
         
         decoder_output, kl_losses = self.decoder(z, xs)
 
-        if self.lossfun == 'MSE':
-            recon_loss = nn.MSELoss()(decoder_output, x)
-        elif self.lossfun == 'MAE':
-            recon_loss = nn.L1Loss()(decoder_output, x)
-        elif self.lossfun == 'smoothL1':
-            recon_loss = nn.SmoothL1Loss()(decoder_output, x)
-        elif self.lossfun == 'Huber':
-            recon_loss = nn.HuberLoss()(decoder_output, x)
-
-        recon_loss_MSE = nn.MSELoss()(decoder_output, x)
+        # Use pre-compiled loss functions for efficiency
+        recon_loss = self.loss_functions.get(self.lossfun, self.mse_loss)(decoder_output, x)
+        recon_loss_MSE = self.mse_loss(decoder_output, x)
 
         kl_loss = kl(mu, log_var)
 
         # Clean up intermediate variables to free memory faster
         del mu, log_var, xs, z
         return decoder_output, recon_loss, [kl_loss]+kl_losses, recon_loss_MSE
+    
+    def compile_model(self):
+        """
+        Compile the model for better performance on consistent input sizes.
+        Call this after moving to GPU and before training.
+        """
+        if hasattr(torch, 'compile'):
+            print("Compiling VAE model for optimized performance...")
+            try:
+                # Compile with aggressive optimizations for small variety datasets
+                self.encoder = torch.compile(self.encoder, mode='max-autotune')
+                self.decoder = torch.compile(self.decoder, mode='max-autotune')
+                print("✓ Model compilation successful")
+            except Exception as e:
+                print(f"Model compilation failed: {e}")
+                print("Continuing with uncompiled model...")
+        else:
+            print("torch.compile not available, skipping model compilation")
