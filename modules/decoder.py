@@ -46,7 +46,7 @@ class Decoder(nn.Module):
 
         self.recon = nn.Sequential(
             nn.Conv1d(num_filter_dec[-1], num_node, kernel_size=1),
-            nn.BatchNorm1d(num_node),
+            nn.GroupNorm(min(8, max(1, num_node//4)), num_node),
             nn.Tanh()
         )
 
@@ -63,7 +63,7 @@ class Decoder(nn.Module):
             nn.Linear(latent_dim, latent_dim*num_time),
             nn.Unflatten(1, (latent_dim, num_time)),
             nn.Conv1d((latent_dim), self.num_filter_dec[0], kernel_size=5, padding=2),
-            nn.BatchNorm1d(self.num_filter_dec[0]),
+            nn.GroupNorm(min(8, max(1, self.num_filter_dec[0]//4)), self.num_filter_dec[0]),
             nn.GELU(),
         ))
 
@@ -73,7 +73,7 @@ class Decoder(nn.Module):
                 nn.Linear(hierarchical_dim, hierarchical_dim*num_time),
                 nn.Unflatten(1, (hierarchical_dim, num_time)),
                 nn.Conv1d(hierarchical_dim, self.num_filter_dec[i+1], kernel_size=5, padding=2),
-                nn.BatchNorm1d(self.num_filter_dec[i+1]),
+                nn.GroupNorm(min(8, max(1, self.num_filter_dec[i+1]//4)), self.num_filter_dec[i+1]),
                 nn.GELU(),
             ))
 

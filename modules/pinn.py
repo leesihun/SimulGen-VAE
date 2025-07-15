@@ -94,13 +94,13 @@ class ConvResBlock(nn.Module):
 
         self.seq = nn.Sequential(
             nn.Conv2d(in_channel, in_channel*multiple, kernel_size=3, padding=1),
-            nn.BatchNorm2d(in_channel*multiple),
+            nn.GroupNorm(min(8, max(1, (in_channel*multiple)//4)), in_channel*multiple),
             nn.GELU(),
             nn.Conv2d(in_channel*multiple, out_channel, kernel_size=5, padding=2),
-            nn.BatchNorm2d(out_channel),
+            nn.GroupNorm(min(8, max(1, out_channel//4)), out_channel),
             nn.GELU(),
             nn.Conv2d(out_channel, out_channel, kernel_size=3, padding=1),
-            nn.BatchNorm2d(out_channel),
+            nn.GroupNorm(min(8, max(1, out_channel//4)), out_channel),
             nn.GELU(),
         )
 
@@ -115,7 +115,7 @@ class ConvBlock(nn.Module):
 
         self.seq = nn.Sequential(
             nn.Conv2d(in_channel, out_channel, kernel_size=3, padding=1),
-            nn.BatchNorm2d(out_channel),
+            nn.GroupNorm(min(8, max(1, out_channel//4)), out_channel),
             nn.GELU(),
             nn.AvgPool2d(2)
         )
@@ -137,7 +137,7 @@ class PINN_img(nn.Module):
 
         modules = []
         modules.append(nn.Conv2d(1, self.pinn_filter[0], kernel_size=3, padding=1))
-        modules.append(nn.BatchNorm2d(self.pinn_filter[0]))
+        modules.append(nn.GroupNorm(min(8, max(1, self.pinn_filter[0]//4)), self.pinn_filter[0]))
         modules.append(nn.GELU())
         
         for i in range(1, self.num_pinn_filter):
@@ -146,7 +146,7 @@ class PINN_img(nn.Module):
 
         modules.append(nn.Flatten())
         modules.append(nn.LazyLinear(self.latent_dim_end*8))
-        modules.append(nn.BatchNorm1d(self.latent_dim_end*8))
+        modules.append(nn.GroupNorm(min(8, max(1, (self.latent_dim_end*8)//4)), self.latent_dim_end*8))
         modules.append(nn.GELU())
         modules.append(nn.Dropout(self.dropout_rate))  # Keep dropout only for FC layers
         modules.append(nn.Linear(self.latent_dim_end*8, self.latent_dim_end))
@@ -156,7 +156,7 @@ class PINN_img(nn.Module):
 
         modules = []
         modules.append(nn.Conv2d(1, self.pinn_filter[0], kernel_size=3, padding=1))
-        modules.append(nn.BatchNorm2d(self.pinn_filter[0]))
+        modules.append(nn.GroupNorm(min(8, max(1, self.pinn_filter[0]//4)), self.pinn_filter[0]))
         modules.append(nn.GELU())
         
         for i in range(1, self.num_pinn_filter):
@@ -165,11 +165,11 @@ class PINN_img(nn.Module):
 
         modules.append(nn.Flatten())
         modules.append(nn.LazyLinear(self.latent_dim*self.size2*8))
-        modules.append(nn.BatchNorm1d(self.latent_dim*self.size2*8))
+        modules.append(nn.GroupNorm(min(8, max(1, (self.latent_dim*self.size2*8)//4)), self.latent_dim*self.size2*8))
         modules.append(nn.GELU())
         modules.append(nn.Dropout(self.dropout_rate))  # Keep dropout only for FC layers
         modules.append(nn.Linear(self.latent_dim*self.size2*8, self.latent_dim*self.size2))
-        modules.append(nn.Unflatten(1, torch.size(self.size2, self.latent_dim)))
+        modules.append(nn.Unflatten(1, (self.size2, self.latent_dim)))
         modules.append(nn.Tanh())
 
         self.xs_out = nn.Sequential(*modules)
