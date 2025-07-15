@@ -49,20 +49,34 @@ class VAE(nn.Module):
         del mu, log_var, xs, z
         return decoder_output, recon_loss, [kl_loss]+kl_losses, recon_loss_MSE
     
-    def compile_model(self):
+    def compile_model(self, mode='default'):
         """
         Compile the model for better performance on consistent input sizes.
         Call this after moving to GPU and before training.
+        
+        Args:
+            mode: Compilation mode. Can be:
+                - 'default': Conservative compilation (recommended)
+                - 'reduce-overhead': Faster compilation time
+                - 'max-autotune': Most aggressive (may fail on some models)
+                - False: Skip compilation entirely
         """
-        if hasattr(torch, 'compile'):
-            print("Compiling VAE model for optimized performance...")
-            try:
-                # Compile with aggressive optimizations for small variety datasets
-                self.encoder = torch.compile(self.encoder, mode='max-autotune')
-                self.decoder = torch.compile(self.decoder, mode='max-autotune')
-                print("✓ Model compilation successful")
-            except Exception as e:
-                print(f"Model compilation failed: {e}")
-                print("Continuing with uncompiled model...")
-        else:
+        if mode is False or mode == 'none':
+            print("Model compilation disabled")
+            return
+            
+        if not hasattr(torch, 'compile'):
             print("torch.compile not available, skipping model compilation")
+            return
+            
+        print(f"Compiling VAE model with mode='{mode}'...")
+        try:
+            print("  Compiling encoder...")
+            self.encoder = torch.compile(self.encoder, mode=mode)
+            print("  Compiling decoder...")
+            self.decoder = torch.compile(self.decoder, mode=mode)
+            print("✓ Model compilation successful")
+        except Exception as e:
+            print(f"Model compilation failed: {e}")
+            print("Falling back to uncompiled model...")
+            # Don't re-raise the exception, just continue with uncompiled model

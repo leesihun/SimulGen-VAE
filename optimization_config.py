@@ -12,7 +12,7 @@ SMALL_VARIETY_LARGE_BATCH = {
     'description': 'Optimized for datasets with limited variety but large batch sizes',
     'load_all': True,          # Preload all data to GPU
     'use_cached_dataset': True,
-    'compile_model': True,     # Use torch.compile for consistent shapes
+    'compile_model': 'default',     # Use 'default' mode for safer compilation
     'batch_size_multiplier': 1.5,  # Increase batch size by 50%
     'num_workers': 0,          # Single-threaded for small datasets
     'pin_memory': False,       # Not needed when load_all=True
@@ -96,13 +96,13 @@ MEMORY_CONSTRAINED = {
 }
 
 # =============================================================================
-# SCENARIO 4: Maximum Speed (Your Recommended Setting)
+# SCENARIO 4: Maximum Speed (Conservative Compilation)
 # =============================================================================
 MAXIMUM_SPEED = {
     'description': 'Aggressive optimizations for maximum training speed',
     'load_all': True,
     'use_cached_dataset': True,
-    'compile_model': True,
+    'compile_model': 'default',  # Use safer 'default' mode instead of 'max-autotune'
     'batch_size_multiplier': 2.0,  # Double the batch size if memory allows
     'num_workers': 0,
     'pin_memory': False,
@@ -126,6 +126,36 @@ MAXIMUM_SPEED = {
 }
 
 # =============================================================================
+# SCENARIO 5: Safe Mode (No Compilation)
+# =============================================================================
+SAFE_MODE = {
+    'description': 'Safe optimizations without model compilation',
+    'load_all': True,
+    'use_cached_dataset': True,
+    'compile_model': False,    # Disable compilation completely
+    'batch_size_multiplier': 1.5,
+    'num_workers': 0,
+    'pin_memory': False,
+    'prefetch_factor': None,
+    'persistent_workers': False,
+    'gradient_accumulation_steps': 1,
+    'memory_fraction': 0.9,
+    'enable_tf32': True,
+    'cudnn_benchmark': True,
+    'cudnn_deterministic': False,
+    'mixed_precision': True,
+    'optimizer_settings': {
+        'zero_grad_set_to_none': True,
+        'weight_decay': 0,
+        'gradient_clipping': 5.0,
+    },
+    'scheduler_settings': {
+        'type': 'cosine',
+        'eta_min_ratio': 0.01,
+    }
+}
+
+# =============================================================================
 # HELPER FUNCTIONS
 # =============================================================================
 
@@ -135,7 +165,7 @@ def get_config(scenario='small_variety_large_batch'):
     
     Args:
         scenario: One of 'small_variety_large_batch', 'large_variety_small_batch', 
-                 'memory_constrained', 'maximum_speed'
+                 'memory_constrained', 'maximum_speed', 'safe_mode'
     
     Returns:
         Dictionary with optimization settings
@@ -145,6 +175,7 @@ def get_config(scenario='small_variety_large_batch'):
         'large_variety_small_batch': LARGE_VARIETY_SMALL_BATCH,
         'memory_constrained': MEMORY_CONSTRAINED,
         'maximum_speed': MAXIMUM_SPEED,
+        'safe_mode': SAFE_MODE,
     }
     
     if scenario not in configs:

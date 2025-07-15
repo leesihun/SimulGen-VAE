@@ -83,7 +83,8 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
     model.to(device)
     
     # Compile model for better performance on consistent input sizes
-    model.compile_model()
+    # Use 'default' mode for safer compilation, or False to disable
+    model.compile_model(mode='default')
 
     # optimizer = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=1e-4)
     optimizer = torch.optim.AdamW(model.parameters(), lr=LR)

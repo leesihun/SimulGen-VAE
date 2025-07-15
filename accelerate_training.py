@@ -20,7 +20,7 @@ def main():
     parser = argparse.ArgumentParser(description='Accelerated SimulGen-VAE Training')
     parser.add_argument('--scenario', default='maximum_speed', 
                        choices=['small_variety_large_batch', 'large_variety_small_batch', 
-                               'memory_constrained', 'maximum_speed'],
+                               'memory_constrained', 'maximum_speed', 'safe_mode'],
                        help='Optimization scenario to use')
     parser.add_argument('--preset', default='1', help='Preset file to use')
     parser.add_argument('--plot', default='2', help='Plot setting')
