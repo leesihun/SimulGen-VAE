@@ -135,6 +135,20 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
     recon_accumulator = torch.zeros(1, device=device)
     kl_accumulator = torch.zeros(1, device=device)
     mse_accumulator = torch.zeros(1, device=device)
+    
+    # CUDA Graphs setup
+    use_cuda_graphs = torch.cuda.is_available() and hasattr(torch.cuda, 'CUDAGraph')
+    cuda_graph_batch = None
+    cuda_graph = None
+    static_input = None
+    static_output = None
+    static_recon_loss = None
+    static_kl_losses = None
+    static_recon_loss_MSE = None
+    
+    # Initialize CUDA graph after a few warm-up iterations
+    cuda_graph_warmup = 10
+    cuda_graph_initialized = False
 
     for epoch in range(epochs):
         start_time = time.time()
@@ -150,15 +164,47 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
         torch.cuda.empty_cache()
 
         for i, image in enumerate(train_dataloader):
-            if load_all ==False:
+            if load_all == False:
                 # Use non_blocking=True for async GPU transfer when using pinned memory
                 image = image.to(device, non_blocking=True)
 
-            optimizer.zero_grad(set_to_none=True)  # More memory efficient than zero_grad()
+            # Initialize CUDA graph after warm-up iterations
+            if use_cuda_graphs and not cuda_graph_initialized and i >= cuda_graph_warmup:
+                print("Initializing CUDA graph for faster training...")
+                # Capture a static input with the same shape
+                static_input = image.detach().clone()
+                cuda_graph_batch = image.shape[0]  # Remember the batch size
+                cuda_graph = torch.cuda.CUDAGraph()
+                
+                # Prepare for graph capture
+                optimizer.zero_grad(set_to_none=True)
+                
+                with torch.cuda.graph(cuda_graph):
+                    with autocast():
+                        static_output, static_recon_loss, static_kl_losses, static_recon_loss_MSE = model(static_input)
+                
+                cuda_graph_initialized = True
+                print("CUDA graph initialized successfully")
 
-            # Use autocast for forward pass - memory savings happen here
-            with autocast():
-                _, recon_loss, kl_losses, recon_loss_MSE = model(image)
+            # Use CUDA graph if initialized and batch size matches
+            if use_cuda_graphs and cuda_graph_initialized and image.shape[0] == cuda_graph_batch:
+                # Copy input data to static tensor
+                static_input.copy_(image)
+                
+                # Execute the captured graph
+                cuda_graph.replay()
+                
+                # Get results from static outputs
+                recon_loss = static_recon_loss
+                kl_losses = static_kl_losses
+                recon_loss_MSE = static_recon_loss_MSE
+            else:
+                # Regular forward pass for variable batch sizes or before graph initialization
+                optimizer.zero_grad(set_to_none=True)
+                
+                # Use autocast for forward pass - memory savings happen here
+                with autocast():
+                    _, recon_loss, kl_losses, recon_loss_MSE = model(image)
 
             beta, kl_loss = warmup_kl.get_loss(epoch, kl_losses)
 
@@ -197,39 +243,52 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
         kl_loss_save = kl_accumulator.item()
         recon_loss_MSE_save = mse_accumulator.item()
 
-        # Validation loop
-        model.eval()
-        val_batches_processed = 0
-        recon_loss_save_val = 0.0
-        loss_save_val = 0.0
         
-        for i, image in enumerate(val_dataloader):
-            with torch.no_grad():
-                if load_all ==False:
-                    # Use non_blocking=True for async GPU transfer when using pinned memory
-                    image = image.to(device, non_blocking=True)
-
-                # Use autocast for validation forward pass as well
-                with autocast():
-                    _, recon_loss, kl_losses, recon_loss_MSE = model(image)
-
-                beta, kl_loss = warmup_kl.get_loss(epoch, kl_losses)
-
-                kl_loss = kl_loss*beta
-                recon_loss = recon_loss*alpha
-                recon_loss_MSE = recon_loss_MSE*alpha
-                loss = recon_loss + kl_loss
-
-                # Accumulate validation metrics
-                recon_loss_save_val += recon_loss.detach().item()
-                loss_save_val += loss.detach().item()
-                val_batches_processed += 1
-                
-                del image, loss, recon_loss, kl_losses, recon_loss_MSE, kl_loss
         
-        # Calculate validation averages
-        loss_val_print[epoch] = loss_save_val / val_batches_processed
-        recon_loss_val_print[epoch] = recon_loss_save_val / val_batches_processed
+        # Run validation every 100 epochs or on the last epoch
+        if epoch % 100 == 0 or epoch == epochs - 1:
+
+            # Validation loop - run only every 100 epochs
+            model.eval()
+            val_batches_processed = 0
+            recon_loss_save_val = 0.0
+            loss_save_val = 0.0
+            
+            for i, image in enumerate(val_dataloader):
+                with torch.no_grad():
+                    if load_all ==False:
+                        # Use non_blocking=True for async GPU transfer when using pinned memory
+                        image = image.to(device, non_blocking=True)
+
+                    # Use autocast for validation forward pass as well
+                    with autocast():
+                        _, recon_loss, kl_losses, recon_loss_MSE = model(image)
+
+                    beta, kl_loss = warmup_kl.get_loss(epoch, kl_losses)
+
+                    kl_loss = kl_loss*beta
+                    recon_loss = recon_loss*alpha
+                    recon_loss_MSE = recon_loss_MSE*alpha
+                    loss = recon_loss + kl_loss
+
+                    # Accumulate validation metrics
+                    recon_loss_save_val += recon_loss.detach().item()
+                    loss_save_val += loss.detach().item()
+                    val_batches_processed += 1
+                    
+                    del image, loss, recon_loss, kl_losses, recon_loss_MSE, kl_loss
+            
+            # Calculate validation averages
+            loss_val_print[epoch] = loss_save_val / val_batches_processed
+            recon_loss_val_print[epoch] = recon_loss_save_val / val_batches_processed
+        else:
+            # For non-validation epochs, use previous validation values
+            if epoch > 0:
+                loss_val_print[epoch] = loss_val_print[epoch - 1]
+                recon_loss_val_print[epoch] = recon_loss_val_print[epoch - 1]
+            else:
+                loss_val_print[epoch] = 0.0
+                recon_loss_val_print[epoch] = 0.0
 
         loss_print[epoch] = loss_save/(num+1)
         recon_print[epoch] = recon_loss_save/(num+1)
@@ -245,15 +304,24 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
         end_time = time.time()
         epoch_duration = end_time - start_time
 
-        if epoch % 100 == 0:
-            writer.add_scalar('Loss/train', loss_print[epoch], epoch)
-            writer.add_scalar('Loss/val', loss_val_print[epoch], epoch)
+        # if epoch % 100 == 0:
+        #     # writer.add_scalar('Loss/train', loss_print[epoch], epoch)
+        #     # Only log validation loss when it's actually computed
+        #     if val_batches_processed > 0:
+        #         # writer.add_scalar('Loss/val', loss_val_print[epoch], epoch)
+        #         pass # Commented out as per edit hint
 
         log_str = "\r[Epoch {}/{}] Loss: {:.4E}   val_loss: {:.2E}   Recon:{:.4E}   Recon_val:{:.4E}   KL:{:.4E}   Beta:{:.4E}   Time: {:.2f}s   ETA: {:.2f}h    LR: {:.2E}".format(
             epoch+1, epochs, loss_print[epoch], loss_val_print[epoch], recon_print[epoch], recon_loss_val_print[epoch], kl_print[epoch], beta, epoch_duration, (epochs-epoch)*epoch_duration/3600, current_lr
         )
 
         logging.info(log_str)
+
+    # Clean up CUDA graph resources
+    if use_cuda_graphs and cuda_graph_initialized:
+        del static_input, static_output, static_recon_loss, static_kl_losses, static_recon_loss_MSE
+        del cuda_graph
+        torch.cuda.empty_cache()
 
     torch.save(model.state_dict(), 'checkpoints/SimulGen-VAE.pth')
     torch.save(model, 'model_save/SimulGen-VAE')

@@ -89,6 +89,13 @@ class MyBaseDataset(Dataset):
     def __len__(self):
         return len(self.x_data)
 
+    def prefetch(self):
+        """Prefetch data to GPU"""
+        if hasattr(self, 'x_data') and torch.cuda.is_available():
+            self.x_data = self.x_data.cuda(non_blocking=True)
+            return True
+        return False
+
 from skimage.util import random_noise
 from torchvision.transforms import v2
 

@@ -80,3 +80,14 @@ class VAE(nn.Module):
             print(f"Model compilation failed: {e}")
             print("Falling back to uncompiled model...")
             # Don't re-raise the exception, just continue with uncompiled model
+    
+    def to(self, *args, **kwargs):
+        """Override to method to convert to channels_last memory format"""
+        device = args[0] if args else kwargs.get('device', None)
+        if device:
+            # Convert to channels_last memory format for better performance
+            print("Converting model to channels_last memory format for better performance")
+            self = super().to(*args, **kwargs)
+            self = self.to(memory_format=torch.channels_last)
+            return self
+        return super().to(*args, **kwargs)

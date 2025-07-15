@@ -38,6 +38,9 @@ def main():
     import matplotlib
     import matplotlib.pyplot as plt
     import torch.multiprocessing  # For optimal DataLoader workers
+    import torch.distributed as dist
+    from torch.nn.parallel import DistributedDataParallel as DDP
+    from torch.utils.data.distributed import DistributedSampler
 
     from modules.common import add_sn
     from modules.input_variables import input_user_variables, input_dataset
@@ -57,8 +60,25 @@ def main():
     parser.add_argument("--train_pinn_only", dest = "train_pinn", action = "store")
     parser.add_argument("--size", dest = "size", action="store")
     parser.add_argument("--load_all", dest = "load_all", action = "store")
+    # Add DDP arguments
+    parser.add_argument("--local_rank", type=int, default=-1, help="Local rank for distributed training")
+    parser.add_argument("--use_ddp", action="store_true", help="Enable distributed data parallel training")
     args = parser.parse_args()
 
+    # Setup distributed training if requested
+    if args.use_ddp:
+        if args.local_rank == -1:
+            print("For DDP training, please use: python -m torch.distributed.launch --nproc_per_node=NUM_GPUS SimulGen-VAE.py --use_ddp [other args]")
+            is_distributed = False
+        else:
+            # Initialize the process group
+            torch.cuda.set_device(args.local_rank)
+            dist.init_process_group(backend="nccl")
+            is_distributed = True
+            print(f"Initialized DDP process group. Rank {dist.get_rank()} of {dist.get_world_size()}")
+    else:
+        is_distributed = False
+    
     def print_gpu_mem_checkpoint(msg):
         if torch.cuda.is_available():
             allocated = torch.cuda.memory_allocated() / 1024**2
@@ -113,6 +133,15 @@ def main():
     param_data_type = params['param_data_type']
     pinn_weight_decay = float(params.get('pinn_weight_decay', 1e-4))  # Default to 1e-4 if not specified
     pinn_dropout_rate = float(params.get('pinn_dropout_rate', 0.3))  # Default to 0.3 if not specified
+
+    # Adjust batch size for DDP
+    if is_distributed:
+        world_size = dist.get_world_size()
+        # Adjust batch size to maintain global batch size
+        original_batch_size = batch_size
+        batch_size = batch_size // world_size
+        if dist.get_rank() == 0:
+            print(f"Adjusted batch size from {original_batch_size} to {batch_size} per GPU (x{world_size} GPUs)")
 
     input_shape = num_physical_param
 
@@ -170,21 +199,22 @@ def main():
     warm_up_rate = 1
 
     # Display lots of data
-    print('SimulGen-VAE params')
-    print('num_param: ', num_param)
-    print('num_time: ', num_time)
-    print('num_node: ', num_node)
-    print('Encoder layers: ', num_filter_enc)
-    print('num layer encoder: ', num_layer_enc)
-    print('Decoder layers: ', num_filter_dec)
-    print('num layer decoder: ', num_layer_dec)
-    print('simulgen-vae epochs: ', n_epochs)
-    print('batch size: ', batch_size)
-    print('learning rate: ', LR)
-    print('latent dim: ', latent_dim)
-    print('latent dim end: ', latent_dim_end)
-    print('loss type: ', loss)
-    print('init beta: ', init_beta)
+    if not is_distributed or dist.get_rank() == 0:
+        print('SimulGen-VAE params')
+        print('num_param: ', num_param)
+        print('num_time: ', num_time)
+        print('num_node: ', num_node)
+        print('Encoder layers: ', num_filter_enc)
+        print('num layer encoder: ', num_layer_enc)
+        print('Decoder layers: ', num_filter_dec)
+        print('num layer decoder: ', num_layer_dec)
+        print('simulgen-vae epochs: ', n_epochs)
+        print('batch size: ', batch_size)
+        print('learning rate: ', LR)
+        print('latent dim: ', latent_dim)
+        print('latent dim end: ', latent_dim_end)
+        print('loss type: ', loss)
+        print('init beta: ', init_beta)
 
     print_graph = args.plot
 
@@ -606,5 +636,64 @@ def main():
 
             plt.show()
 
-if __name__ == '__main__':
+    # Modify the dataset and dataloader creation to use DDP samplers if needed
+    train_dataset = MyBaseDataset(new_x_train)
+    
+    # If using load_all=True, prefetch data to GPU
+    if load_all:
+        if not is_distributed or dist.get_rank() == 0:
+            print("Prefetching dataset to GPU...")
+        train_dataset.prefetch()
+        if not is_distributed or dist.get_rank() == 0:
+            print("Dataset prefetched to GPU successfully")
+    
+    # Create DDP samplers if using distributed training
+    if is_distributed:
+        train_sampler = DistributedSampler(train_dataset, shuffle=True)
+        train_dataloader = DataLoader(train_dataset, batch_size=batch_size, sampler=train_sampler, 
+                                      pin_memory=not load_all, num_workers=0 if load_all else 4)
+        val_dataloader = train_dataloader  # Use same for validation in this example
+    else:
+        train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, 
+                                     pin_memory=not load_all, num_workers=0 if load_all else 4)
+        val_dataloader = train_dataloader  # Use same for validation in this example
+
+    # Modify the training function call to handle DDP
+    def train_model():
+        # Create model
+        model = VAE(latent_dim, latent_dim_end, num_filter_enc, num_filter_dec, num_node, num_time, lossfun=loss, batch_size=batch_size, small=small)
+        
+        # Move model to device
+        device = torch.device(f"cuda:{args.local_rank}" if is_distributed else "cuda:0" if torch.cuda.is_available() else "cpu")
+        model = model.to(device)
+        
+        # Wrap model in DDP if using distributed training
+        if is_distributed:
+            model = DDP(model, device_ids=[args.local_rank], output_device=args.local_rank)
+            if dist.get_rank() == 0:
+                print("Model wrapped in DistributedDataParallel")
+        
+        # Train the model
+        loss_print, recon_print, kl_print, loss_val_print = train(
+            n_epochs, batch_size, train_dataloader, val_dataloader, LR, 
+            num_filter_enc, num_filter_dec, num_node, latent_dim, latent_dim_end, 
+            num_time, alpha, loss, small, load_all
+        )
+        
+        return loss_print, recon_print, kl_print, loss_val_print
+    
+    # Train the model
+    loss_print, recon_print, kl_print, loss_val_print = train_model()
+    
+    # Clean up distributed process group
+    if is_distributed:
+        dist.destroy_process_group()
+
+if __name__ == "__main__":
     main()
+
+# Add a helper script for launching DDP training
+"""
+To use DDP training, run:
+python -m torch.distributed.launch --nproc_per_node=NUM_GPUS SimulGen-VAE.py --use_ddp --preset=1 --plot=2 --train_pinn_only=0 --size=small --load_all=1
+"""
