@@ -72,11 +72,12 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
     model.apply(initialize_weights_He)
     model.apply(add_sn)
 
-    init_beta = 1e-7
-    beta_target = 1e-3
+    # Improved beta scheduling for better VAE training
+    init_beta = 1e-8  # Start even lower
+    beta_target = 5e-4  # Lower target for better reconstruction
     epoch = epochs
-    start_warmup =int(epoch*0.3)
-    end_warmup = int(epoch*0.7)
+    start_warmup = int(epoch*0.1)  # Start warmup earlier
+    end_warmup = int(epoch*0.8)    # End warmup later for more gradual increase
 
     warmup_kl = WarmupKLLoss(epoch, init_beta, start_warmup, end_warmup, beta_target)
 
@@ -86,9 +87,12 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
     # Use 'default' mode for safer compilation, or False to disable
     model.compile_model(mode='default')
 
-    # optimizer = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=1e-4)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=LR)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epoch, eta_min=0)
+    # Add weight decay for better generalization
+    optimizer = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=1e-5)
+    # Use a more sophisticated scheduler
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
+        optimizer, T_0=epoch//4, T_mult=2, eta_min=LR*0.01
+    )
     
     # Initialize GradScaler for mixed precision training
     scaler = GradScaler()

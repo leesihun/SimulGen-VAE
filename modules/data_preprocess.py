@@ -64,7 +64,8 @@ def data_scaler(FOM_data_aug, FOM_data, num_time, num_node, directory):
 
     start= time.time()
 
-    scaler = MinMaxScaler(feature_range=(-0.7, 0.7))
+    # Wider range for better VAE training - VAEs work better with [-1, 1] or [-0.9, 0.9]
+    scaler = MinMaxScaler(feature_range=(-0.9, 0.9))
 
     x_train_temp = FOM_data_aug.reshape([-1, num_node])
     FOM_temp = FOM_data.reshape([-1, num_node])
@@ -86,7 +87,8 @@ def data_scaler(FOM_data_aug, FOM_data, num_time, num_node, directory):
     return new_x_train, DATA_shape, scaler
 
 def pinn_scaler(data, name):
-    scaler = MinMaxScaler(feature_range=(-0.7, 0.7))
+    # Also update PINN scaler to match
+    scaler = MinMaxScaler(feature_range=(-0.9, 0.9))
 
     scaler.fit(data)
     scaled_data = scaler.transform(data)
