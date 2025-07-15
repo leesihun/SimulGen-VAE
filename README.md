@@ -1,6 +1,14 @@
 # SimulGen-VAE
 
-A high-performance VAE for fast generation and parameter inference of time-dependent simulation data with Physics-Inspired Neural Network (PINN) integration.
+A high-performance VAE for fast generation and parameter inference of time-dependent simulation data with Physics-Aware Neural Network (PANN) integration.
+Supports three tasks
+- Parametric estimations
+- Non-parametric estimations
+- Probabilistic estimations
+
+## Author
+SiHun Lee, Ph. D, kevin1007kr@gmail.com, [LinkedIn Profile](https://www.linkedin.com/in/%EC%8B%9C%ED%9B%88-%EC%9D%B4-13009a172/?originalSubdomain=kr)
+
 
 ## Table of Contents
 1. [Prerequisites](#prerequisites)  
