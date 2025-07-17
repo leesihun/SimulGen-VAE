@@ -74,10 +74,10 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
 
     # Improved beta scheduling for better VAE training
     init_beta = 1e-8  # Start even lower
-    beta_target = 1e-4  # Lower target for better reconstruction
+    beta_target = 2e-3  # Increased from 1e-4 to 2e-3 to reduce overfitting (stronger regularization)
     epoch = epochs
-    start_warmup = int(epoch*0.5)  # Start warmup earlier
-    end_warmup = int(epoch*0.9)    # End warmup later for more gradual increase
+    start_warmup = int(epoch*0.3)  # Start warmup earlier (from 0.5 to 0.3)
+    end_warmup = int(epoch*0.8)    # End warmup a bit earlier for longer training at target beta
 
     warmup_kl = WarmupKLLoss(epoch, init_beta, start_warmup, end_warmup, beta_target)
 
@@ -87,8 +87,8 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
     # Use 'default' mode for safer compilation, or False to disable
     model.compile_model(mode='default')
 
-    # Add weight decay for better generalization
-    optimizer = torch.optim.AdamW(model.parameters(), lr=LR)
+    # Add weight decay for better generalization - increased from default to 5e-4 to reduce overfitting
+    optimizer = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=5e-4)
     # Use a more sophisticated scheduler
     scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
         optimizer, T_0=epoch//4, T_mult=2, eta_min=LR*0.0001
