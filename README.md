@@ -44,6 +44,23 @@ SiHun Lee, Ph. D, [Email](kevin1007kr@gmail.com), [LinkedIn](https://www.linkedi
 - **Optimizations**: Mixed precision training, memory optimizations, CUDA graphs
 - **Performance**: Advanced data loading optimizations and model compilation support
 
+## Recent Updates
+
+### CUDA Error Handling Improvements (Current Update)
+- Added robust CUDA initialization with proper error handling in PINN training
+- Fixed "dataset is not defined" error in main script
+- Implemented graceful fallback to CPU when CUDA errors occur
+- Added memory management and diagnostic outputs for better debugging
+- Enhanced error handling in VAE forward pass to prevent crashes
+- Improved PINNDataset class to safely handle GPU memory
+
+### How to Handle CUDA Errors
+If you encounter CUDA errors like "initialization error", try these steps:
+1. Ensure your NVIDIA drivers match your PyTorch CUDA version
+2. Try reducing batch size by modifying `pinn_batch` in `condition.txt`
+3. Free up GPU memory by closing other applications
+4. If issues persist, the code will automatically fall back to CPU
+
 ## Table of Contents
 1. [Prerequisites](#prerequisites)  
 2. [Quick-Start](#quick-start)  

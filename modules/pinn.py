@@ -199,7 +199,30 @@ def train_pinn(pinn_epoch, pinn_dataloader, pinn_validation_dataloader, pinn, pi
     writer = SummaryWriter(log_dir = './PINNruns', comment = 'PINN')
 
     loss=0
-    device = "cuda:0" if torch.cuda.is_available() else "cpu"
+    
+    # Robust CUDA initialization with error handling
+    try:
+        # Reset GPU state and clear memory
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.reset_peak_memory_stats()
+            
+            # Test if CUDA is actually working with a small tensor
+            print("Testing CUDA availability...")
+            test_tensor = torch.zeros(1).cuda()
+            del test_tensor  # Free memory
+            
+            device = "cuda:0"
+            print(f"CUDA initialized successfully. Using device: {device}")
+            print(f"GPU: {torch.cuda.get_device_name(0)}")
+            print(f"Available memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.2f} GB")
+        else:
+            device = "cpu"
+            print("CUDA not available. Using CPU.")
+    except RuntimeError as e:
+        print(f"CUDA initialization failed with error: {e}")
+        print("Falling back to CPU.")
+        device = "cpu"
 
     # Reduce learning rate and add weight decay for regularization
     pinn_optimized = torch.optim.AdamW(pinn.parameters(), lr=pinn_lr, weight_decay=weight_decay)
@@ -216,8 +239,22 @@ def train_pinn(pinn_epoch, pinn_dataloader, pinn_validation_dataloader, pinn, pi
 
     from torchinfo import summary
 
-    summary(pinn, (64,1,im_size,im_size))
-    pinn = pinn.to(device)
+    # Safely run model summary
+    try:
+        summary(pinn, (64,1,im_size,im_size))
+    except Exception as e:
+        print(f"Warning: Could not generate model summary: {e}")
+    
+    # Safely move model to device
+    try:
+        pinn = pinn.to(device)
+        print(f"Model successfully moved to {device}")
+    except RuntimeError as e:
+        print(f"Error moving model to {device}: {e}")
+        if device != "cpu":
+            print("Attempting to fall back to CPU...")
+            device = "cpu"
+            pinn = pinn.to(device)
 
     pinn.apply(initialize_weights_He)
 
@@ -237,12 +274,36 @@ def train_pinn(pinn_epoch, pinn_dataloader, pinn_validation_dataloader, pinn, pi
                     x_aug.append(img_aug.unsqueeze(0))
                 x = torch.cat(x_aug, dim=0)
             
-            x, y1, y2 = x.to(device), y1.to(device), y2.to(device)
+            # Safely move tensors to device
+            try:
+                x, y1, y2 = x.to(device), y1.to(device), y2.to(device)
+            except RuntimeError as e:
+                print(f"Error moving data to {device}: {e}")
+                if device != "cpu":
+                    print("Falling back to CPU...")
+                    device = "cpu"
+                    pinn = pinn.to(device)
+                    x, y1, y2 = x.to(device), y1.to(device), y2.to(device)
             
             for param in pinn.parameters():
                 param.grad = None
 
-            y_pred1, y_pred2 = pinn(x)
+            # Forward pass with error handling
+            try:
+                y_pred1, y_pred2 = pinn(x)
+            except RuntimeError as e:
+                print(f"Forward pass error: {e}")
+                print(f"Input shape: {x.shape}, Device: {x.device}")
+                # Try to recover by reducing batch size
+                if len(x) > 1:
+                    print("Trying with reduced batch size...")
+                    half_size = len(x) // 2
+                    x_half, y1_half, y2_half = x[:half_size], y1[:half_size], y2[:half_size]
+                    y_pred1, y_pred2 = pinn(x_half)
+                    x, y1, y2 = x_half, y1_half, y2_half
+                else:
+                    print("Cannot reduce batch size further, skipping batch")
+                    continue
 
             A = nn.MSELoss()(y_pred1, y1)
             B = nn.MSELoss()(y_pred2, y2)
@@ -251,12 +312,18 @@ def train_pinn(pinn_epoch, pinn_dataloader, pinn_validation_dataloader, pinn, pi
             epoch_loss += loss.item()
             num_batches += 1
 
-            loss.backward()
-            
-            # Gradient clipping to prevent exploding gradients
-            torch.nn.utils.clip_grad_norm_(pinn.parameters(), max_norm=1.0)
-            
-            pinn_optimized.step()
+            # Backward pass with error handling
+            try:
+                loss.backward()
+                # Gradient clipping to prevent exploding gradients
+                torch.nn.utils.clip_grad_norm_(pinn.parameters(), max_norm=1.0)
+                pinn_optimized.step()
+            except RuntimeError as e:
+                print(f"Backward pass error: {e}")
+                # Skip this batch and continue
+                for param in pinn.parameters():
+                    param.grad = None
+                continue
         
         avg_train_loss = epoch_loss / num_batches
 

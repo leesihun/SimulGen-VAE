@@ -101,15 +101,51 @@ from torchvision.transforms import v2
 
 class PINNDataset(Dataset):
     def __init__(self, x_data, y1_data, y2_data):
-        # Keep data on CPU to avoid CUDA context sharing issues with multi-threaded DataLoaders
-        self.x_data = torch.tensor(x_data).to(device)
-        self.y1_data = torch.tensor(y1_data).to(device)
-        self.y2_data = torch.tensor(y2_data).to(device)
+        # Keep data on CPU initially and move to device safely
+        try:
+            # First check if CUDA is available and working
+            if torch.cuda.is_available():
+                try:
+                    # Test CUDA with a small tensor
+                    test_tensor = torch.zeros(1).cuda()
+                    del test_tensor  # Free memory
+                    
+                    # If successful, move data to GPU
+                    print("Moving PINN dataset to GPU...")
+                    self.x_data = torch.tensor(x_data).to(device)
+                    self.y1_data = torch.tensor(y1_data).to(device)
+                    self.y2_data = torch.tensor(y2_data).to(device)
+                    print(f"PINN dataset successfully moved to {device}")
+                except RuntimeError as e:
+                    print(f"CUDA error when initializing PINN dataset: {e}")
+                    print("Keeping PINN dataset on CPU")
+                    self.x_data = torch.tensor(x_data)
+                    self.y1_data = torch.tensor(y1_data)
+                    self.y2_data = torch.tensor(y2_data)
+            else:
+                # No CUDA, keep on CPU
+                self.x_data = torch.tensor(x_data)
+                self.y1_data = torch.tensor(y1_data)
+                self.y2_data = torch.tensor(y2_data)
+        except Exception as e:
+            print(f"Error initializing PINN dataset: {e}")
+            print("Falling back to CPU tensors")
+            self.x_data = torch.tensor(x_data)
+            self.y1_data = torch.tensor(y1_data)
+            self.y2_data = torch.tensor(y2_data)
 
     def __getitem__(self, index):
         x = self.x_data[index]
-        # Return CPU tensors - training loop will handle GPU transfer
-        return x, self.y1_data[index], self.y2_data[index]
+        y1 = self.y1_data[index]
+        y2 = self.y2_data[index]
+        
+        # If tensors are on GPU but we need CPU tensors, detach and move to CPU
+        if x.device.type != 'cpu' and device.type == 'cpu':
+            x = x.cpu()
+            y1 = y1.cpu()
+            y2 = y2.cpu()
+            
+        return x, y1, y2
     
     def __len__(self):
         return self.x_data.shape[0]

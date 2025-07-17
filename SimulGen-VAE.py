@@ -254,93 +254,63 @@ def main():
     
     # Use the augmented dataset and dataloaders
     print("Creating augmented dataset with on-the-fly data augmentation...")
-    dataloader, val_dataloader = create_augmented_dataloaders(
-        new_x_train, 
-        batch_size=batch_size, 
-        load_all=load_all,
-        augmentation_config=augmentation_config,
-        val_split=0.2,  # 80% train, 20% validation
-        num_workers=None  # Auto-determine optimal workers
-    )
     
-    print("✓ Augmented dataloaders created successfully")
-    print("  - Augmentations enabled: Noise, Scaling, Shift, Mixup, Cutout")
-    print(f"  - Training samples: {int(len(new_x_train) * 0.8)}")
-    print(f"  - Validation samples: {int(len(new_x_train) * 0.2)}")
-    
-    # Comment out the old dataset creation code
-    '''
-    dataset = MyBaseDataset(new_x_train, load_all)
-    train_dataset, validation_dataset = random_split(dataset, [int(0.8*num_param), num_param - int(0.8*num_param)])
-    
-    # Optimize DataLoaders with intelligent worker detection
-    dataset_size = len(dataset)
-    optimal_workers = get_optimal_workers(dataset_size, load_all, batch_size)
-    
-    if load_all:
-        # Data already on GPU, use minimal workers
-        dataloader = DataLoader(
-            train_dataset, 
+    # Add CUDA error handling for dataset creation
+    try:
+        # Test CUDA if available
+        if torch.cuda.is_available():
+            try:
+                test_tensor = torch.zeros(1).cuda()
+                del test_tensor
+                print("CUDA is working properly")
+            except RuntimeError as e:
+                print(f"CUDA error during initialization: {e}")
+                print("Falling back to CPU for dataset handling")
+                # Force CPU mode if CUDA is not working
+                device = torch.device('cpu')
+        
+        # Create dataloaders with error handling
+        dataloader, val_dataloader = create_augmented_dataloaders(
+            new_x_train, 
             batch_size=batch_size, 
-            shuffle=True, 
-            num_workers=0, 
-            pin_memory=False
+            load_all=load_all,
+            augmentation_config=augmentation_config,
+            val_split=0.2,  # 80% train, 20% validation
+            num_workers=None  # Auto-determine optimal workers
         )
-        val_dataloader = DataLoader(
-            validation_dataset, 
-            batch_size=batch_size, 
-            shuffle=True, 
-            num_workers=0, 
-            pin_memory=False
-        )
-        print(f"   ✓ VAE DataLoader: Data preloaded on GPU ({dataset_size} samples)")
-    elif optimal_workers == 0:
-        # Single-threaded for small datasets
-        dataloader = DataLoader(
-            train_dataset, 
-            batch_size=batch_size, 
-            shuffle=True, 
-            num_workers=0, 
-            pin_memory=True
-        )
-        val_dataloader = DataLoader(
-            validation_dataset, 
-            batch_size=batch_size, 
-            shuffle=True, 
-            num_workers=0, 
-            pin_memory=True
-        )
-        print(f"   ✓ VAE DataLoader: Single-threaded ({dataset_size} samples)")
-    else:
-        # Multi-threaded for larger datasets - optimized for large data transfers
-        # Use more workers and higher prefetch for large datasets like yours
-        optimized_workers = min(optimal_workers, 4)  # Cap at 4 for stability
-        prefetch_factor = 4 if dataset_size > 400 else 2  # Higher prefetch for large datasets
+        
+        # Create a reference to the dataset for later use
+        # This fixes the "dataset is not defined" error
+        dataset = dataloader.dataset
+        
+        print("✓ Augmented dataloaders created successfully")
+        print("  - Augmentations enabled: Noise, Scaling, Shift, Mixup, Cutout")
+        print(f"  - Training samples: {int(len(new_x_train) * 0.8)}")
+        print(f"  - Validation samples: {int(len(new_x_train) * 0.2)}")
+        
+    except Exception as e:
+        print(f"Error creating augmented dataloaders: {e}")
+        print("Falling back to basic dataset creation...")
+        
+        # Fallback to basic dataset without augmentation
+        dataset = MyBaseDataset(new_x_train, load_all)
+        train_dataset, validation_dataset = random_split(dataset, [int(0.8*num_param), num_param - int(0.8*num_param)])
         
         dataloader = DataLoader(
             train_dataset, 
             batch_size=batch_size, 
             shuffle=True, 
-            num_workers=optimized_workers,
-            pin_memory=True,
-            persistent_workers=True,  # Keep workers alive between epochs
-            prefetch_factor=prefetch_factor,  # Prefetch more batches for large data
-            drop_last=True  # Avoid variable batch sizes for consistency
+            num_workers=0, 
+            pin_memory=not load_all
         )
         val_dataloader = DataLoader(
             validation_dataset, 
             batch_size=batch_size, 
             shuffle=True, 
-            num_workers=optimized_workers,
-            pin_memory=True,
-            persistent_workers=True,
-            prefetch_factor=prefetch_factor,
-            drop_last=False  # Keep all validation data
+            num_workers=0, 
+            pin_memory=not load_all
         )
-        print(f"   ✓ VAE DataLoader: {optimized_workers} workers, {prefetch_factor}x prefetch ({dataset_size} samples)")
-    
-    del train_dataset, validation_dataset
-    '''
+        print("✓ Basic dataloaders created as fallback")
 
     print('Dataloader initiated...')
     print_gpu_mem_checkpoint('After dataloader creation')

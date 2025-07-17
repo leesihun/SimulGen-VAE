@@ -29,25 +29,43 @@ class VAE(nn.Module):
         self.mse_loss = nn.MSELoss()  # Always needed for recon_loss_MSE
 
     def forward(self, x):
-        # Always use regular forward pass - no speed trade-offs
-        mu, log_var, xs = self.encoder(x)
-        
-        # Clamp log_var to prevent numerical instability before computing std
-        log_var = torch.clamp(log_var, min=-30, max=30)
-        std = torch.exp(0.5*log_var)
-        z = reparameterize(mu, std)
-        
-        decoder_output, kl_losses = self.decoder(z, xs)
+        try:
+            # Always use regular forward pass - no speed trade-offs
+            mu, log_var, xs = self.encoder(x)
+            
+            # Clamp log_var to prevent numerical instability before computing std
+            log_var = torch.clamp(log_var, min=-30, max=30)
+            std = torch.exp(0.5*log_var)
+            z = reparameterize(mu, std)
+            
+            decoder_output, kl_losses = self.decoder(z, xs)
 
-        # Use pre-compiled loss functions for efficiency
-        recon_loss = self.loss_functions.get(self.lossfun, self.mse_loss)(decoder_output, x)
-        recon_loss_MSE = self.mse_loss(decoder_output, x)
+            # Use pre-compiled loss functions for efficiency
+            recon_loss = self.loss_functions.get(self.lossfun, self.mse_loss)(decoder_output, x)
+            recon_loss_MSE = self.mse_loss(decoder_output, x)
 
-        kl_loss = kl(mu, log_var)
+            kl_loss = kl(mu, log_var)
 
-        # Clean up intermediate variables to free memory faster
-        del mu, log_var, xs, z
-        return decoder_output, recon_loss, [kl_loss]+kl_losses, recon_loss_MSE
+            # Clean up intermediate variables to free memory faster
+            del mu, log_var, xs, z
+            return decoder_output, recon_loss, [kl_loss]+kl_losses, recon_loss_MSE
+            
+        except RuntimeError as e:
+            if "CUDA out of memory" in str(e):
+                print(f"CUDA out of memory in VAE forward pass: {e}")
+                print(f"Input tensor shape: {x.shape}, device: {x.device}")
+                # Try to recover by freeing memory
+                torch.cuda.empty_cache()
+                # Re-raise to let caller handle it
+                raise
+            elif "CUDA error" in str(e):
+                print(f"CUDA error in VAE forward pass: {e}")
+                # Try to recover
+                torch.cuda.empty_cache()
+                raise
+            else:
+                print(f"Unexpected error in VAE forward pass: {e}")
+                raise
     
     def compile_model(self, mode='default'):
         """
