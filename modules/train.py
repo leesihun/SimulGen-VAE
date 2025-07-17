@@ -73,8 +73,8 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
     model.apply(add_sn)
 
     # Improved beta scheduling for better VAE training
-    init_beta = 1e-8  # Start even lower
-    beta_target = 2e-3  # Increased from 1e-4 to 2e-3 to reduce overfitting (stronger regularization)
+    init_beta = 1e-4  # Start even lower
+    beta_target = 1e-2  # Increased from 1e-4 to 2e-3 to reduce overfitting (stronger regularization)
     epoch = epochs
     start_warmup = int(epoch*0.3)  # Start warmup earlier (from 0.5 to 0.3)
     end_warmup = int(epoch*0.8)    # End warmup a bit earlier for longer training at target beta
