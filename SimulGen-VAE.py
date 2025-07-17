@@ -239,15 +239,15 @@ def main():
     
     # Configure augmentation parameters
     augmentation_config = {
-        'noise_prob': 0.5,        # Probability of adding noise
+        'noise_prob': 0.2,        # Probability of adding noise
         'noise_level': 0.03,      # Noise intensity (0.03 = 3%)
-        'scaling_prob': 0.3,      # Probability of scaling
+        'scaling_prob': 0.1,      # Probability of scaling
         'scaling_range': (0.9, 1.1), # Scaling factor range
-        'shift_prob': 0.3,        # Probability of time shifting
+        'shift_prob': 0.0,        # Probability of time shifting
         'shift_max': 0.1,         # Maximum shift fraction
         'mixup_prob': 0.2,        # Probability of applying mixup
         'mixup_alpha': 0.2,       # Mixup interpolation strength
-        'cutout_prob': 0.2,       # Probability of applying cutout
+        'cutout_prob': 0.0,       # Probability of applying cutout
         'cutout_max': 0.1,        # Maximum cutout fraction
         'enabled': True           # Master switch for augmentation
     }
