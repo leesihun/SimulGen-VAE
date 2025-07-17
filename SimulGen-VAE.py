@@ -50,6 +50,7 @@ def main():
     from modules.VAE_network import VAE
     from modules.train import train, print_gpu_mem_checkpoint
     from modules.utils import MyBaseDataset, get_latest_file, PINNDataset, get_optimal_workers
+    from modules.augmentation import AugmentedDataset, create_augmented_dataloaders
 
     from torchinfo import summary
     from torch.utils.data import DataLoader, Dataset, random_split
@@ -236,6 +237,39 @@ def main():
 
     print('Dataset reange: ', np.min(new_x_train), np.max(new_x_train))
     
+    # Configure augmentation parameters
+    augmentation_config = {
+        'noise_prob': 0.5,        # Probability of adding noise
+        'noise_level': 0.03,      # Noise intensity (0.03 = 3%)
+        'scaling_prob': 0.3,      # Probability of scaling
+        'scaling_range': (0.9, 1.1), # Scaling factor range
+        'shift_prob': 0.3,        # Probability of time shifting
+        'shift_max': 0.1,         # Maximum shift fraction
+        'mixup_prob': 0.2,        # Probability of applying mixup
+        'mixup_alpha': 0.2,       # Mixup interpolation strength
+        'cutout_prob': 0.2,       # Probability of applying cutout
+        'cutout_max': 0.1,        # Maximum cutout fraction
+        'enabled': True           # Master switch for augmentation
+    }
+    
+    # Use the augmented dataset and dataloaders
+    print("Creating augmented dataset with on-the-fly data augmentation...")
+    dataloader, val_dataloader = create_augmented_dataloaders(
+        new_x_train, 
+        batch_size=batch_size, 
+        load_all=load_all,
+        augmentation_config=augmentation_config,
+        val_split=0.2,  # 80% train, 20% validation
+        num_workers=None  # Auto-determine optimal workers
+    )
+    
+    print("✓ Augmented dataloaders created successfully")
+    print("  - Augmentations enabled: Noise, Scaling, Shift, Mixup, Cutout")
+    print(f"  - Training samples: {int(len(new_x_train) * 0.8)}")
+    print(f"  - Validation samples: {int(len(new_x_train) * 0.2)}")
+    
+    # Comment out the old dataset creation code
+    '''
     dataset = MyBaseDataset(new_x_train, load_all)
     train_dataset, validation_dataset = random_split(dataset, [int(0.8*num_param), num_param - int(0.8*num_param)])
     
@@ -306,6 +340,7 @@ def main():
         print(f"   ✓ VAE DataLoader: {optimized_workers} workers, {prefetch_factor}x prefetch ({dataset_size} samples)")
     
     del train_dataset, validation_dataset
+    '''
 
     print('Dataloader initiated...')
     print_gpu_mem_checkpoint('After dataloader creation')
