@@ -74,10 +74,10 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
 
     # Improved beta scheduling for better VAE training
     init_beta = 1e-8  # Start even lower
-    beta_target = 5e-4  # Lower target for better reconstruction
+    beta_target = 1e-4  # Lower target for better reconstruction
     epoch = epochs
-    start_warmup = int(epoch*0.1)  # Start warmup earlier
-    end_warmup = int(epoch*0.8)    # End warmup later for more gradual increase
+    start_warmup = int(epoch*0.5)  # Start warmup earlier
+    end_warmup = int(epoch*0.9)    # End warmup later for more gradual increase
 
     warmup_kl = WarmupKLLoss(epoch, init_beta, start_warmup, end_warmup, beta_target)
 
@@ -88,10 +88,10 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
     model.compile_model(mode='default')
 
     # Add weight decay for better generalization
-    optimizer = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=1e-5)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=LR)
     # Use a more sophisticated scheduler
     scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
-        optimizer, T_0=epoch//4, T_mult=2, eta_min=LR*0.01
+        optimizer, T_0=epoch//4, T_mult=2, eta_min=LR*0.0001
     )
     
     # Initialize GradScaler for mixed precision training
@@ -224,7 +224,7 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
             scaler.unscale_(optimizer)
             # Start with 5.0, reduce to 1.0 only if you still get NaN
             # For VAEs, 2.0-5.0 is often a good balance
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=10.0)
             
             # Mixed precision optimizer step
             scaler.step(optimizer)
