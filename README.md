@@ -11,7 +11,14 @@ SiHun Lee, Ph. D, [Email](kevin1007kr@gmail.com), [LinkedIn](https://www.linkedi
 
 ## Version History
 
-### v1.2.0 (Current)
+### v1.3.0 (Current)
+- **Major**: Added on-the-fly data augmentation to reduce overfitting
+- **Implemented**: Five augmentation techniques (noise, scaling, shifting, mixup, cutout)
+- **Enhanced**: Created `AugmentedDataset` class for dynamic data augmentation
+- **Improved**: Reduced gap between training and validation loss
+- **Added**: Detailed documentation on Mixup augmentation technique
+
+### v1.2.0
 - **Major**: Replaced all BatchNorm layers with GroupNorm for improved training stability
 - **Enhanced**: Batch-size independent normalization across all modules (encoder, decoder, common, pinn)
 - **Improved**: Better gradient flow in hierarchical VAE architecture
@@ -41,11 +48,12 @@ SiHun Lee, Ph. D, [Email](kevin1007kr@gmail.com), [LinkedIn](https://www.linkedi
 1. [Prerequisites](#prerequisites)  
 2. [Quick-Start](#quick-start)  
 3. [Performance Optimizations](#performance-optimizations)
-4. [Normalization Strategy (GroupNorm)](#normalization-strategy-groupnorm)
-5. [Multi-GPU Training](#multi-gpu-training)
-6. [Configuration](#configuration)
-7. [Troubleshooting](#troubleshooting)
-8. [Acknowledgements](#acknowledgements)
+4. [Data Augmentation](#data-augmentation)
+5. [Normalization Strategy (GroupNorm)](#normalization-strategy-groupnorm)
+6. [Multi-GPU Training](#multi-gpu-training)
+7. [Configuration](#configuration)
+8. [Troubleshooting](#troubleshooting)
+9. [Acknowledgements](#acknowledgements)
 
 ## Prerequisites
 * **Python ≥ 3.9** (tested on 3.10)  
@@ -97,6 +105,68 @@ SimulGen-VAE includes several advanced optimizations for maximum training speed:
 - **Distributed Data Parallel (DDP)**: Scales training across multiple GPUs
 - **Automatic Batch Size Adjustment**: Maintains global batch size across GPUs
 - **Efficient Parameter Synchronization**: Uses NCCL backend for fast GPU-to-GPU communication
+
+## Data Augmentation
+
+SimulGen-VAE includes on-the-fly data augmentation to reduce overfitting and improve generalization:
+
+### Augmentation Techniques
+
+1. **Noise Injection**
+   - Adds Gaussian noise to input signals
+   - Configurable intensity (default: 3%)
+   - Makes model robust to input variations
+
+2. **Amplitude Scaling**
+   - Randomly scales signal amplitude
+   - Default range: 0.9-1.1× (±10%)
+   - Improves robustness to amplitude variations
+
+3. **Time Shifting**
+   - Shifts signals in time dimension
+   - Configurable maximum shift (default: 10%)
+   - Helps model learn time-invariant features
+
+4. **Mixup Augmentation**
+   - Creates virtual samples by linearly interpolating between pairs
+   - Beta distribution sampling with configurable alpha
+   - Smooths decision boundaries and improves generalization
+   - [Detailed explanation](modules/mixup_explanation.md)
+
+5. **Cutout**
+   - Masks random time segments to zero
+   - Forces model to learn from incomplete data
+   - Reduces overfitting by preventing memorization
+
+### Implementation
+
+```python
+# Create augmented dataloaders with default configuration
+dataloader, val_dataloader = create_augmented_dataloaders(
+    data, batch_size=32, load_all=True,
+    augmentation_config={
+        'noise_prob': 0.5,        # Probability of adding noise
+        'noise_level': 0.03,      # Noise intensity (3%)
+        'scaling_prob': 0.3,      # Probability of scaling
+        'scaling_range': (0.9, 1.1), # Scaling factor range
+        'shift_prob': 0.3,        # Probability of time shifting
+        'shift_max': 0.1,         # Maximum shift fraction
+        'mixup_prob': 0.2,        # Probability of applying mixup
+        'mixup_alpha': 0.2,       # Mixup interpolation strength
+        'cutout_prob': 0.2,       # Probability of applying cutout
+        'cutout_max': 0.1,        # Maximum cutout fraction
+        'enabled': True           # Master switch for augmentation
+    }
+)
+```
+
+### Benefits for VAE Training
+
+- **Reduced Overfitting**: Smaller gap between training and validation loss
+- **Better Generalization**: Model learns more robust features
+- **Smoother Latent Space**: Especially from Mixup augmentation
+- **Dynamic Generation**: New variations created on-the-fly each epoch
+- **Memory Efficient**: No additional storage required for augmented samples
 
 ## Normalization Strategy (GroupNorm)
 
@@ -161,6 +231,24 @@ The VAE supports `torch.compile` with selectable modes:
 - `default`: Conservative, most stable  
 - `reduce-overhead`: Faster compile time  
 - `max-autotune`: Highest performance but may break on exotic ops
+
+### Data Augmentation Configuration
+Customize augmentation parameters by modifying the `augmentation_config` dictionary:
+
+```python
+augmentation_config = {
+    'noise_prob': 0.5,        # Probability of adding noise
+    'noise_level': 0.03,      # Noise intensity (0.03 = 3%)
+    'scaling_prob': 0.3,      # Probability of scaling
+    'scaling_range': (0.9, 1.1), # Scaling factor range
+    'shift_prob': 0.3,        # Probability of time shifting
+    'shift_max': 0.1,         # Maximum shift fraction
+    'mixup_prob': 0.2,        # Probability of applying mixup
+    'mixup_alpha': 0.2,       # Mixup interpolation strength
+    'cutout_prob': 0.2,       # Probability of applying cutout
+    'cutout_max': 0.1,        # Maximum cutout fraction
+    'enabled': True           # Master switch for augmentation
+}
 
 ## Troubleshooting
 | Issue | Fix |
