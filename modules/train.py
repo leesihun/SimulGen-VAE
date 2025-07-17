@@ -249,7 +249,7 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
         
         
         # Run validation every 100 epochs or on the last epoch
-        if epoch % 100 == 0 or epoch == epochs - 1:
+        if epoch % 10 == 0 or epoch == epochs - 1:
 
             # Validation loop - run only every 100 epochs
             model.eval()
