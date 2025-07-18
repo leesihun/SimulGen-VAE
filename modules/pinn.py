@@ -18,7 +18,7 @@ def safe_cuda_initialization():
             del test_tensor
             print("✓ CUDA initialized successfully")
             return "cuda"
-            
+
         else:
             print("CUDA not available, using CPU")
             return "cpu"
@@ -319,12 +319,12 @@ def train_pinn(n_epochs, dataloader, val_dataloader, model, learning_rate, weigh
                         loss1 = criterion1(outputs1, targets1)
                         loss2 = criterion2(outputs2, targets2)
                         val_loss += (loss1 + loss2).item()
-    except RuntimeError as e:
+                    except RuntimeError as e:
                         if "CUDA" in str(e):
                             print(f"CUDA error during validation: {e}")
                             print("Moving validation to CPU")
                             # Move to CPU
-        device = "cpu"
+                            device = "cpu"
                             model.to(device)
                             model.device = device  # Update model's device attribute
                             
