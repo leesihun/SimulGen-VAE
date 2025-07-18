@@ -45,7 +45,7 @@ def main():
     from modules.common import add_sn
     from modules.input_variables import input_user_variables, input_dataset
     from modules.data_preprocess import reduce_dataset, data_augmentation, data_scaler, pinn_scaler, pinn_scaler_input
-    from modules.pinn import PINN_img, train_pinn, read_pinn_dataset_img, read_pinn_dataset, PINN
+    from modules.pinn import PINN_img, train_pinn, read_pinn_dataset_img, read_pinn_dataset, PINN, safe_cuda_initialization
     from modules.plotter import temporal_plotter
     from modules.VAE_network import VAE
     from modules.train import train, print_gpu_mem_checkpoint
@@ -545,15 +545,57 @@ def main():
 
 
         if pinn_data_type=='image':
-            pinn = PINN_img(pinn_filter, latent_dim_end, input_shape, latent_dim, size2, pinn_data_shape, dropout_rate=pinn_dropout_rate).to(device)
+            try:
+                print("Initializing PINN image model...")
+                device = safe_cuda_initialization()  # Get safe device
+                pinn = PINN_img(pinn_filter, latent_dim_end, input_shape, latent_dim, size2, pinn_data_shape, dropout_rate=pinn_dropout_rate).to(device)
+            except RuntimeError as e:
+                print(f"Error initializing PINN image model: {e}")
+                print("Falling back to CPU-only model")
+                pinn = PINN_img(pinn_filter, latent_dim_end, input_shape, latent_dim, size2, pinn_data_shape, dropout_rate=pinn_dropout_rate).to("cpu")
         elif pinn_data_type=='csv':
-            pinn = PINN(pinn_filter, latent_dim_end, input_shape, latent_dim, size2).to(device)
+            try:
+                print("Initializing PINN CSV model...")
+                device = safe_cuda_initialization()  # Get safe device
+                pinn = PINN(pinn_filter, latent_dim_end, input_shape, latent_dim, size2, dropout_rate=pinn_dropout_rate).to(device)
+            except RuntimeError as e:
+                print(f"Error initializing PINN CSV model: {e}")
+                print("Falling back to CPU-only model")
+                pinn = PINN(pinn_filter, latent_dim_end, input_shape, latent_dim, size2, dropout_rate=pinn_dropout_rate).to("cpu")
         else:
             NotImplementedError('Unrecoginized pinn_data_type arg')
 
         print(pinn)
 
-        PINN_loss = train_pinn(pinn_epoch, pinn_dataloader, pinn_validation_dataloader, pinn, pinn_lr, weight_decay=pinn_weight_decay)
+        # Print CUDA diagnostic information before PINN training
+        if torch.cuda.is_available():
+            try:
+                print("\n=== CUDA Diagnostics ===")
+                print(f"CUDA available: {torch.cuda.is_available()}")
+                print(f"CUDA device count: {torch.cuda.device_count()}")
+                print(f"Current device: {torch.cuda.current_device()}")
+                print(f"Device name: {torch.cuda.get_device_name(0)}")
+                print(f"CUDA version: {torch.version.cuda}")
+                print(f"Current memory allocated: {torch.cuda.memory_allocated() / 1024**2:.2f} MB")
+                print(f"Max memory allocated: {torch.cuda.max_memory_allocated() / 1024**2:.2f} MB")
+                print(f"Memory reserved: {torch.cuda.memory_reserved() / 1024**2:.2f} MB")
+                print("========================\n")
+            except Exception as e:
+                print(f"Error getting CUDA diagnostics: {e}")
+
+        try:
+            print("Starting PINN training...")
+            PINN_loss = train_pinn(pinn_epoch, pinn_dataloader, pinn_validation_dataloader, pinn, pinn_lr, weight_decay=pinn_weight_decay)
+            print("PINN training completed successfully")
+        except Exception as e:
+            print(f"Error during PINN training: {e}")
+            print("If you're seeing CUDA errors about device side assertions, try recompiling PyTorch with torch_USA_CUDA_DSA=1")
+            print("Attempting to save emergency checkpoint...")
+            try:
+                torch.save(pinn, './model_save/pinn_emergency_save')
+                print("Emergency model saved")
+            except:
+                print("Could not save emergency model")
 
         latent_x = np.linspace(0, latent_dim_end-1, latent_dim_end)
         latent_hierarchical_x = np.linspace(0, latent_dim-1, latent_dim)

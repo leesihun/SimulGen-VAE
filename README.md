@@ -11,7 +11,15 @@ SiHun Lee, Ph. D, [Email](kevin1007kr@gmail.com), [LinkedIn](https://www.linkedi
 
 ## Version History
 
-### v1.3.0 (Current)
+### v1.3.1 (Current)
+- **Major**: Enhanced CUDA error handling with graceful fallback mechanism
+- **Fixed**: Device side assertion errors in PINN training
+- **Added**: Diagnostic information for CUDA errors and memory usage
+- **Improved**: PINNDataset with better error handling and recovery
+- **Enhanced**: Memory management utilities for stable GPU training
+- **Benefits**: More stable training across different GPU configurations
+
+### v1.3.0
 - **Major**: Added on-the-fly data augmentation to reduce overfitting
 - **Implemented**: Five augmentation techniques (noise, scaling, shifting, mixup, cutout)
 - **Enhanced**: Created `AugmentedDataset` class for dynamic data augmentation
@@ -46,20 +54,28 @@ SiHun Lee, Ph. D, [Email](kevin1007kr@gmail.com), [LinkedIn](https://www.linkedi
 
 ## Recent Updates
 
-### CUDA Error Handling Improvements (Current Update)
+### CUDA Error Handling Improvements (v1.3.1)
 - Added robust CUDA initialization with proper error handling in PINN training
-- Fixed "dataset is not defined" error in main script
 - Implemented graceful fallback to CPU when CUDA errors occur
 - Added memory management and diagnostic outputs for better debugging
-- Enhanced error handling in VAE forward pass to prevent crashes
+- Added CUDA device side assertion error handling
 - Improved PINNDataset class to safely handle GPU memory
+- Enhanced error detection and recovery during model training
 
 ### How to Handle CUDA Errors
-If you encounter CUDA errors like "initialization error", try these steps:
+If you encounter CUDA errors like "device side assertion" or "initialization error", try these steps:
 1. Ensure your NVIDIA drivers match your PyTorch CUDA version
 2. Try reducing batch size by modifying `pinn_batch` in `condition.txt`
 3. Free up GPU memory by closing other applications
-4. If issues persist, the code will automatically fall back to CPU
+4. If the error mentions "compile with torch_USA_CUDA_DSA to enable device side assertions", this is a PyTorch debugging feature - our code now handles this gracefully
+5. The code will automatically fall back to CPU training if CUDA errors persist
+
+### On-the-fly Data Augmentation (v1.3.0)
+- **Major**: Added on-the-fly data augmentation to reduce overfitting
+- **Implemented**: Five augmentation techniques (noise, scaling, shifting, mixup, cutout)
+- **Enhanced**: Created `AugmentedDataset` class for dynamic data augmentation
+- **Improved**: Reduced gap between training and validation loss
+- **Added**: Detailed documentation on Mixup augmentation technique
 
 ## Table of Contents
 1. [Prerequisites](#prerequisites)  
