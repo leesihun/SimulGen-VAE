@@ -61,6 +61,8 @@ SiHun Lee, Ph. D, [Email](kevin1007kr@gmail.com), [LinkedIn](https://www.linkedi
 - Added CUDA device side assertion error handling
 - Improved PINNDataset class to safely handle GPU memory
 - Enhanced error detection and recovery during model training
+- **Fixed**: MinMaxScaler ValueError for 3D arrays in PINN scaling
+- **Added**: Proper reshaping of 3D arrays to 2D before scaling operations
 
 ### How to Handle CUDA Errors
 If you encounter CUDA errors like "device side assertion" or "initialization error", try these steps:

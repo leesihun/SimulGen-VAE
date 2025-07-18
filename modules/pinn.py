@@ -18,7 +18,7 @@ def safe_cuda_initialization():
             del test_tensor
             print("✓ CUDA initialized successfully")
             return "cuda"
-        else:
+    else:
             print("CUDA not available, using CPU")
             return "cpu"
     except RuntimeError as e:
@@ -63,7 +63,7 @@ class PINN(nn.Module):
         
         # Output layers for hierarchical latent vectors
         self.xs_layers = nn.ModuleList([nn.Linear(num_filters[-1], latent_dim) for _ in range(size2)])
-        
+
     def forward(self, x):
         x = x.to(self.device)  # Use self.device instead of hardcoded device
         
@@ -164,7 +164,7 @@ class PINN_img(nn.Module):
             self.conv_layers = self.conv_layers.cpu()
             output_tensor = self.conv_layers(input_tensor)
             return int(np.prod(output_tensor.size()[1:]))
-    
+
     def forward(self, x):
         try:
             # Separate numerical inputs and image
@@ -318,12 +318,12 @@ def train_pinn(n_epochs, dataloader, val_dataloader, model, learning_rate, weigh
                         loss1 = criterion1(outputs1, targets1)
                         loss2 = criterion2(outputs2, targets2)
                         val_loss += (loss1 + loss2).item()
-                    except RuntimeError as e:
+    except RuntimeError as e:
                         if "CUDA" in str(e):
                             print(f"CUDA error during validation: {e}")
                             print("Moving validation to CPU")
                             # Move to CPU
-                            device = "cpu"
+        device = "cpu"
                             model.to(device)
                             model.device = device  # Update model's device attribute
                             

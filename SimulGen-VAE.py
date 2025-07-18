@@ -484,6 +484,11 @@ def main():
 
         physical_param_input = pinn_data
 
+        # Debug: Print shapes before scaling
+        print(f"PINN scaling - physical_param_input shape: {physical_param_input.shape}")
+        print(f"PINN scaling - out_latent_vectors shape: {out_latent_vectors.shape}")
+        print(f"PINN scaling - xs_vectors shape: {xs_vectors.shape}")
+
         physical_param_input, param_input_scaler = pinn_scaler(physical_param_input, './model_save/pinn_input_scaler.pkl')
         out_latent_vectors, latent_vectors_scaler = pinn_scaler(out_latent_vectors, './model_save/latent_vectors_scaler.pkl')
         out_hierarchical_latent_vectors, xs_scaler = pinn_scaler(xs_vectors, './model_save/xs_scaler.pkl')

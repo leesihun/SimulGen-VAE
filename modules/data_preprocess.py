@@ -90,8 +90,21 @@ def pinn_scaler(data, name):
     # Also update PINN scaler to match
     scaler = MinMaxScaler(feature_range=(-0.9, 0.9))
 
-    scaler.fit(data)
-    scaled_data = scaler.transform(data)
+    # Handle 3D arrays by reshaping to 2D for scaling
+    original_shape = data.shape
+    if len(original_shape) == 3:
+        # Reshape to 2D for scaler
+        data_reshaped = data.reshape(original_shape[0], -1)
+        print(f"Reshaping 3D data from {original_shape} to {data_reshaped.shape} for scaling")
+    else:
+        data_reshaped = data
+
+    scaler.fit(data_reshaped)
+    scaled_data = scaler.transform(data_reshaped)
+
+    # Reshape back to original dimensions
+    if len(original_shape) == 3:
+        scaled_data = scaled_data.reshape(original_shape)
 
     dump(scaler, open(name, 'wb'))
 
@@ -101,8 +114,21 @@ def pinn_scaler_input(data, name):
 
     scaler = StandardScaler()
 
-    scaler.fit(data)
-    scaled_data = scaler.transform(data)
+    # Handle 3D arrays by reshaping to 2D for scaling
+    original_shape = data.shape
+    if len(original_shape) == 3:
+        # Reshape to 2D for scaler
+        data_reshaped = data.reshape(original_shape[0], -1)
+        print(f"Reshaping 3D data from {original_shape} to {data_reshaped.shape} for scaling")
+    else:
+        data_reshaped = data
+
+    scaler.fit(data_reshaped)
+    scaled_data = scaler.transform(data_reshaped)
+
+    # Reshape back to original dimensions
+    if len(original_shape) == 3:
+        scaled_data = scaled_data.reshape(original_shape)
 
     dump(scaler, open(name, 'wb'))
 
