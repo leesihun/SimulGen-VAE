@@ -385,21 +385,11 @@ def read_pinn_dataset_img(dir_path, param_data_type='jpg'):
         if not image_files:
             raise FileNotFoundError(f"No {param_data_type} files found in {dir_path}")
         
-        # Read first image to get dimensions
-        sample_img = Image.open(image_files[0])
+        # Open as gray scale image.
+        sample_img = Image.open(image_files[0]).convert('L')
         img_array = np.array(sample_img)
-        
-        # Determine if grayscale or RGB
-        if len(img_array.shape) == 2:
-            # Grayscale
-            channels = 1
-            height, width = img_array.shape
-        else:
-            # RGB or RGBA
-            if img_array.shape[2] > 3:
-                print("Warning: RGBA images detected, converting to RGB")
-            height, width, channels = img_array.shape
-            channels = min(channels, 3)  # Limit to RGB (3 channels)
+        height, width = img_array.shape
+        channels = 1
         
         # Create dataset
         num_samples = len(image_files)
@@ -411,6 +401,7 @@ def read_pinn_dataset_img(dir_path, param_data_type='jpg'):
         
         # Process all images
         for i, file_path in enumerate(image_files):
+            print(f"Processing image {i+1}/{num_samples}: {file_path}")
             try:
                 # Extract parameter from filename (assuming filename format includes parameter)
                 param = float(os.path.basename(file_path).split('_')[0])

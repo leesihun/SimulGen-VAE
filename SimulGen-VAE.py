@@ -349,8 +349,9 @@ def main():
         # Optimize reconstruction DataLoader with intelligent worker detection  
         recon_optimal_workers = 0 if len(dataset) < 1000 else min(2, torch.multiprocessing.cpu_count())
         
+        # For the whole dataset
         dataloader2 = DataLoader(
-            dataset, 
+            new_x_train, 
             batch_size=1, 
             shuffle=False, 
             num_workers=recon_optimal_workers,
