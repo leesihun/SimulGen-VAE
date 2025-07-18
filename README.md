@@ -63,6 +63,8 @@ SiHun Lee, Ph. D, [Email](kevin1007kr@gmail.com), [LinkedIn](https://www.linkedi
 - Enhanced error detection and recovery during model training
 - **Fixed**: MinMaxScaler ValueError for 3D arrays in PINN scaling
 - **Added**: Proper reshaping of 3D arrays to 2D before scaling operations
+- **Fixed**: random_split ValueError for PINN dataset with mismatched sizes
+- **Added**: Automatic validation and adjustment of dataset split sizes
 
 ### How to Handle CUDA Errors
 If you encounter CUDA errors like "device side assertion" or "initialization error", try these steps:

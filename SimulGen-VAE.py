@@ -500,11 +500,53 @@ def main():
         print(f'Hierarchical latent: {np.max(out_hierarchical_latent_vectors)} {np.min(out_hierarchical_latent_vectors)}')
         out_hierarchical_latent_vectors = out_hierarchical_latent_vectors.reshape([num_param, len(num_filter_enc)-1, latent_dim])
 
+        # Debug: Print shapes of PINN dataset inputs
+        print(f"PINN dataset inputs:")
+        print(f"  - physical_param_input shape: {physical_param_input.shape}")
+        print(f"  - out_latent_vectors shape: {out_latent_vectors.shape}")
+        print(f"  - out_hierarchical_latent_vectors shape: {out_hierarchical_latent_vectors.shape}")
+        
+        # Validate that all inputs have the same first dimension
+        input_lengths = [len(physical_param_input), len(out_latent_vectors), len(out_hierarchical_latent_vectors)]
+        if len(set(input_lengths)) > 1:
+            print(f"Error: Input arrays have different lengths: {input_lengths}")
+            print("This will cause the 'Sum of input lengths' error.")
+            # Use the minimum length to avoid the error
+            min_length = min(input_lengths)
+            print(f"Truncating all arrays to length {min_length}")
+            physical_param_input = physical_param_input[:min_length]
+            out_latent_vectors = out_latent_vectors[:min_length]
+            out_hierarchical_latent_vectors = out_hierarchical_latent_vectors[:min_length]
+            print(f"Adjusted shapes:")
+            print(f"  - physical_param_input shape: {physical_param_input.shape}")
+            print(f"  - out_latent_vectors shape: {out_latent_vectors.shape}")
+            print(f"  - out_hierarchical_latent_vectors shape: {out_hierarchical_latent_vectors.shape}")
+        
         pinn_dataset = PINNDataset(np.float32(physical_param_input), np.float32(out_latent_vectors), np.float32(out_hierarchical_latent_vectors))
 
-        pinn_train_dataset, pinn_validation_dataset = random_split(pinn_dataset, [int(0.8*num_param), num_param - int(0.8*num_param)])
-        # Optimize PINN DataLoaders with intelligent worker detection
+        # Debug: Print shapes of PINN dataset inputs
+        print(f"PINN dataset inputs:")
+        print(f"  - physical_param_input shape: {physical_param_input.shape}")
+        print(f"  - out_latent_vectors shape: {out_latent_vectors.shape}")
+        print(f"  - out_hierarchical_latent_vectors shape: {out_hierarchical_latent_vectors.shape}")
+        
+        # Get actual dataset size and calculate split sizes
         pinn_dataset_size = len(pinn_dataset)
+        train_size = int(0.8 * pinn_dataset_size)
+        val_size = pinn_dataset_size - train_size
+        
+        print(f"PINN dataset size: {pinn_dataset_size}")
+        print(f"Training split: {train_size}, Validation split: {val_size}")
+        
+        # Verify that the split sizes add up to the dataset size
+        if train_size + val_size != pinn_dataset_size:
+            print(f"Warning: Split sizes don't add up! {train_size} + {val_size} != {pinn_dataset_size}")
+            # Adjust val_size to make it work
+            val_size = pinn_dataset_size - train_size
+            print(f"Adjusted validation size to: {val_size}")
+        
+        pinn_train_dataset, pinn_validation_dataset = random_split(pinn_dataset, [train_size, val_size])
+        # Optimize PINN DataLoaders with intelligent worker detection
         pinn_optimal_workers = get_optimal_workers(pinn_dataset_size, False, pinn_batch_size)  # PINN data is not load_all
         
         if pinn_optimal_workers == 0:
