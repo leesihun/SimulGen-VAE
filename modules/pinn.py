@@ -18,7 +18,7 @@ def safe_cuda_initialization():
             del test_tensor
             print("✓ CUDA initialized successfully")
             return "cuda"
-    else:
+        else:
             print("CUDA not available, using CPU")
             return "cpu"
     except RuntimeError as e:
