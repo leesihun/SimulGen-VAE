@@ -135,6 +135,9 @@ def main():
     pinn_weight_decay = float(params.get('pinn_weight_decay', 1e-4))  # Default to 1e-4 if not specified
     pinn_dropout_rate = float(params.get('pinn_dropout_rate', 0.3))  # Default to 0.3 if not specified
 
+    print('pinn_data_type: ', pinn_data_type)
+    print('param_data_type: ', param_data_type)
+
     # Adjust batch size for DDP
     if is_distributed:
         world_size = dist.get_world_size()
@@ -477,8 +480,10 @@ def main():
 
 
         if pinn_data_type=='image':
+            print('Loading image data...')
             pinn_data, pinn_data_shape = read_pinn_dataset_img(param_dir, param_data_type)
         elif pinn_data_type=='csv':
+            print('Loading csv data...')
             pinn_data = read_pinn_dataset(param_dir, param_data_type)
         else:
             NotImplementedError('Unrecoginized pinn_data_type arg')

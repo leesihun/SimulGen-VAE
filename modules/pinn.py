@@ -436,7 +436,7 @@ def read_pinn_dataset_img(dir_path, param_data_type='jpg'):
         return data, (channels, height, width)
     
     except Exception as e:
-        print(f"Error reading PINN dataset: {e}")
+        print(f" dataset: {e}")
         # Return minimal dummy dataset
         return np.zeros((1, 1, 2)), (1, 1, 1)
 
