@@ -1,32 +1,56 @@
 # To run, type python SimulGen-VAE.py --preset=1 --plot=2 --train_latent_conditioner_only=0 --size=small --load_all=1
 
 """
-Source code for SimulGen-VAE
-Developed by SiHun Lee, Ph. D., based on LSH-VAE
-SimulGen-VAE is a pytorch implementation of LSH-VAE
+SimulGen-VAE v1.4.0
+====================
 
-Including image import version....
+A high-performance VAE for fast generation and inference of transient/static simulation data 
+with Physics-Aware Neural Network (PANN) integration.
 
-BOM
-1. SimulGen-VAE input dataset: dataset#X.pickle: 3D array of [num_param, num_time, num_node]
-2. LatentConditioner Input dataset: '.jpg, .png' files in file directory(for image, rest: .csv) -autodetect
-3. preset.txt: preset file for SimulGen-VAE
-4. input_data/condition.txt
+Author: SiHun Lee, Ph.D.
+Email: kevin1007kr@gmail.com
+LinkedIn: https://www.linkedin.com/in/시훈-이-13009a172/?originalSubdomain=kr
 
-To run, type the following command:
-*** small
+New in v1.4.0:
+- Completely redesigned LatentConditioner architecture with ResNet-style blocks
+- SE (Squeeze-and-Excitation) attention blocks for better feature selection  
+- Shared backbone architecture eliminating duplicate networks
+- Early stopping mechanism with separate y1/y2 loss tracking
+- Fixed batch size issues with LayerNorm instead of BatchNorm1d
+- Optimized hyperparameters for better convergence (LR: 0.0001, dropout: 0.3)
+
+Supported Tasks:
+- Parametric estimations: multi-parametric estimations
+- Non-parametric estimations: image, CAD input
+- Probabilistic estimations: scattering analysis, up/down-sampling
+
+Input Files:
+1. SimulGen-VAE dataset: dataset#X.pickle (3D array: [num_param, num_time, num_node])
+2. LatentConditioner dataset: .jpg/.png files in directory (images) or .csv (parametric)
+3. preset.txt: dataset preset configuration
+4. input_data/condition.txt: training hyperparameters
+
+Usage Examples:
+==============
+
+*** Basic Training (Small Model)
 python SimulGen-VAE.py --preset=1 --plot=2 --train_latent_conditioner_only=0 --size=small --load_all=1
-for ETX Supercomputer, type the following command:
+
+*** ETX Supercomputer (H100)
 phd run -ng 1 -p shr_gpu -GR H100 -l %J.log python SimulGen-VAE.py --preset=1 --plot=2 --train_latent_conditioner_only=0 --size=small --load_all=1
 
-*** large
+*** Large Model Training  
 python SimulGen-VAE.py --preset=1 --plot=2 --train_latent_conditioner_only=0 --size=large --load_all=1
-for ETX Supercomputer, type the following command:
-phd run -ng 1 -p shr_gpu -GR H100 -l %J.log python SimulGen-VAE.py --preset=1 --plot=2 --train_latent_conditioner_only=0 --size=large --load_all=1
 
-*** Tensorboard
-tensorboard --logdir=runs --port=6001
-tensorboard --logdir=LatentConditionerRuns --port=6002
+*** Multi-GPU Training (DDP)
+python -m torch.distributed.launch --nproc_per_node=4 SimulGen-VAE.py --use_ddp --preset=1 --plot=2 --train_latent_conditioner_only=0 --size=small --load_all=1
+
+*** LatentConditioner Only Training
+python SimulGen-VAE.py --preset=1 --plot=2 --train_latent_conditioner_only=1 --size=small --load_all=1
+
+*** Monitoring with TensorBoard
+tensorboard --logdir=runs --port=6001              # VAE training logs
+tensorboard --logdir=LatentConditionerRuns --port=6002  # LatentConditioner logs
 """
 
 def main():

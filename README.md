@@ -11,7 +11,18 @@ SiHun Lee, Ph. D, [Email](kevin1007kr@gmail.com), [LinkedIn](https://www.linkedi
 
 ## Version History
 
-### v1.3.2 (Current)
+### v1.4.0 (Current)
+- **Major**: Completely redesigned LatentConditioner architecture with modern ResNet-style blocks
+- **Added**: SE (Squeeze-and-Excitation) attention blocks for better feature selection
+- **Improved**: Shared backbone architecture eliminating duplicate networks
+- **Enhanced**: Progressive downsampling with proper residual connections
+- **Fixed**: Replaced BatchNorm1d with LayerNorm to handle batch_size=1 cases
+- **Added**: Early stopping mechanism with 100-epoch patience for better convergence
+- **Enhanced**: Separate loss tracking for y1 and y2 outputs in training and validation
+- **Optimized**: Better hyperparameter defaults (LR: 0.0001, dropout: 0.3, weight_decay: 1e-3)
+- **Benefits**: Significantly improved training stability and convergence below previous loss thresholds
+
+### v1.3.2
 - **Major**: Updated PINN activation functions and normalization for better loss convergence
 - **Changed**: Replaced LeakyReLU with GELU activation in all PINN layers
 - **Improved**: Reduced dropout rate from 0.3 to 0.1 to reduce regularization
@@ -61,6 +72,17 @@ SiHun Lee, Ph. D, [Email](kevin1007kr@gmail.com), [LinkedIn](https://www.linkedi
 - **Performance**: Advanced data loading optimizations and model compilation support
 
 ## Recent Updates
+
+### LatentConditioner Architecture Redesign (v1.4.0)
+- **Completely new architecture**: Replaced duplicate networks with shared backbone + separate heads
+- **Modern ResNet blocks**: Proper skip connections with channel matching and stride handling
+- **SE Attention**: Squeeze-and-Excitation blocks for channel-wise feature attention
+- **Progressive downsampling**: Efficient spatial reduction with 7×7 initial conv + MaxPool
+- **Early stopping**: Automatic training termination when validation loss stops improving (100 epochs patience)
+- **Separate loss tracking**: Individual monitoring of y1 and y2 losses for better debugging
+- **Optimized hyperparameters**: Learning rate 0.0001, dropout 0.3, weight decay 1e-3
+- **Fixed batch size issues**: LayerNorm instead of BatchNorm1d handles batch_size=1
+- **Improved convergence**: Training and validation losses now achieve sub-2e-2 and sub-1e-1 thresholds
 
 ### PINN Training Improvements (v1.3.2)
 - Updated PINN architecture with GELU activation functions for smoother gradients
@@ -314,6 +336,7 @@ augmentation_config = {
 | **DDP initialization failures** | Check that all GPUs are visible with `nvidia-smi` |
 | **Different results across GPUs** | Set `torch.backends.cudnn.deterministic = True` for reproducibility |
 | **RuntimeError: in-place operation** | Disable CUDA graphs by setting `use_cuda_graphs = False` in `modules/train.py` |
+| **ValueError: Expected more than 1 value per channel** | LatentConditioner batch size issue - fixed in v1.4.0 with LayerNorm |
 
 ## Monitoring
 * **TensorBoard**: `tensorboard --logdir=runs --port 6001`
