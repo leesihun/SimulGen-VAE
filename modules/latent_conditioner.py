@@ -303,10 +303,25 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
     from torchinfo import summary
     import math
 
+    print(f"[DEBUG] Model created successfully")
+    print(f"[DEBUG] Moving model to device: {device}")
     # summary(latent_conditioner, (64,1,im_size,im_size))
     latent_conditioner = latent_conditioner.to(device)
+    print(f"[DEBUG] Model moved to device successfully")
 
-    latent_conditioner.apply(initialize_weights_He)
+    print(f"[DEBUG] Applying weight initialization")
+    def safe_initialize_weights_He(m):
+        if isinstance(m, (nn.Conv1d, nn.ConvTranspose1d, nn.Conv2d, nn.ConvTranspose2d)):
+            nn.init.kaiming_uniform_(m.weight.data, nonlinearity='relu')
+            if m.bias is not None:
+                nn.init.constant_(m.bias.data, 0)
+        elif isinstance(m, nn.Linear):
+            nn.init.kaiming_uniform_(m.weight.data)
+            if m.bias is not None:  # Add this check
+                nn.init.constant_(m.bias.data, 0)
+    
+    latent_conditioner.apply(safe_initialize_weights_He)
+    print(f"[DEBUG] Weight initialization completed")
 
     for epoch in range(latent_conditioner_epoch):
         start_time = time.time()
