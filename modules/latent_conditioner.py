@@ -258,7 +258,7 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
 
             x = x.reshape([x.shape[0], int(math.sqrt(x.shape[1])), int(math.sqrt(x.shape[1]))])
             if epoch==0 and i==0:
-                print('xxxxxxxxxxxxxx', x.shape)
+                print('dataset_shape', x.shape,y1.shape,y2.shape)
             # Apply data augmentation randomly to some samples
             if torch.rand(1) < 0.3:  # 30% chance of augmentation
                 x_aug = []
