@@ -385,6 +385,8 @@ def read_pinn_dataset_img(dir_path, param_data_type='jpg'):
         else:
             raise ValueError(f"Unsupported image format: {param_data_type}")
         
+        print('files: ', image_files)
+
         if not image_files:
             raise FileNotFoundError(f"No {param_data_type} files found in {dir_path}")
         
