@@ -14,7 +14,7 @@ def add_sn(m):
         return m
 
 def initialize_weights_He(m):
-    if isinstance(m, (nn.Conv1d, nn.ConvTranspose1d)):
+    if isinstance(m, (nn.Conv1d, nn.ConvTranspose1d,nn.Conv2d, nn.ConvTranspose2d)):
         nn.init.kaiming_uniform_(m.weight.data, nonlinearity='relu')
         if m.bias is not None:
             nn.init.constant_(m.bias.data, 0)
