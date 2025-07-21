@@ -376,15 +376,15 @@ def read_pinn_dataset_img(dir_path, param_data_type='jpg'):
     """Read image data for PINN training with error handling."""
     try:
         print('reading data from: ', dir_path)
-        print(os.listdir(dir_path))
-        print(os.path.join(dir_path, '*.jpg'))
-        print(os.path.join(dir_path, '*.png'))
+        cur_dir = os.getcwd()
+        print(os.listdir(os.getcwd()+dir_path))
+        print(os.path.join(os.getcwd()+dir_path, '*.png'))
 
         if param_data_type == '.jpg':
-            files = [f for f in os.listdir(dir_path) if f.endswith(param_data_type)]
+            files = [f for f in os.listdir(os.getcwd()+dir_path) if f.endswith(param_data_type)]
             image_files = natsort.natsorted(files)
         elif param_data_type == '.png':
-            files = [f for f in os.listdir(dir_path) if f.endswith(param_data_type)]
+            files = [f for f in os.listdir(os.getcwd()+dir_path) if f.endswith(param_data_type)]
             image_files = natsort.natsorted(files)
         else:
             raise ValueError(f"Unsupported image format: {param_data_type}")
