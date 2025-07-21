@@ -721,7 +721,7 @@ def main():
             plt.show()
 
     # Modify the dataset and dataloader creation to use DDP samplers if needed
-    train_dataset = MyBaseDataset(new_x_train)
+    train_dataset = MyBaseDataset(new_x_train, load_all)
     
     # If using load_all=True, prefetch data to GPU
     if load_all:
