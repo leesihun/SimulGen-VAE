@@ -330,6 +330,10 @@ def main():
     print(f"[INFO] new_x_train shape: {new_x_train.shape}, dtype: {new_x_train.dtype}, estimated GPU memory: {get_tensor_mem_mb(new_x_train):.2f} MB")
     print_gpu_mem_checkpoint('Before training starts (after data and dataloader setup)')
 
+
+
+
+
     # VAE training
     if train_pinn_only ==0:
 
@@ -466,312 +470,312 @@ def main():
             plt.plot(reconstructed[param_No+3, node_No, :], marker = 'o', label = 'Reconstructed')
             plt.legend()
             plt.show()
-        elif train_pinn_only == 1:
-            print('Training PINN only...')
-            latent_vectors = np.load('model_save/latent_vectors.npy')
-            hierarchical_latent_vectors = np.load('model_save/xs.npy')
-            device = "cpu"
-            VAE_trained = torch.load('model_save/SimulGen-VAE', map_location= device, weights_only=False)
-            VAE = VAE_trained.eval()
-
-        # PINN training (runs for both train_pinn_only == 0 and train_pinn_only == 1)
-        out_latent_vectors = latent_vectors.reshape([num_param, latent_dim_end])
-        xs_vectors = hierarchical_latent_vectors.reshape([num_param, -1])
-
-
-        if pinn_data_type=='image':
-            print('Loading image data...')
-            pinn_data, pinn_data_shape = read_pinn_dataset_img(param_dir, param_data_type)
-        elif pinn_data_type=='csv':
-            print('Loading csv data...')
-            pinn_data = read_pinn_dataset(param_dir, param_data_type)
-        else:
-            NotImplementedError('Unrecoginized pinn_data_type arg')
-
-        physical_param_input = pinn_data
-
-        # Debug: Print shapes before scaling
-        print(f"PINN scaling - physical_param_input shape: {physical_param_input.shape}")
-        print(f"PINN scaling - out_latent_vectors shape: {out_latent_vectors.shape}")
-        print(f"PINN scaling - xs_vectors shape: {xs_vectors.shape}")
-
-        physical_param_input, param_input_scaler = pinn_scaler(physical_param_input, './model_save/pinn_input_scaler.pkl')
-        out_latent_vectors, latent_vectors_scaler = pinn_scaler(out_latent_vectors, './model_save/latent_vectors_scaler.pkl')
-        out_hierarchical_latent_vectors, xs_scaler = pinn_scaler(xs_vectors, './model_save/xs_scaler.pkl')
-
-        print('PINN data loaded...')
-        print('PINN scale: ')
-        print(f'Input: {np.max(physical_param_input)} {np.min(physical_param_input)}')
-        print(f'Main latent: {np.max(out_latent_vectors)} {np.min(out_latent_vectors)}')
-        print(f'Hierarchical latent: {np.max(out_hierarchical_latent_vectors)} {np.min(out_hierarchical_latent_vectors)}')
-        out_hierarchical_latent_vectors = out_hierarchical_latent_vectors.reshape([num_param, len(num_filter_enc)-1, latent_dim])
-
-        # Debug: Print shapes of PINN dataset inputs
-        print(f"PINN dataset inputs:")
-        print(f"  - physical_param_input shape: {physical_param_input.shape}")
-        print(f"  - out_latent_vectors shape: {out_latent_vectors.shape}")
-        print(f"  - out_hierarchical_latent_vectors shape: {out_hierarchical_latent_vectors.shape}")
-        
-        # Validate that all inputs have the same first dimension
-        input_lengths = [len(physical_param_input), len(out_latent_vectors), len(out_hierarchical_latent_vectors)]
-        if len(set(input_lengths)) > 1:
-            print(f"Error: Input arrays have different lengths: {input_lengths}")
-            print("This will cause the 'Sum of input lengths' error.")
-            # Use the minimum length to avoid the error
-            min_length = min(input_lengths)
-            print(f"Truncating all arrays to length {min_length}")
-            physical_param_input = physical_param_input[:min_length]
-            out_latent_vectors = out_latent_vectors[:min_length]
-            out_hierarchical_latent_vectors = out_hierarchical_latent_vectors[:min_length]
-            print(f"Adjusted shapes:")
-            print(f"  - physical_param_input shape: {physical_param_input.shape}")
-            print(f"  - out_latent_vectors shape: {out_latent_vectors.shape}")
-            print(f"  - out_hierarchical_latent_vectors shape: {out_hierarchical_latent_vectors.shape}")
-        
-        pinn_dataset = PINNDataset(np.float32(physical_param_input), np.float32(out_latent_vectors), np.float32(out_hierarchical_latent_vectors))
-
-        # Debug: Print shapes of PINN dataset inputs
-        print(f"PINN dataset inputs:")
-        print(f"  - physical_param_input shape: {physical_param_input.shape}")
-        print(f"  - out_latent_vectors shape: {out_latent_vectors.shape}")
-        print(f"  - out_hierarchical_latent_vectors shape: {out_hierarchical_latent_vectors.shape}")
-        
-        # Get actual dataset size and calculate split sizes
-        pinn_dataset_size = len(pinn_dataset)
-        train_size = int(0.8 * pinn_dataset_size)
-        val_size = pinn_dataset_size - train_size
-        
-        print(f"PINN dataset size: {pinn_dataset_size}")
-        print(f"Training split: {train_size}, Validation split: {val_size}")
-        
-        # Verify that the split sizes add up to the dataset size
-        if train_size + val_size != pinn_dataset_size:
-            print(f"Warning: Split sizes don't add up! {train_size} + {val_size} != {pinn_dataset_size}")
-            # Adjust val_size to make it work
-            val_size = pinn_dataset_size - train_size
-            print(f"Adjusted validation size to: {val_size}")
-        
-        pinn_train_dataset, pinn_validation_dataset = random_split(pinn_dataset, [train_size, val_size])
-        # Optimize PINN DataLoaders with intelligent worker detection
-        pinn_optimal_workers = get_optimal_workers(pinn_dataset_size, False, pinn_batch_size)  # PINN data is not load_all
-        
-        if pinn_optimal_workers == 0:
-            # Single-threaded PINN DataLoaders
-            pinn_dataloader = torch.utils.data.DataLoader(
-                pinn_train_dataset, 
-                batch_size=pinn_batch_size, 
-                shuffle=True, 
-                num_workers=0,
-                pin_memory=True
-            )
-            pinn_validation_dataloader = torch.utils.data.DataLoader(
-                pinn_validation_dataset, 
-                batch_size=pinn_batch_size, 
-                shuffle=False, 
-                num_workers=0,
-                pin_memory=True
-            )
-            print(f"   ✓ PINN DataLoader: Single-threaded ({pinn_dataset_size} samples)")
-        else:
-            # Multi-threaded PINN DataLoaders
-            pinn_dataloader = torch.utils.data.DataLoader(
-                pinn_train_dataset, 
-                batch_size=pinn_batch_size, 
-                shuffle=True, 
-                num_workers=pinn_optimal_workers,
-                pin_memory=True,
-                persistent_workers=True,
-                prefetch_factor=2
-            )
-            pinn_validation_dataloader = torch.utils.data.DataLoader(
-                pinn_validation_dataset, 
-                batch_size=pinn_batch_size, 
-                shuffle=False, 
-                num_workers=pinn_optimal_workers,
-                pin_memory=True,
-                persistent_workers=True,
-                prefetch_factor=2
-            )
-            print(f"   ✓ PINN DataLoader: {pinn_optimal_workers} workers ({pinn_dataset_size} samples)")
-
-        size2 = len(num_filter_enc)-1
-
-
-        if pinn_data_type=='image':
-            try:
-                print("Initializing PINN image model...")
-                device = safe_cuda_initialization()  # Get safe device
-                pinn = PINN_img(pinn_filter, latent_dim_end, input_shape, latent_dim, size2, pinn_data_shape, dropout_rate=pinn_dropout_rate).to(device)
-            except RuntimeError as e:
-                print(f"Error initializing PINN image model: {e}")
-                print("Falling back to CPU-only model")
-                pinn = PINN_img(pinn_filter, latent_dim_end, input_shape, latent_dim, size2, pinn_data_shape, dropout_rate=pinn_dropout_rate).to("cpu")
-        elif pinn_data_type=='csv':
-            try:
-                print("Initializing PINN CSV model...")
-                device = safe_cuda_initialization()  # Get safe device
-                pinn = PINN(pinn_filter, latent_dim_end, input_shape, latent_dim, size2, dropout_rate=pinn_dropout_rate).to(device)
-            except RuntimeError as e:
-                print(f"Error initializing PINN CSV model: {e}")
-                print("Falling back to CPU-only model")
-                pinn = PINN(pinn_filter, latent_dim_end, input_shape, latent_dim, size2, dropout_rate=pinn_dropout_rate).to("cpu")
-        else:
-            NotImplementedError('Unrecoginized pinn_data_type arg')
-
-        print(pinn)
-
-        # Print CUDA diagnostic information before PINN training
-        if torch.cuda.is_available():
-            try:
-                print("\n=== CUDA Diagnostics ===")
-                print(f"CUDA available: {torch.cuda.is_available()}")
-                print(f"CUDA device count: {torch.cuda.device_count()}")
-                print(f"Current device: {torch.cuda.current_device()}")
-                print(f"Device name: {torch.cuda.get_device_name(0)}")
-                print(f"CUDA version: {torch.version.cuda}")
-                print(f"Current memory allocated: {torch.cuda.memory_allocated() / 1024**2:.2f} MB")
-                print(f"Max memory allocated: {torch.cuda.max_memory_allocated() / 1024**2:.2f} MB")
-                print(f"Memory reserved: {torch.cuda.memory_reserved() / 1024**2:.2f} MB")
-                print("========================\n")
-            except Exception as e:
-                print(f"Error getting CUDA diagnostics: {e}")
-
-        try:
-            print("Starting PINN training...")
-            PINN_loss = train_pinn(pinn_epoch, pinn_dataloader, pinn_validation_dataloader, pinn, pinn_lr, weight_decay=pinn_weight_decay)
-            print("PINN training completed successfully")
-        except Exception as e:
-            print(f"Error during PINN training: {e}")
-            print("If you're seeing CUDA errors about device side assertions, try recompiling PyTorch with torch_USA_CUDA_DSA=1")
-            print("Attempting to save emergency checkpoint...")
-            try:
-                torch.save(pinn, './model_save/pinn_emergency_save')
-                print("Emergency model saved")
-            except:
-                print("Could not save emergency model")
-
-        latent_x = np.linspace(0, latent_dim_end-1, latent_dim_end)
-        latent_hierarchical_x = np.linspace(0, latent_dim-1, latent_dim)
-
+    elif train_pinn_only == 1:
+        print('Training PINN only...')
+        latent_vectors = np.load('model_save/latent_vectors.npy')
+        hierarchical_latent_vectors = np.load('model_save/xs.npy')
         device = "cpu"
-        pinn = pinn.to(device)
-
-        if VAE in globals():
-            del VAE
-
         VAE_trained = torch.load('model_save/SimulGen-VAE', map_location= device, weights_only=False)
         VAE = VAE_trained.eval()
 
-        # Optimize PINN evaluation DataLoader with intelligent worker detection
-        pinn_eval_optimal_workers = 0 if len(pinn_dataset) < 1000 else min(2, torch.multiprocessing.cpu_count())
-        
-        pinn_dataloader_eval = torch.utils.data.DataLoader(
-            pinn_dataset, 
-            batch_size=1, 
-            shuffle=False, 
-            num_workers=pinn_eval_optimal_workers,
-            pin_memory=True if pinn_eval_optimal_workers > 0 else False,
-            persistent_workers=True if pinn_eval_optimal_workers > 0 else False,
-            prefetch_factor=2 if pinn_eval_optimal_workers > 0 else None
-        )
+    # PINN training (runs for both train_pinn_only == 0 and train_pinn_only == 1)
+    out_latent_vectors = latent_vectors.reshape([num_param, latent_dim_end])
+    xs_vectors = hierarchical_latent_vectors.reshape([num_param, -1])
 
-        for i, (x, y1, y2) in enumerate(pinn_dataloader_eval):
-            x = x.to(device)
 
-            y_pred1, y_pred2 = pinn(x)
-            y_pred1 = y_pred1.cpu().detach().numpy()
-            y1 = y1.cpu().detach().numpy()
-            y_pred2 = y_pred2.cpu().detach().numpy()
-            y2 = y2.cpu().detach().numpy()
-            A = y2
-
-            y2 = y2.reshape([1, -1])
-            latent_predict = latent_vectors_scaler.inverse_transform(y1)
-            xs_predict = xs_scaler.inverse_transform(y2)
-            xs_predict = xs_predict.reshape([-1, 1, A.shape[-1]])
-            latent_predict = torch.from_numpy(latent_predict)
-            xs_predict = torch.from_numpy(xs_predict)
-            xs_predict = xs_predict.to(device)
-            xs_predict = list(xs_predict)
-            latent_predict = latent_predict.to(device)
-            target_output, _ = VAE.decoder(latent_predict, xs_predict, mode='fix')
-            target_output_np = target_output.cpu().detach().numpy()
-            target_output_np = target_output_np.swapaxes(1,2)
-            target_output_np = target_output_np.reshape((-1, num_node))
-            target_output_np = np.reshape(target_output_np, [num_time, num_node, 1])
-
-            plt.figure()
-            plt.title('Main latent')
-            plt.plot(y1[0,:], '*', label = 'True')
-            plt.plot(y_pred1[0,:], 'o', label = 'Predicted')
-            plt.legend()
-
-            plt.figure()
-            plt.title('Hierarchical latent')
-            plt.plot(y2[0,:], '*', label = 'True')
-            plt.plot(y_pred2[0,0, :], 'o', label = 'Predicted')
-            plt.legend()
-            
-            plt.figure()
-            plt.title('Reconstruction')
-            plt.plot(target_output_np[0,:,0], '.', label = 'Recon')
-            plt.plot(new_x_train[i, :, int(num_time/2)], '.', label = 'True')
-            plt.legend()
-
-            plt.show()
-
-    # Modify the dataset and dataloader creation to use DDP samplers if needed
-    train_dataset = MyBaseDataset(new_x_train, load_all)
-    
-    # If using load_all=True, prefetch data to GPU
-    if load_all:
-        if not is_distributed or dist.get_rank() == 0:
-            print("Prefetching dataset to GPU...")
-        train_dataset.prefetch()
-        if not is_distributed or dist.get_rank() == 0:
-            print("Dataset prefetched to GPU successfully")
-    
-    # Create DDP samplers if using distributed training
-    if is_distributed:
-        train_sampler = DistributedSampler(train_dataset, shuffle=True)
-        train_dataloader = DataLoader(train_dataset, batch_size=batch_size, sampler=train_sampler, 
-                                      pin_memory=not load_all, num_workers=0 if load_all else 4)
-        val_dataloader = train_dataloader  # Use same for validation in this example
+    if pinn_data_type=='image':
+        print('Loading image data...')
+        pinn_data, pinn_data_shape = read_pinn_dataset_img(param_dir, param_data_type)
+    elif pinn_data_type=='csv':
+        print('Loading csv data...')
+        pinn_data = read_pinn_dataset(param_dir, param_data_type)
     else:
-        train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, 
-                                     pin_memory=not load_all, num_workers=0 if load_all else 4)
-        val_dataloader = train_dataloader  # Use same for validation in this example
+        NotImplementedError('Unrecoginized pinn_data_type arg')
 
-    # Modify the training function call to handle DDP
-    def train_model():
-        # Create model
-        model = VAE(latent_dim, latent_dim_end, num_filter_enc, num_filter_dec, num_node, num_time, lossfun=loss, batch_size=batch_size, small=small)
-        
-        # Move model to device
-        device = torch.device(f"cuda:{args.local_rank}" if is_distributed else "cuda:0" if torch.cuda.is_available() else "cpu")
-        model = model.to(device)
-        
-        # Wrap model in DDP if using distributed training
-        if is_distributed:
-            model = DDP(model, device_ids=[args.local_rank], output_device=args.local_rank)
-            if dist.get_rank() == 0:
-                print("Model wrapped in DistributedDataParallel")
-        
-        # Train the model
-        loss_print, recon_print, kl_print, loss_val_print = train(
-            n_epochs, batch_size, train_dataloader, val_dataloader, LR, 
-            num_filter_enc, num_filter_dec, num_node, latent_dim, latent_dim_end, 
-            num_time, alpha, loss, small, load_all
+    physical_param_input = pinn_data
+
+    # Debug: Print shapes before scaling
+    print(f"PINN scaling - physical_param_input shape: {physical_param_input.shape}")
+    print(f"PINN scaling - out_latent_vectors shape: {out_latent_vectors.shape}")
+    print(f"PINN scaling - xs_vectors shape: {xs_vectors.shape}")
+
+    physical_param_input, param_input_scaler = pinn_scaler(physical_param_input, './model_save/pinn_input_scaler.pkl')
+    out_latent_vectors, latent_vectors_scaler = pinn_scaler(out_latent_vectors, './model_save/latent_vectors_scaler.pkl')
+    out_hierarchical_latent_vectors, xs_scaler = pinn_scaler(xs_vectors, './model_save/xs_scaler.pkl')
+
+    print('PINN data loaded...')
+    print('PINN scale: ')
+    print(f'Input: {np.max(physical_param_input)} {np.min(physical_param_input)}')
+    print(f'Main latent: {np.max(out_latent_vectors)} {np.min(out_latent_vectors)}')
+    print(f'Hierarchical latent: {np.max(out_hierarchical_latent_vectors)} {np.min(out_hierarchical_latent_vectors)}')
+    out_hierarchical_latent_vectors = out_hierarchical_latent_vectors.reshape([num_param, len(num_filter_enc)-1, latent_dim])
+
+    # Debug: Print shapes of PINN dataset inputs
+    print(f"PINN dataset inputs:")
+    print(f"  - physical_param_input shape: {physical_param_input.shape}")
+    print(f"  - out_latent_vectors shape: {out_latent_vectors.shape}")
+    print(f"  - out_hierarchical_latent_vectors shape: {out_hierarchical_latent_vectors.shape}")
+    
+    # Validate that all inputs have the same first dimension
+    input_lengths = [len(physical_param_input), len(out_latent_vectors), len(out_hierarchical_latent_vectors)]
+    if len(set(input_lengths)) > 1:
+        print(f"Error: Input arrays have different lengths: {input_lengths}")
+        print("This will cause the 'Sum of input lengths' error.")
+        # Use the minimum length to avoid the error
+        min_length = min(input_lengths)
+        print(f"Truncating all arrays to length {min_length}")
+        physical_param_input = physical_param_input[:min_length]
+        out_latent_vectors = out_latent_vectors[:min_length]
+        out_hierarchical_latent_vectors = out_hierarchical_latent_vectors[:min_length]
+        print(f"Adjusted shapes:")
+        print(f"  - physical_param_input shape: {physical_param_input.shape}")
+        print(f"  - out_latent_vectors shape: {out_latent_vectors.shape}")
+        print(f"  - out_hierarchical_latent_vectors shape: {out_hierarchical_latent_vectors.shape}")
+    
+    pinn_dataset = PINNDataset(np.float32(physical_param_input), np.float32(out_latent_vectors), np.float32(out_hierarchical_latent_vectors))
+
+    # Debug: Print shapes of PINN dataset inputs
+    print(f"PINN dataset inputs:")
+    print(f"  - physical_param_input shape: {physical_param_input.shape}")
+    print(f"  - out_latent_vectors shape: {out_latent_vectors.shape}")
+    print(f"  - out_hierarchical_latent_vectors shape: {out_hierarchical_latent_vectors.shape}")
+    
+    # Get actual dataset size and calculate split sizes
+    pinn_dataset_size = len(pinn_dataset)
+    train_size = int(0.8 * pinn_dataset_size)
+    val_size = pinn_dataset_size - train_size
+    
+    print(f"PINN dataset size: {pinn_dataset_size}")
+    print(f"Training split: {train_size}, Validation split: {val_size}")
+    
+    # Verify that the split sizes add up to the dataset size
+    if train_size + val_size != pinn_dataset_size:
+        print(f"Warning: Split sizes don't add up! {train_size} + {val_size} != {pinn_dataset_size}")
+        # Adjust val_size to make it work
+        val_size = pinn_dataset_size - train_size
+        print(f"Adjusted validation size to: {val_size}")
+    
+    pinn_train_dataset, pinn_validation_dataset = random_split(pinn_dataset, [train_size, val_size])
+    # Optimize PINN DataLoaders with intelligent worker detection
+    pinn_optimal_workers = get_optimal_workers(pinn_dataset_size, False, pinn_batch_size)  # PINN data is not load_all
+    
+    if pinn_optimal_workers == 0:
+        # Single-threaded PINN DataLoaders
+        pinn_dataloader = torch.utils.data.DataLoader(
+            pinn_train_dataset, 
+            batch_size=pinn_batch_size, 
+            shuffle=True, 
+            num_workers=0,
+            pin_memory=True
         )
+        pinn_validation_dataloader = torch.utils.data.DataLoader(
+            pinn_validation_dataset, 
+            batch_size=pinn_batch_size, 
+            shuffle=False, 
+            num_workers=0,
+            pin_memory=True
+        )
+        print(f"   ✓ PINN DataLoader: Single-threaded ({pinn_dataset_size} samples)")
+    else:
+        # Multi-threaded PINN DataLoaders
+        pinn_dataloader = torch.utils.data.DataLoader(
+            pinn_train_dataset, 
+            batch_size=pinn_batch_size, 
+            shuffle=True, 
+            num_workers=pinn_optimal_workers,
+            pin_memory=True,
+            persistent_workers=True,
+            prefetch_factor=2
+        )
+        pinn_validation_dataloader = torch.utils.data.DataLoader(
+            pinn_validation_dataset, 
+            batch_size=pinn_batch_size, 
+            shuffle=False, 
+            num_workers=pinn_optimal_workers,
+            pin_memory=True,
+            persistent_workers=True,
+            prefetch_factor=2
+        )
+        print(f"   ✓ PINN DataLoader: {pinn_optimal_workers} workers ({pinn_dataset_size} samples)")
+
+    size2 = len(num_filter_enc)-1
+
+
+    if pinn_data_type=='image':
+        try:
+            print("Initializing PINN image model...")
+            device = safe_cuda_initialization()  # Get safe device
+            pinn = PINN_img(pinn_filter, latent_dim_end, input_shape, latent_dim, size2, pinn_data_shape, dropout_rate=pinn_dropout_rate).to(device)
+        except RuntimeError as e:
+            print(f"Error initializing PINN image model: {e}")
+            print("Falling back to CPU-only model")
+            pinn = PINN_img(pinn_filter, latent_dim_end, input_shape, latent_dim, size2, pinn_data_shape, dropout_rate=pinn_dropout_rate).to("cpu")
+    elif pinn_data_type=='csv':
+        try:
+            print("Initializing PINN CSV model...")
+            device = safe_cuda_initialization()  # Get safe device
+            pinn = PINN(pinn_filter, latent_dim_end, input_shape, latent_dim, size2, dropout_rate=pinn_dropout_rate).to(device)
+        except RuntimeError as e:
+            print(f"Error initializing PINN CSV model: {e}")
+            print("Falling back to CPU-only model")
+            pinn = PINN(pinn_filter, latent_dim_end, input_shape, latent_dim, size2, dropout_rate=pinn_dropout_rate).to("cpu")
+    else:
+        NotImplementedError('Unrecoginized pinn_data_type arg')
+
+    print(pinn)
+
+    # Print CUDA diagnostic information before PINN training
+    if torch.cuda.is_available():
+        try:
+            print("\n=== CUDA Diagnostics ===")
+            print(f"CUDA available: {torch.cuda.is_available()}")
+            print(f"CUDA device count: {torch.cuda.device_count()}")
+            print(f"Current device: {torch.cuda.current_device()}")
+            print(f"Device name: {torch.cuda.get_device_name(0)}")
+            print(f"CUDA version: {torch.version.cuda}")
+            print(f"Current memory allocated: {torch.cuda.memory_allocated() / 1024**2:.2f} MB")
+            print(f"Max memory allocated: {torch.cuda.max_memory_allocated() / 1024**2:.2f} MB")
+            print(f"Memory reserved: {torch.cuda.memory_reserved() / 1024**2:.2f} MB")
+            print("========================\n")
+        except Exception as e:
+            print(f"Error getting CUDA diagnostics: {e}")
+
+    try:
+        print("Starting PINN training...")
+        PINN_loss = train_pinn(pinn_epoch, pinn_dataloader, pinn_validation_dataloader, pinn, pinn_lr, weight_decay=pinn_weight_decay)
+        print("PINN training completed successfully")
+    except Exception as e:
+        print(f"Error during PINN training: {e}")
+        print("If you're seeing CUDA errors about device side assertions, try recompiling PyTorch with torch_USA_CUDA_DSA=1")
+        print("Attempting to save emergency checkpoint...")
+        try:
+            torch.save(pinn, './model_save/pinn_emergency_save')
+            print("Emergency model saved")
+        except:
+            print("Could not save emergency model")
+
+    latent_x = np.linspace(0, latent_dim_end-1, latent_dim_end)
+    latent_hierarchical_x = np.linspace(0, latent_dim-1, latent_dim)
+
+    device = "cpu"
+    pinn = pinn.to(device)
+
+    if VAE in globals():
+        del VAE
+
+    VAE_trained = torch.load('model_save/SimulGen-VAE', map_location= device, weights_only=False)
+    VAE = VAE_trained.eval()
+
+    # Optimize PINN evaluation DataLoader with intelligent worker detection
+    pinn_eval_optimal_workers = 0 if len(pinn_dataset) < 1000 else min(2, torch.multiprocessing.cpu_count())
+    
+    pinn_dataloader_eval = torch.utils.data.DataLoader(
+        pinn_dataset, 
+        batch_size=1, 
+        shuffle=False, 
+        num_workers=pinn_eval_optimal_workers,
+        pin_memory=True if pinn_eval_optimal_workers > 0 else False,
+        persistent_workers=True if pinn_eval_optimal_workers > 0 else False,
+        prefetch_factor=2 if pinn_eval_optimal_workers > 0 else None
+    )
+
+    for i, (x, y1, y2) in enumerate(pinn_dataloader_eval):
+        x = x.to(device)
+
+        y_pred1, y_pred2 = pinn(x)
+        y_pred1 = y_pred1.cpu().detach().numpy()
+        y1 = y1.cpu().detach().numpy()
+        y_pred2 = y_pred2.cpu().detach().numpy()
+        y2 = y2.cpu().detach().numpy()
+        A = y2
+
+        y2 = y2.reshape([1, -1])
+        latent_predict = latent_vectors_scaler.inverse_transform(y1)
+        xs_predict = xs_scaler.inverse_transform(y2)
+        xs_predict = xs_predict.reshape([-1, 1, A.shape[-1]])
+        latent_predict = torch.from_numpy(latent_predict)
+        xs_predict = torch.from_numpy(xs_predict)
+        xs_predict = xs_predict.to(device)
+        xs_predict = list(xs_predict)
+        latent_predict = latent_predict.to(device)
+        target_output, _ = VAE.decoder(latent_predict, xs_predict, mode='fix')
+        target_output_np = target_output.cpu().detach().numpy()
+        target_output_np = target_output_np.swapaxes(1,2)
+        target_output_np = target_output_np.reshape((-1, num_node))
+        target_output_np = np.reshape(target_output_np, [num_time, num_node, 1])
+
+        plt.figure()
+        plt.title('Main latent')
+        plt.plot(y1[0,:], '*', label = 'True')
+        plt.plot(y_pred1[0,:], 'o', label = 'Predicted')
+        plt.legend()
+
+        plt.figure()
+        plt.title('Hierarchical latent')
+        plt.plot(y2[0,:], '*', label = 'True')
+        plt.plot(y_pred2[0,0, :], 'o', label = 'Predicted')
+        plt.legend()
         
-        return loss_print, recon_print, kl_print, loss_val_print
+        plt.figure()
+        plt.title('Reconstruction')
+        plt.plot(target_output_np[0,:,0], '.', label = 'Recon')
+        plt.plot(new_x_train[i, :, int(num_time/2)], '.', label = 'True')
+        plt.legend()
+
+        plt.show()
+
+    # # Modify the dataset and dataloader creation to use DDP samplers if needed
+    # train_dataset = MyBaseDataset(new_x_train, load_all)
     
-    # Train the model
-    loss_print, recon_print, kl_print, loss_val_print = train_model()
+    # # If using load_all=True, prefetch data to GPU
+    # if load_all:
+    #     if not is_distributed or dist.get_rank() == 0:
+    #         print("Prefetching dataset to GPU...")
+    #     train_dataset.prefetch()
+    #     if not is_distributed or dist.get_rank() == 0:
+    #         print("Dataset prefetched to GPU successfully")
     
-    # Clean up distributed process group
-    if is_distributed:
-        dist.destroy_process_group()
+    # # Create DDP samplers if using distributed training
+    # if is_distributed:
+    #     train_sampler = DistributedSampler(train_dataset, shuffle=True)
+    #     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, sampler=train_sampler, 
+    #                                   pin_memory=not load_all, num_workers=0 if load_all else 4)
+    #     val_dataloader = train_dataloader  # Use same for validation in this example
+    # else:
+    #     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, 
+    #                                  pin_memory=not load_all, num_workers=0 if load_all else 4)
+    #     val_dataloader = train_dataloader  # Use same for validation in this example
+
+    # # Modify the training function call to handle DDP
+    # def train_model():
+    #     # Create model
+    #     model = VAE(latent_dim, latent_dim_end, num_filter_enc, num_filter_dec, num_node, num_time, lossfun=loss, batch_size=batch_size, small=small)
+        
+    #     # Move model to device
+    #     device = torch.device(f"cuda:{args.local_rank}" if is_distributed else "cuda:0" if torch.cuda.is_available() else "cpu")
+    #     model = model.to(device)
+        
+    #     # Wrap model in DDP if using distributed training
+    #     if is_distributed:
+    #         model = DDP(model, device_ids=[args.local_rank], output_device=args.local_rank)
+    #         if dist.get_rank() == 0:
+    #             print("Model wrapped in DistributedDataParallel")
+        
+    #     # Train the model
+    #     loss_print, recon_print, kl_print, loss_val_print = train(
+    #         n_epochs, batch_size, train_dataloader, val_dataloader, LR, 
+    #         num_filter_enc, num_filter_dec, num_node, latent_dim, latent_dim_end, 
+    #         num_time, alpha, loss, small, load_all
+    #     )
+        
+    #     return loss_print, recon_print, kl_print, loss_val_print
+    
+    # # Train the model
+    # loss_print, recon_print, kl_print, loss_val_print = train_model()
+    
+    # # Clean up distributed process group
+    # if is_distributed:
+    #     dist.destroy_process_group()
 
 if __name__ == "__main__":
     main()
