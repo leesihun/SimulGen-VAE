@@ -186,7 +186,7 @@ class LatentConditionerImg(nn.Module):
         self.latent_head = nn.Sequential(
             nn.Dropout(self.dropout_rate),
             nn.Linear(final_feature_size, final_feature_size // 2),
-            nn.BatchNorm1d(final_feature_size // 2),
+            nn.LayerNorm(final_feature_size // 2),
             nn.GELU(),
             nn.Dropout(self.dropout_rate // 2),
             nn.Linear(final_feature_size // 2, self.latent_dim_end),
@@ -196,7 +196,7 @@ class LatentConditionerImg(nn.Module):
         self.xs_head = nn.Sequential(
             nn.Dropout(self.dropout_rate),
             nn.Linear(final_feature_size, final_feature_size // 2),
-            nn.BatchNorm1d(final_feature_size // 2),
+            nn.LayerNorm(final_feature_size // 2),
             nn.GELU(),
             nn.Dropout(self.dropout_rate // 2),
             nn.Linear(final_feature_size // 2, self.latent_dim * self.size2),
