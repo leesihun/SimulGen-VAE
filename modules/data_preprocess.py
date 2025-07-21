@@ -86,8 +86,8 @@ def data_scaler(FOM_data_aug, FOM_data, num_time, num_node, directory):
 
     return new_x_train, DATA_shape, scaler
 
-def pinn_scaler(data, name):
-    # Also update PINN scaler to match
+def latent_conditioner_scaler(data, name):
+    # Also update LatentConditioner scaler to match
     scaler = MinMaxScaler(feature_range=(-0.9, 0.9))
 
     # Handle 3D arrays by reshaping to 2D for scaling
@@ -110,7 +110,7 @@ def pinn_scaler(data, name):
 
     return scaled_data, scaler
 
-def pinn_scaler_input(data, name):
+def latent_conditioner_scaler_input(data, name):
 
     scaler = StandardScaler()
 

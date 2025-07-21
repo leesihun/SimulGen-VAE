@@ -11,7 +11,15 @@ SiHun Lee, Ph. D, [Email](kevin1007kr@gmail.com), [LinkedIn](https://www.linkedi
 
 ## Version History
 
-### v1.3.1 (Current)
+### v1.3.2 (Current)
+- **Major**: Updated PINN activation functions and normalization for better loss convergence
+- **Changed**: Replaced LeakyReLU with GELU activation in all PINN layers
+- **Improved**: Reduced dropout rate from 0.3 to 0.1 to reduce regularization
+- **Added**: Batch normalization to all linear and convolutional layers in PINN
+- **Enhanced**: Better gradient flow and training stability in PINN architecture
+- **Benefits**: Improved loss convergence and training dynamics
+
+### v1.3.1
 - **Major**: Enhanced CUDA error handling with graceful fallback mechanism
 - **Fixed**: Device side assertion errors in PINN training
 - **Added**: Diagnostic information for CUDA errors and memory usage
@@ -53,6 +61,13 @@ SiHun Lee, Ph. D, [Email](kevin1007kr@gmail.com), [LinkedIn](https://www.linkedi
 - **Performance**: Advanced data loading optimizations and model compilation support
 
 ## Recent Updates
+
+### PINN Training Improvements (v1.3.2)
+- Updated PINN architecture with GELU activation functions for smoother gradients
+- Added batch normalization to all layers for training stabilization
+- Reduced dropout from 0.3 to 0.1 to minimize over-regularization
+- These changes significantly improve loss convergence in PINN training
+- Better gradient flow through the physics-informed neural network
 
 ### CUDA Error Handling Improvements (v1.3.1)
 - Added robust CUDA initialization with proper error handling in PINN training
@@ -128,7 +143,8 @@ SimulGen-VAE includes several advanced optimizations for maximum training speed:
 - **Async Data Transfers**: Non-blocking transfers with `non_blocking=True`
 
 ### 2. Model Architecture Optimizations
-- **GroupNorm Normalization**: Batch-size independent normalization for stable training
+- **BatchNorm/GroupNorm Normalization**: Batch normalization in PINN layers, GroupNorm in VAE for batch-size independence
+- **GELU Activations**: Smooth activation functions in PINN for better gradient flow
 - **Channels Last Memory Format**: Better GPU memory access patterns
 - **Mixed Precision Training**: FP16/BF16 for forward pass, FP32 for critical operations
 - **TF32 Support**: Enabled on Ampere+ GPUs for faster matrix operations

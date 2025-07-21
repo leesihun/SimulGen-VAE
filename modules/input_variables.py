@@ -11,10 +11,10 @@ def input_user_variables():
     print('Input SimulGen-VAE filters')
     num_filter_enc = list(map(int, input().split()))
 
-    print('Input PINN filters')
-    pinn_filter = list(map(int, input().split()))
+    print('Input LatentConditioner filters')
+    latent_conditioner_filter = list(map(int, input().split()))
 
-    return (datasetNo, init_beta_divisior, num_filter_enc, pinn_filter)
+    return (datasetNo, init_beta_divisior, num_filter_enc, latent_conditioner_filter)
 
 def show_graph():
     print('Show graph? 1 for yes, 2 for no')

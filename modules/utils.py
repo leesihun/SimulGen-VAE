@@ -151,8 +151,8 @@ def safe_to_device(tensor, device):
             # Re-raise if not CUDA related
             raise e
 
-class PINNDataset(Dataset):
-    """Dataset for PINN training with improved error handling."""
+class LatentConditionerDataset(Dataset):
+    """Dataset for LatentConditioner training with improved error handling."""
     def __init__(self, input_data, output_data1, output_data2):
         self.input_data = input_data
         self.output_data1 = output_data1
