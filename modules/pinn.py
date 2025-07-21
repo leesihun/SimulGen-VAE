@@ -377,14 +377,15 @@ def read_pinn_dataset_img(dir_path, param_data_type='jpg'):
     try:
         print('reading data from: ', dir_path)
         cur_dir = os.getcwd()
-        print(os.listdir(os.getcwd()+dir_path))
-        print(os.path.join(os.getcwd()+dir_path, '*.png'))
+        full_dir_path = os.path.join(os.getcwd(), dir_path.lstrip('/'))
+        print(os.listdir(full_dir_path))
+        print(os.path.join(full_dir_path, '*.png'))
 
         if param_data_type == '.jpg':
-            files = [f for f in os.listdir(os.getcwd()+dir_path) if f.endswith(param_data_type)]
+            files = [f for f in os.listdir(full_dir_path) if f.endswith(param_data_type)]
             image_files = natsort.natsorted(files)
         elif param_data_type == '.png':
-            files = [f for f in os.listdir(os.getcwd()+dir_path) if f.endswith(param_data_type)]
+            files = [f for f in os.listdir(full_dir_path) if f.endswith(param_data_type)]
             image_files = natsort.natsorted(files)
         else:
             raise ValueError(f"Unsupported image format: {param_data_type}")
@@ -395,7 +396,7 @@ def read_pinn_dataset_img(dir_path, param_data_type='jpg'):
             raise FileNotFoundError(f"No {param_data_type} files found in {dir_path}")
         
         # Open as gray scale image.
-        sample_img = Image.open(image_files[0]).convert('L')
+        sample_img = Image.open(os.path.join(full_dir_path, image_files[0])).convert('L')
         img_array = np.array(sample_img)
         height, width = img_array.shape
         channels = 1
@@ -416,7 +417,7 @@ def read_pinn_dataset_img(dir_path, param_data_type='jpg'):
                 param = float(os.path.basename(file_path).split('_')[0])
                 
                 # Load and process image
-                img = Image.open(file_path)
+                img = Image.open(os.path.join(full_dir_path, file_path))
                 if channels == 1:
                     img = img.convert('L')  # Convert to grayscale if needed
                 else:
@@ -445,7 +446,7 @@ def read_pinn_dataset_img(dir_path, param_data_type='jpg'):
         return data, (channels, height, width)
     
     except Exception as e:
-        print(f" dataset: {e}")
+        print(f"Error reading PINN image dataset: {e}")
         # Return minimal dummy dataset
         return np.zeros((1, 1, 2)), (1, 1, 1)
 
