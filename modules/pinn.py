@@ -376,6 +376,7 @@ def read_pinn_dataset_img(dir_path, param_data_type='jpg'):
     try:
         # Get all image files in the directory
         print('reading data from: ', dir_path)
+        print(os.path.join(dir_path, '*.png'))
         print(glob.glob(os.path.join(dir_path, '*.png')))
 
         if param_data_type == '.jpg':
