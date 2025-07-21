@@ -372,28 +372,16 @@ def train_pinn(n_epochs, dataloader, val_dataloader, model, learning_rate, weigh
         return loss_save
 
 def read_pinn_dataset_img(dir_path, param_data_type='jpg'):
+    import natsort
     """Read image data for PINN training with error handling."""
     try:
-        # Get all image files in the directory
-        print('reading data from: ', dir_path)
-        print(os.path.join(dir_path, '*.png'))
-        # Why is there no png files?
-        # there are bridge_DOE_99.png, etc...
-
-        # Get all files in the directory
-        all_files = glob.glob(os.path.join(dir_path, '*'))
-        print(all_files)
-        # Why are there no png files?
-        # there are bridge_DOE_99.png, etc...
-        # but why are there no png files?
-        # there are bridge_DOE_99.png, etc...
-
-        print(glob.glob(os.path.join(dir_path, '*.png')))
 
         if param_data_type == '.jpg':
-            image_files = sorted(glob.glob(os.path.join(dir_path, '*.jpg')))
+            files = [f for f in os.listdir(dir_path) if f.endswith(param_data_type)]
+            image_files = natsort.natsorted(files)
         elif param_data_type == '.png':
-            image_files = sorted(glob.glob(os.path.join(dir_path, '*.png')))
+            files = [f for f in os.listdir(dir_path) if f.endswith(param_data_type)]
+            image_files = natsort.natsorted(files)
         else:
             raise ValueError(f"Unsupported image format: {param_data_type}")
         
