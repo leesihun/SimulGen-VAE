@@ -256,8 +256,9 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
         
         for i, (x, y1, y2) in enumerate(latent_conditioner_dataloader):
 
-            print('xxxxxxxxxxxxxx', x.shape)
-            x = x.reshape(x.shape[0], int(math.sqrt(x.shape[1])), int(math.sqrt(x.shape[1])))
+            x = x.reshape([x.shape[0], int(math.sqrt(x.shape[1])), int(math.sqrt(x.shape[1]))])
+            if epoch==0 and i==0:
+                print('xxxxxxxxxxxxxx', x.shape)
             # Apply data augmentation randomly to some samples
             if torch.rand(1) < 0.3:  # 30% chance of augmentation
                 x_aug = []
