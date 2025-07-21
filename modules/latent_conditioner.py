@@ -126,6 +126,8 @@ class SEBlock(nn.Module):
         )
 
     def forward(self, x):
+        if x is None or x.size(0) == 0:
+            return x
         b, c, _, _ = x.size()
         y = self.avg_pool(x).view(b, c)
         y = self.fc(y).view(b, c, 1, 1)
@@ -178,9 +180,6 @@ class LatentConditionerImg(nn.Module):
             )
             self.backbone.append(block)
         
-        # Initialize all parameters properly
-        self.apply(self._init_weights)
-        
         # Adaptive pooling and feature size calculation
         self.adaptive_pool = nn.AdaptiveAvgPool2d((4, 4))
         final_feature_size = self.latent_conditioner_filter[-1] * 16  # 4*4
@@ -206,22 +205,6 @@ class LatentConditionerImg(nn.Module):
             nn.Unflatten(1, (self.size2, self.latent_dim)),
             nn.Tanh()
         )
-
-    def _init_weights(self, m):
-        """Initialize weights for the network"""
-        if isinstance(m, nn.Conv2d):
-            nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-            if m.bias is not None:
-                nn.init.constant_(m.bias, 0)
-        elif isinstance(m, (nn.BatchNorm2d, nn.GroupNorm, nn.LayerNorm)):
-            if m.weight is not None:
-                nn.init.constant_(m.weight, 1)
-            if m.bias is not None:
-                nn.init.constant_(m.bias, 0)
-        elif isinstance(m, nn.Linear):
-            nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-            if m.bias is not None:
-                nn.init.constant_(m.bias, 0)
 
     def forward(self, x):
         im_size = 128
