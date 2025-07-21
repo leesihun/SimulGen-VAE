@@ -87,27 +87,49 @@ class LatentConditioner(nn.Module):
 
 
 
-class ConvResBlock(nn.Module):
-    def __init__(self, in_channel, out_channel):
+class ImprovedConvResBlock(nn.Module):
+    def __init__(self, in_channel, out_channel, stride=1):
         super().__init__()
-        multiple = 5
+        
+        self.conv1 = nn.Conv2d(in_channel, out_channel, kernel_size=3, stride=stride, padding=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(out_channel)
+        self.conv2 = nn.Conv2d(out_channel, out_channel, kernel_size=3, padding=1, bias=False)
+        self.bn2 = nn.BatchNorm2d(out_channel)
+        
+        # Skip connection handling
+        self.skip = nn.Sequential()
+        if stride != 1 or in_channel != out_channel:
+            self.skip = nn.Sequential(
+                nn.Conv2d(in_channel, out_channel, kernel_size=1, stride=stride, bias=False),
+                nn.BatchNorm2d(out_channel)
+            )
 
-        self.seq = nn.Sequential(
-            nn.Conv2d(in_channel, in_channel*multiple, kernel_size=3, padding=1),
-            nn.BatchNorm2d(in_channel*multiple),
+    def forward(self, x):
+        residual = self.skip(x)
+        
+        out = F.gelu(self.bn1(self.conv1(x)))
+        out = self.bn2(self.conv2(out))
+        out += residual
+        out = F.gelu(out)
+        return out
+
+class SEBlock(nn.Module):
+    """Squeeze-and-Excitation block for channel attention"""
+    def __init__(self, channel, reduction=16):
+        super().__init__()
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.fc = nn.Sequential(
+            nn.Linear(channel, channel // reduction, bias=False),
             nn.GELU(),
-            nn.Conv2d(in_channel*multiple, out_channel, kernel_size=5, padding=2),
-            nn.BatchNorm2d(out_channel),
-            nn.GELU(),
-            nn.Conv2d(out_channel, out_channel, kernel_size=3, padding=1),
-            nn.BatchNorm2d(out_channel),
-            nn.GELU(),
+            nn.Linear(channel // reduction, channel, bias=False),
+            nn.Sigmoid()
         )
 
     def forward(self, x):
-        # Reduce residual connection strength to make training more stable
-        x = x + 0.05 * self.seq(x)
-        return x
+        b, c, _, _ = x.size()
+        y = self.avg_pool(x).view(b, c)
+        y = self.fc(y).view(b, c, 1, 1)
+        return x * y.expand_as(x)
 
 class ConvBlock(nn.Module):
     def __init__(self, in_channel, out_channel):
@@ -135,51 +157,69 @@ class LatentConditionerImg(nn.Module):
         self.latent_conditioner_data_shape = latent_conditioner_data_shape
         self.dropout_rate = dropout_rate
 
-        modules = []
-        modules.append(nn.Conv2d(1, self.latent_conditioner_filter[0], kernel_size=3, padding=1))
-        modules.append(nn.BatchNorm2d(self.latent_conditioner_filter[0]))
-        modules.append(nn.GELU())
+        # Shared feature extractor backbone
+        self.backbone = nn.ModuleList()
         
-        for i in range(1, self.num_latent_conditioner_filter):
-            modules.append(ConvResBlock(self.latent_conditioner_filter[i-1], self.latent_conditioner_filter[i-1]))
-            modules.append(ConvBlock(self.latent_conditioner_filter[i-1], self.latent_conditioner_filter[i]))
-
-        modules.append(nn.Flatten())
-        modules.append(nn.LazyLinear(self.latent_dim_end*8))
-        modules.append(nn.BatchNorm1d(self.latent_dim_end*8))
-        modules.append(nn.GELU())
-        modules.append(nn.Dropout(self.dropout_rate))  # Keep dropout only for FC layers
-        modules.append(nn.Linear(self.latent_dim_end*8, self.latent_dim_end))
-        modules.append(nn.Tanh())
-
-        self.latent_out = nn.Sequential(*modules)
-
-        modules = []
-        modules.append(nn.Conv2d(1, self.latent_conditioner_filter[0], kernel_size=3, padding=1))
-        modules.append(nn.BatchNorm2d(self.latent_conditioner_filter[0]))
-        modules.append(nn.GELU())
+        # Initial conv
+        self.backbone.append(nn.Sequential(
+            nn.Conv2d(1, self.latent_conditioner_filter[0], kernel_size=7, stride=2, padding=3, bias=False),
+            nn.BatchNorm2d(self.latent_conditioner_filter[0]),
+            nn.GELU(),
+            nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+        ))
         
+        # Progressive feature extraction with attention
         for i in range(1, self.num_latent_conditioner_filter):
-            modules.append(ConvResBlock(self.latent_conditioner_filter[i-1], self.latent_conditioner_filter[i-1]))
-            modules.append(ConvBlock(self.latent_conditioner_filter[i-1], self.latent_conditioner_filter[i]))
-
-        modules.append(nn.Flatten())
-        modules.append(nn.LazyLinear(self.latent_dim*self.size2*8))
-        modules.append(nn.BatchNorm1d(self.latent_dim*self.size2*8))
-        modules.append(nn.GELU())
-        modules.append(nn.Dropout(self.dropout_rate))  # Keep dropout only for FC layers
-        modules.append(nn.Linear(self.latent_dim*self.size2*8, self.latent_dim*self.size2))
-        modules.append(nn.Unflatten(1, (self.size2, self.latent_dim)))
-        modules.append(nn.Tanh())
-
-        self.xs_out = nn.Sequential(*modules)
-
+            stride = 2 if i < self.num_latent_conditioner_filter - 1 else 1
+            block = nn.Sequential(
+                ImprovedConvResBlock(self.latent_conditioner_filter[i-1], self.latent_conditioner_filter[i], stride),
+                ImprovedConvResBlock(self.latent_conditioner_filter[i], self.latent_conditioner_filter[i], 1),
+                SEBlock(self.latent_conditioner_filter[i])
+            )
+            self.backbone.append(block)
+        
+        # Adaptive pooling and feature size calculation
+        self.adaptive_pool = nn.AdaptiveAvgPool2d((4, 4))
+        final_feature_size = self.latent_conditioner_filter[-1] * 16  # 4*4
+        
+        # Separate heads for different outputs
+        self.latent_head = nn.Sequential(
+            nn.Dropout(self.dropout_rate),
+            nn.Linear(final_feature_size, final_feature_size // 2),
+            nn.BatchNorm1d(final_feature_size // 2),
+            nn.GELU(),
+            nn.Dropout(self.dropout_rate // 2),
+            nn.Linear(final_feature_size // 2, self.latent_dim_end),
+            nn.Tanh()
+        )
+        
+        self.xs_head = nn.Sequential(
+            nn.Dropout(self.dropout_rate),
+            nn.Linear(final_feature_size, final_feature_size // 2),
+            nn.BatchNorm1d(final_feature_size // 2),
+            nn.GELU(),
+            nn.Dropout(self.dropout_rate // 2),
+            nn.Linear(final_feature_size // 2, self.latent_dim * self.size2),
+            nn.Unflatten(1, (self.size2, self.latent_dim)),
+            nn.Tanh()
+        )
 
     def forward(self, x):
         im_size = 128
         x = x.reshape(-1, 1, im_size, im_size)
-        latent_out = self.latent_out(x)
-        xs_out = self.xs_out(x)
+        
+        # Shared feature extraction
+        features = x
+        for block in self.backbone:
+            features = block(features)
+        
+        # Global feature pooling
+        features = self.adaptive_pool(features)
+        features = features.flatten(1)
+        
+        # Separate outputs
+        latent_out = self.latent_head(features)
+        xs_out = self.xs_head(features)
 
         return latent_out, xs_out
 
@@ -230,6 +270,11 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
     # Reduce learning rate and add weight decay for regularization
     latent_conditioner_optimized = torch.optim.AdamW(latent_conditioner.parameters(), lr=latent_conditioner_lr, weight_decay=weight_decay)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(latent_conditioner_optimized, T_max = latent_conditioner_epoch, eta_min = latent_conditioner_lr * 0.01)
+    
+    # Early stopping parameters
+    best_val_loss = float('inf')
+    patience = 100
+    patience_counter = 0
 
     # Data augmentation transforms
     augmentation = transforms.Compose([
@@ -252,6 +297,8 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
         start_time = time.time()
         latent_conditioner.train(True)
         epoch_loss = 0
+        epoch_loss_y1 = 0
+        epoch_loss_y2 = 0
         num_batches = 0
         
         for i, (x, y1, y2) in enumerate(latent_conditioner_dataloader):
@@ -280,6 +327,8 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
 
             loss = A + B
             epoch_loss += loss.item()
+            epoch_loss_y1 += A.item()
+            epoch_loss_y2 += B.item()
             num_batches += 1
 
             loss.backward()
@@ -290,10 +339,14 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
             latent_conditioner_optimized.step()
         
         avg_train_loss = epoch_loss / num_batches
+        avg_train_loss_y1 = epoch_loss_y1 / num_batches
+        avg_train_loss_y2 = epoch_loss_y2 / num_batches
 
         # Validation loop
         latent_conditioner.eval()
         val_loss = 0
+        val_loss_y1 = 0
+        val_loss_y2 = 0
         val_batches = 0
         
         with torch.no_grad():
@@ -306,10 +359,23 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
                 B_val = nn.MSELoss()(y_pred2_val, y2_val)
 
                 val_loss += (A_val + B_val).item()
+                val_loss_y1 += A_val.item()
+                val_loss_y2 += B_val.item()
                 val_batches += 1
 
         avg_val_loss = val_loss / val_batches
+        avg_val_loss_y1 = val_loss_y1 / val_batches
+        avg_val_loss_y2 = val_loss_y2 / val_batches
 
+        # Early stopping check
+        if avg_val_loss < best_val_loss:
+            best_val_loss = avg_val_loss
+            patience_counter = 0
+            # Save best model
+            torch.save(latent_conditioner.state_dict(), 'checkpoints/latent_conditioner_best.pth')
+        else:
+            patience_counter += 1
+            
         # Learning rate scheduling
         scheduler.step()
 
@@ -319,12 +385,22 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
         if epoch % 10 == 0:
             writer.add_scalar('LatentConditioner Loss/train', avg_train_loss, epoch)
             writer.add_scalar('LatentConditioner Loss/val', avg_val_loss, epoch)
+            writer.add_scalar('LatentConditioner Loss/train_y1', avg_train_loss_y1, epoch)
+            writer.add_scalar('LatentConditioner Loss/train_y2', avg_train_loss_y2, epoch)
+            writer.add_scalar('LatentConditioner Loss/val_y1', avg_val_loss_y1, epoch)
+            writer.add_scalar('LatentConditioner Loss/val_y2', avg_val_loss_y2, epoch)
             writer.add_scalar('Learning Rate', latent_conditioner_optimized.param_groups[0]['lr'], epoch)
 
-        print('[%d/%d]\tTrain_Loss: %.4E, Val_Loss: %.4E, LR: %.2E, ETA: %.2f h' % 
-              (epoch, latent_conditioner_epoch, avg_train_loss, avg_val_loss, 
+        print('[%d/%d]\tTrain: %.4E (y1:%.4E, y2:%.4E), Val: %.4E (y1:%.4E, y2:%.4E), LR: %.2E, ETA: %.2f h, Patience: %d/%d' % 
+              (epoch, latent_conditioner_epoch, avg_train_loss, avg_train_loss_y1, avg_train_loss_y2, 
+               avg_val_loss, avg_val_loss_y1, avg_val_loss_y2,
                latent_conditioner_optimized.param_groups[0]['lr'], 
-               (latent_conditioner_epoch-epoch)*epoch_duration/3600))
+               (latent_conditioner_epoch-epoch)*epoch_duration/3600, patience_counter, patience))
+               
+        # Early stopping
+        if patience_counter >= patience:
+            print(f'Early stopping at epoch {epoch}. Best validation loss: {best_val_loss:.4E}')
+            break
 
         # Save regular checkpoint
         if epoch % 50 == 0:
