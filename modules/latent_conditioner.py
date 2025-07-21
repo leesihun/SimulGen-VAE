@@ -207,34 +207,21 @@ class LatentConditionerImg(nn.Module):
         )
 
     def forward(self, x):
-        print(f"[DEBUG] LatentConditionerImg forward - input shape: {x.shape if x is not None else 'None'}")
-        
         im_size = 128
         x = x.reshape(-1, 1, im_size, im_size)
-        print(f"[DEBUG] After reshape: {x.shape}")
         
         # Shared feature extraction
         features = x
-        for i, block in enumerate(self.backbone):
-            print(f"[DEBUG] Before backbone block {i}: {features.shape if features is not None else 'None'}")
+        for block in self.backbone:
             features = block(features)
-            print(f"[DEBUG] After backbone block {i}: {features.shape if features is not None else 'None'}")
         
         # Global feature pooling
-        print(f"[DEBUG] Before adaptive pool: {features.shape if features is not None else 'None'}")
         features = self.adaptive_pool(features)
-        print(f"[DEBUG] After adaptive pool: {features.shape if features is not None else 'None'}")
         features = features.flatten(1)
-        print(f"[DEBUG] After flatten: {features.shape if features is not None else 'None'}")
         
         # Separate outputs
-        print(f"[DEBUG] Before latent_head")
         latent_out = self.latent_head(features)
-        print(f"[DEBUG] After latent_head: {latent_out.shape if latent_out is not None else 'None'}")
-        
-        print(f"[DEBUG] Before xs_head")
         xs_out = self.xs_head(features)
-        print(f"[DEBUG] After xs_head: {xs_out.shape if xs_out is not None else 'None'}")
 
         return latent_out, xs_out
 
@@ -303,13 +290,8 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
     from torchinfo import summary
     import math
 
-    print(f"[DEBUG] Model created successfully")
-    print(f"[DEBUG] Moving model to device: {device}")
     # summary(latent_conditioner, (64,1,im_size,im_size))
     latent_conditioner = latent_conditioner.to(device)
-    print(f"[DEBUG] Model moved to device successfully")
-
-    print(f"[DEBUG] Applying weight initialization")
     def safe_initialize_weights_He(m):
         if isinstance(m, (nn.Conv1d, nn.ConvTranspose1d, nn.Conv2d, nn.ConvTranspose2d)):
             nn.init.kaiming_uniform_(m.weight.data, nonlinearity='relu')
@@ -321,7 +303,6 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
                 nn.init.constant_(m.bias.data, 0)
     
     latent_conditioner.apply(safe_initialize_weights_He)
-    print(f"[DEBUG] Weight initialization completed")
 
     for epoch in range(latent_conditioner_epoch):
         start_time = time.time()
@@ -332,11 +313,8 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
         num_batches = 0
         
         for i, (x, y1, y2) in enumerate(latent_conditioner_dataloader):
-            print(f"[DEBUG] Training batch {i}, epoch {epoch}")
-            print(f"[DEBUG] Raw input shapes: x={x.shape if x is not None else 'None'}, y1={y1.shape if y1 is not None else 'None'}, y2={y2.shape if y2 is not None else 'None'}")
 
             x = x.reshape([x.shape[0], int(math.sqrt(x.shape[1])), int(math.sqrt(x.shape[1]))])
-            print(f"[DEBUG] After reshape: x={x.shape}")
             
             if epoch==0 and i==0:
                 print('dataset_shape', x.shape,y1.shape,y2.shape)
@@ -349,41 +327,27 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
                     x_aug.append(img_aug.unsqueeze(0))
                 x = torch.cat(x_aug, dim=0)
             
-            print(f"[DEBUG] Moving to device: {device}")
             x, y1, y2 = x.to(device), y1.to(device), y2.to(device)
-            print(f"[DEBUG] After moving to device - x: {x.shape}, y1: {y1.shape}, y2: {y2.shape}")
             
-            print(f"[DEBUG] Zeroing gradients")
             latent_conditioner_optimized.zero_grad(set_to_none=True)
 
-            print(f"[DEBUG] Forward pass starting")
             y_pred1, y_pred2 = latent_conditioner(x)
-            print(f"[DEBUG] Forward pass completed - y_pred1: {y_pred1.shape if y_pred1 is not None else 'None'}, y_pred2: {y_pred2.shape if y_pred2 is not None else 'None'}")
 
-            print(f"[DEBUG] Computing losses")
             A = nn.MSELoss()(y_pred1, y1)
             B = nn.MSELoss()(y_pred2, y2)
-            print(f"[DEBUG] Loss A: {A.item() if A is not None else 'None'}, Loss B: {B.item() if B is not None else 'None'}")
 
             loss = A + B
-            print(f"[DEBUG] Total loss: {loss.item() if loss is not None else 'None'}")
             epoch_loss += loss.item()
             epoch_loss_y1 += A.item()
             epoch_loss_y2 += B.item()
             num_batches += 1
 
-            print(f"[DEBUG] Starting backward pass")
             loss.backward()
-            print(f"[DEBUG] Backward pass completed")
             
             # Gradient clipping to prevent exploding gradients
-            print(f"[DEBUG] Clipping gradients")
             torch.nn.utils.clip_grad_norm_(latent_conditioner.parameters(), max_norm=1.0)
-            print(f"[DEBUG] Gradients clipped")
             
-            print(f"[DEBUG] Optimizer step")
             latent_conditioner_optimized.step()
-            print(f"[DEBUG] Optimizer step completed")
         
         avg_train_loss = epoch_loss / num_batches
         avg_train_loss_y1 = epoch_loss_y1 / num_batches

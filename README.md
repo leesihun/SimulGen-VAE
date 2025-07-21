@@ -11,7 +11,13 @@ SiHun Lee, Ph. D, [Email](kevin1007kr@gmail.com), [LinkedIn](https://www.linkedi
 
 ## Version History
 
-### v1.4.0 (Current)
+### v1.4.1 (Current)
+- **Critical Fix**: Resolved NoneType error in weight initialization for layers with bias=False
+- **Fixed**: Safe weight initialization that checks for bias existence before accessing .data
+- **Improved**: Better error handling in LatentConditioner training initialization
+- **Enhanced**: Cleaner code with debug prints removed after successful troubleshooting
+
+### v1.4.0
 - **Major**: Completely redesigned LatentConditioner architecture with modern ResNet-style blocks
 - **Added**: SE (Squeeze-and-Excitation) attention blocks for better feature selection
 - **Improved**: Shared backbone architecture eliminating duplicate networks
@@ -72,6 +78,12 @@ SiHun Lee, Ph. D, [Email](kevin1007kr@gmail.com), [LinkedIn](https://www.linkedi
 - **Performance**: Advanced data loading optimizations and model compilation support
 
 ## Recent Updates
+
+### LatentConditioner Critical Fix (v1.4.1)
+- **Fixed critical NoneType error**: Weight initialization now safely handles layers with `bias=False`
+- **Root cause**: SE attention blocks use Linear layers without bias, but original weight init assumed all layers have bias
+- **Solution**: Added bias existence check before accessing `.data` attribute
+- **Impact**: LatentConditioner training now starts successfully without initialization crashes
 
 ### LatentConditioner Architecture Redesign (v1.4.0)
 - **Completely new architecture**: Replaced duplicate networks with shared backbone + separate heads
@@ -337,6 +349,7 @@ augmentation_config = {
 | **Different results across GPUs** | Set `torch.backends.cudnn.deterministic = True` for reproducibility |
 | **RuntimeError: in-place operation** | Disable CUDA graphs by setting `use_cuda_graphs = False` in `modules/train.py` |
 | **ValueError: Expected more than 1 value per channel** | LatentConditioner batch size issue - fixed in v1.4.0 with LayerNorm |
+| **NoneType object has no attribute 'data'** | Weight initialization error - fixed in v1.4.1 with bias existence check |
 
 ## Monitoring
 * **TensorBoard**: `tensorboard --logdir=runs --port 6001`

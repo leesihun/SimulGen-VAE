@@ -1,7 +1,7 @@
 # To run, type python SimulGen-VAE.py --preset=1 --plot=2 --train_latent_conditioner_only=0 --size=small --load_all=1
 
 """
-SimulGen-VAE v1.4.0
+SimulGen-VAE v1.4.1
 ====================
 
 A high-performance VAE for fast generation and inference of transient/static simulation data 
@@ -11,7 +11,13 @@ Author: SiHun Lee, Ph.D.
 Email: kevin1007kr@gmail.com
 LinkedIn: https://www.linkedin.com/in/시훈-이-13009a172/?originalSubdomain=kr
 
-New in v1.4.0:
+New in v1.4.1:
+- Critical fix for NoneType error in weight initialization
+- Safe weight initialization for layers with bias=False (SE attention blocks)
+- Improved error handling in LatentConditioner training startup
+- Cleaner codebase with debug prints removed
+
+Previous v1.4.0 features:
 - Completely redesigned LatentConditioner architecture with ResNet-style blocks
 - SE (Squeeze-and-Excitation) attention blocks for better feature selection  
 - Shared backbone architecture eliminating duplicate networks
