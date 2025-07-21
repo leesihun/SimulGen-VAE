@@ -375,6 +375,9 @@ def read_pinn_dataset_img(dir_path, param_data_type='jpg'):
     """Read image data for PINN training with error handling."""
     try:
         # Get all image files in the directory
+        print('reading data from: ', dir_path)
+        print(glob.glob(os.path.join(dir_path, '*.png')))
+
         if param_data_type == '.jpg':
             image_files = sorted(glob.glob(os.path.join(dir_path, '*.jpg')))
         elif param_data_type == '.png':
