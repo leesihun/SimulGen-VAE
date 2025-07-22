@@ -250,7 +250,7 @@ from torch.utils.tensorboard import SummaryWriter
 from torchvision import transforms
 import pytorch_warmup as warmup
 
-# SAM (Sharpness-Aware Minimization) integrated directly into training loop
+# Cleaned up training without problematic regularization
 
 # Add CUDA error handling
 def safe_cuda_initialization():
@@ -289,10 +289,6 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
     # Reduce learning rate and add weight decay for regularization
     latent_conditioner_optimized = torch.optim.AdamW(latent_conditioner.parameters(), lr=latent_conditioner_lr, weight_decay=weight_decay)
     
-    # SAM parameters - can disable for testing
-    use_sam = True
-    sam_rho = 0.05
-    print(f"SAM enabled: {use_sam}, rho: {sam_rho}")
     
     # Snapshot ensemble - save models at different stages
     snapshot_models = []
@@ -459,41 +455,8 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
                 print(f"  Loss A (Y1): {A.item():.6f}, Loss B (Y2): {B.item():.6f}, Ratio A/B: {A.item()/B.item():.3f}")
                 print("---")
 
-            # Gradient penalty for smoothness
-            if epoch > 10:  # Apply after initial convergence
-                x.requires_grad_(True)
-                y_pred1_gp, y_pred2_gp = latent_conditioner(x)
+            loss = A + B
                 
-                grad_outputs1 = torch.ones_like(y_pred1_gp)
-                grad_outputs2 = torch.ones_like(y_pred2_gp)
-                
-                gradients1 = torch.autograd.grad(outputs=y_pred1_gp, inputs=x, 
-                                               grad_outputs=grad_outputs1, 
-                                               create_graph=True, retain_graph=True)[0]
-                gradients2 = torch.autograd.grad(outputs=y_pred2_gp, inputs=x, 
-                                               grad_outputs=grad_outputs2, 
-                                               create_graph=True, retain_graph=True)[0]
-                
-                gradient_penalty = torch.mean(gradients1**2) + torch.mean(gradients2**2)
-                x.requires_grad_(False)
-                
-                loss = A + B + 0.01 * gradient_penalty
-            else:
-                loss = A + B
-                
-            # Information bottleneck regularization (most aggressive)
-            kl_loss = 0
-            if epoch > 50:  # Apply after some convergence
-                for name, param in latent_conditioner.named_parameters():
-                    if 'weight' in name and len(param.shape) > 1:  # Only weight matrices
-                        # Encourage low-rank structure (information bottleneck)
-                        U, S, V = torch.svd(param)
-                        # Penalize large singular values beyond top-k
-                        k = min(param.shape) // 4  # Keep only 1/4 of singular values large
-                        if len(S) > k:
-                            kl_loss += 0.001 * torch.sum(S[k:] ** 2)
-            
-            loss = loss + kl_loss
             
             # Update EMA model
             with torch.no_grad():
@@ -504,54 +467,9 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
             epoch_loss_y2 += B.item()
             num_batches += 1
 
-            # SAM implementation integrated into training loop
-            if use_sam and epoch > 10:  # Apply SAM after initial convergence
-                # First forward-backward pass
-                loss.backward(create_graph=True)
-                
-                # Compute gradient norm for SAM
-                grad_norm = 0.0
-                for param in latent_conditioner.parameters():
-                    if param.grad is not None:
-                        grad_norm += param.grad.norm().item() ** 2
-                grad_norm = grad_norm ** 0.5
-                
-                # SAM perturbation step - move weights in gradient direction
-                scale = sam_rho / (grad_norm + 1e-12)
-                old_params = {}
-                for name, param in latent_conditioner.named_parameters():
-                    if param.grad is not None:
-                        old_params[name] = param.data.clone()
-                        param.data.add_(param.grad, alpha=scale)
-                
-                # Zero gradients and recompute loss with perturbed weights
-                latent_conditioner_optimized.zero_grad()
-                y_pred1_sam, y_pred2_sam = latent_conditioner(x)
-                A_sam = nn.MSELoss()(y_pred1_sam, y1) + epsilon * torch.mean(y_pred1_sam**2)
-                B_sam = nn.MSELoss()(y_pred2_sam, y2) + epsilon * torch.mean(y_pred2_sam**2)
-                
-                # Add other losses if they exist
-                sam_loss = A_sam + B_sam
-                if 'kl_loss' in locals():
-                    sam_loss += kl_loss
-                    
-                # Second backward pass
-                sam_loss.backward()
-                
-                # Restore original weights before optimizer step
-                for name, param in latent_conditioner.named_parameters():
-                    if name in old_params:
-                        param.data = old_params[name]
-                
-                # Gradient clipping and step
-                torch.nn.utils.clip_grad_norm_(latent_conditioner.parameters(), max_norm=5.0)
-                latent_conditioner_optimized.step()
-                
-            else:
-                # Regular training without SAM
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(latent_conditioner.parameters(), max_norm=5.0)
-                latent_conditioner_optimized.step()
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(latent_conditioner.parameters(), max_norm=5.0)
+            latent_conditioner_optimized.step()
         
         avg_train_loss = epoch_loss / num_batches
         avg_train_loss_y1 = epoch_loss_y1 / num_batches
@@ -572,27 +490,7 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
                 x_val = x_val.reshape([x_val.shape[0], int(math.sqrt(x_val.shape[1])), int(math.sqrt(x_val.shape[1]))])
                 x_val, y1_val, y2_val = x_val.to(device), y1_val.to(device), y2_val.to(device)
                 
-                # Test-Time Augmentation - average multiple predictions
-                if epoch % 10 == 0:  # Only every 10 epochs to save compute
-                    tta_predictions_1 = []
-                    tta_predictions_2 = []
-                    
-                    for tta_iter in range(5):  # 5 different noise patterns
-                        x_tta = x_val.clone()
-                        if tta_iter > 0:  # Add different noise patterns
-                            noise = torch.randn_like(x_tta) * 0.01  # 1% noise
-                            x_tta = x_tta + noise
-                        
-                        with torch.no_grad():
-                            pred1, pred2 = latent_conditioner(x_tta)
-                            tta_predictions_1.append(pred1)
-                            tta_predictions_2.append(pred2)
-                    
-                    # Average predictions
-                    y_pred1_val = torch.mean(torch.stack(tta_predictions_1), dim=0)
-                    y_pred2_val = torch.mean(torch.stack(tta_predictions_2), dim=0)
-                else:
-                    y_pred1_val, y_pred2_val = latent_conditioner(x_val)
+                y_pred1_val, y_pred2_val = latent_conditioner(x_val)
 
                 A_val = nn.MSELoss()(y_pred1_val, y1_val) + epsilon * torch.mean(y_pred1_val**2)
                 B_val = nn.MSELoss()(y_pred2_val, y2_val) + epsilon * torch.mean(y_pred2_val**2)
