@@ -423,7 +423,7 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
             loss.backward()
             
             # Gradient clipping - relaxed for better validation learning
-            torch.nn.utils.clip_grad_norm_(latent_conditioner.parameters(), max_norm=2.0)
+            torch.nn.utils.clip_grad_norm_(latent_conditioner.parameters(), max_norm=5.0)
             
             latent_conditioner_optimized.step()
         
