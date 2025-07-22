@@ -11,7 +11,31 @@ SiHun Lee, Ph. D, [Email](kevin1007kr@gmail.com), [LinkedIn](https://www.linkedi
 
 ## Version History
 
-### v1.4.3 (Current)
+### v1.4.4 (Current) - COMPREHENSIVE ANTI-OVERFITTING
+- **CRITICAL**: Added comprehensive anti-overfitting arsenal for severe generalization issues
+- **Optimizer**: SAM (Sharpness-Aware Minimization) with rho=0.05 for flat minima
+- **Weight Averaging**: EMA with decay=0.999 for smoother weight updates
+- **Data Augmentation**: 
+  - Cutout: 40% chance, 16x16 patches on 128x128 images
+  - Enhanced Mixup: 20% chance with alpha=0.2
+- **Progressive Dropout**: Starts 0.3 → reduces to 0.1 over training
+- **Loss Regularization**:
+  - Label smoothing with epsilon=0.1
+  - Gradient penalty (0.01 weight) after epoch 10
+  - Cosine similarity loss (0.05 weight) for latent structure
+  - Information bottleneck: SVD regularization on weight matrices
+- **Ensemble Methods**:
+  - Snapshot ensembling: 10 models saved during training
+  - Test-Time Augmentation: 5-sample averaging every 10 epochs
+- **Architecture**: Spectral normalization extended to Linear layers (1-Lipschitz)
+- **Hyperparameters**: 
+  - Learning rate: 0.001 (increased from 0.00005)
+  - Weight decay: 5e-4 (increased from 1e-4)  
+  - Patience: 2000 epochs (increased from 50)
+  - Gradient clipping: 5.0 (increased from 2.0)
+- **Benefits**: Most aggressive anti-overfitting setup possible
+
+### v1.4.3
 - **Major**: LatentConditioner architecture simplification to fix high validation loss
 - **Fixed**: Overly complex output heads causing overfitting (6-layer → 1-layer heads)
 - **Removed**: Problematic mid-layer residual connections that disrupted learning
@@ -409,6 +433,70 @@ iftop -i eth0
 # Check NCCL operations
 export NCCL_DEBUG=INFO                    # Shows detailed NCCL logs
 ```
+
+## ROLLBACK REFERENCE - v1.4.4 Anti-Overfitting Changes
+
+### Critical Changes Made (For Rollback)
+
+**Files Modified:**
+1. `modules/latent_conditioner.py` - Major changes throughout
+2. `modules/common.py` - Extended spectral normalization  
+3. `input_data/condition.txt` - Hyperparameter changes
+
+**Key Code Locations to Revert:**
+
+**1. SAM Optimizer Implementation (lines 253-290):**
+```python
+class SAMOptimizer:
+    # Full SAM implementation added
+```
+
+**2. Optimizer Replacement (lines 327-332):**
+```python  
+# OLD: latent_conditioner_optimized = torch.optim.AdamW(...)
+# NEW: base_optimizer + SAMOptimizer wrapper + EMA
+```
+
+**3. Data Augmentation Changes (lines 437-466):**
+```python
+# Added: Cutout (40% chance)
+# Modified: Mixup (reduced to 20%)
+```
+
+**4. Progressive Dropout (lines 358-362):**
+```python
+# Added: Dynamic dropout scheduling
+current_dropout = max(0.1, 0.3 * (1 - epoch / latent_conditioner_epoch))
+```
+
+**5. Loss Function Enhancements (lines 410-446):**
+```python
+# Added: Label smoothing, gradient penalty, information bottleneck
+```
+
+**6. Validation TTA (lines 565-585):**
+```python  
+# Added: Test-time augmentation every 10 epochs
+```
+
+**7. Hyperparameter Changes in condition.txt:**
+```
+latent_conditioner_lr: 0.00005 → 0.001
+latent_conditioner_weight_decay: 1e-4 → 5e-4  
+patience: 50 → 2000
+```
+
+**8. Spectral Normalization Extension:**
+```python
+# modules/common.py: Added nn.Linear to spectral norm
+```
+
+### Quick Rollback Steps:
+1. Revert `modules/latent_conditioner.py` to v1.4.3
+2. Revert `modules/common.py` spectral norm changes
+3. Reset hyperparameters in `input_data/condition.txt`
+4. Remove SAM/EMA/ensemble code blocks
+5. Restore simple training loop without TTA
 
 ## Configuration
 
