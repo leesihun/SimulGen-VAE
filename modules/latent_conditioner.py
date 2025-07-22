@@ -250,44 +250,7 @@ from torch.utils.tensorboard import SummaryWriter
 from torchvision import transforms
 import pytorch_warmup as warmup
 
-class SAMOptimizer:
-    """Sharpness-Aware Minimization optimizer wrapper"""
-    def __init__(self, optimizer, rho=0.05):
-        self.optimizer = optimizer
-        self.rho = rho
-        
-    def step(self, loss_fn, model, inputs, targets):
-        # First forward-backward pass
-        loss = loss_fn()
-        loss.backward()
-        
-        # Compute SAM gradient
-        grad_norm = self._grad_norm()
-        for group in self.optimizer.param_groups:
-            scale = self.rho / (grad_norm + 1e-12)
-            for p in group['params']:
-                if p.grad is not None:
-                    p.data.add_(p.grad, alpha=scale)
-        
-        # Second forward-backward pass
-        loss_fn().backward()
-        
-        # Step back and update
-        for group in self.optimizer.param_groups:
-            scale = self.rho / (grad_norm + 1e-12)
-            for p in group['params']:
-                if p.grad is not None:
-                    p.data.sub_(p.grad, alpha=scale)
-        
-        self.optimizer.step()
-        
-    def _grad_norm(self):
-        norm = 0.0
-        for group in self.optimizer.param_groups:
-            for p in group['params']:
-                if p.grad is not None:
-                    norm += p.grad.norm().item() ** 2
-        return norm ** 0.5
+# SAM (Sharpness-Aware Minimization) integrated directly into training loop
 
 # Add CUDA error handling
 def safe_cuda_initialization():
@@ -324,8 +287,12 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
 
     # Reduce learning rate and add weight decay for regularization
-    base_optimizer = torch.optim.AdamW(latent_conditioner.parameters(), lr=latent_conditioner_lr, weight_decay=weight_decay)
-    latent_conditioner_optimized = SAMOptimizer(base_optimizer, rho=0.05)
+    latent_conditioner_optimized = torch.optim.AdamW(latent_conditioner.parameters(), lr=latent_conditioner_lr, weight_decay=weight_decay)
+    
+    # SAM parameters - can disable for testing
+    use_sam = True
+    sam_rho = 0.05
+    print(f"SAM enabled: {use_sam}, rho: {sam_rho}")
     
     # EMA for weight averaging
     ema_decay = 0.999
@@ -536,12 +503,54 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
             epoch_loss_y2 += B.item()
             num_batches += 1
 
-            loss.backward()
-            
-            # Gradient clipping - relaxed for better validation learning
-            torch.nn.utils.clip_grad_norm_(latent_conditioner.parameters(), max_norm=5.0)
-            
-            latent_conditioner_optimized.step()
+            # SAM implementation integrated into training loop
+            if use_sam and epoch > 10:  # Apply SAM after initial convergence
+                # First forward-backward pass
+                loss.backward(create_graph=True)
+                
+                # Compute gradient norm for SAM
+                grad_norm = 0.0
+                for param in latent_conditioner.parameters():
+                    if param.grad is not None:
+                        grad_norm += param.grad.norm().item() ** 2
+                grad_norm = grad_norm ** 0.5
+                
+                # SAM perturbation step - move weights in gradient direction
+                scale = sam_rho / (grad_norm + 1e-12)
+                old_params = {}
+                for name, param in latent_conditioner.named_parameters():
+                    if param.grad is not None:
+                        old_params[name] = param.data.clone()
+                        param.data.add_(param.grad, alpha=scale)
+                
+                # Zero gradients and recompute loss with perturbed weights
+                latent_conditioner_optimized.zero_grad()
+                y_pred1_sam, y_pred2_sam = latent_conditioner(x)
+                A_sam = nn.MSELoss()(y_pred1_sam, y1) + epsilon * torch.mean(y_pred1_sam**2)
+                B_sam = nn.MSELoss()(y_pred2_sam, y2) + epsilon * torch.mean(y_pred2_sam**2)
+                
+                # Add other losses if they exist
+                sam_loss = A_sam + B_sam
+                if 'kl_loss' in locals():
+                    sam_loss += kl_loss
+                    
+                # Second backward pass
+                sam_loss.backward()
+                
+                # Restore original weights before optimizer step
+                for name, param in latent_conditioner.named_parameters():
+                    if name in old_params:
+                        param.data = old_params[name]
+                
+                # Gradient clipping and step
+                torch.nn.utils.clip_grad_norm_(latent_conditioner.parameters(), max_norm=5.0)
+                latent_conditioner_optimized.step()
+                
+            else:
+                # Regular training without SAM
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(latent_conditioner.parameters(), max_norm=5.0)
+                latent_conditioner_optimized.step()
         
         avg_train_loss = epoch_loss / num_batches
         avg_train_loss_y1 = epoch_loss_y1 / num_batches
