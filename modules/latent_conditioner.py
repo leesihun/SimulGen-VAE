@@ -250,6 +250,45 @@ from torch.utils.tensorboard import SummaryWriter
 from torchvision import transforms
 import pytorch_warmup as warmup
 
+class SAMOptimizer:
+    """Sharpness-Aware Minimization optimizer wrapper"""
+    def __init__(self, optimizer, rho=0.05):
+        self.optimizer = optimizer
+        self.rho = rho
+        
+    def step(self, loss_fn, model, inputs, targets):
+        # First forward-backward pass
+        loss = loss_fn()
+        loss.backward()
+        
+        # Compute SAM gradient
+        grad_norm = self._grad_norm()
+        for group in self.optimizer.param_groups:
+            scale = self.rho / (grad_norm + 1e-12)
+            for p in group['params']:
+                if p.grad is not None:
+                    p.data.add_(p.grad, alpha=scale)
+        
+        # Second forward-backward pass
+        loss_fn().backward()
+        
+        # Step back and update
+        for group in self.optimizer.param_groups:
+            scale = self.rho / (grad_norm + 1e-12)
+            for p in group['params']:
+                if p.grad is not None:
+                    p.data.sub_(p.grad, alpha=scale)
+        
+        self.optimizer.step()
+        
+    def _grad_norm(self):
+        norm = 0.0
+        for group in self.optimizer.param_groups:
+            for p in group['params']:
+                if p.grad is not None:
+                    norm += p.grad.norm().item() ** 2
+        return norm ** 0.5
+
 # Add CUDA error handling
 def safe_cuda_initialization():
     """Safely check CUDA availability with error handling and diagnostics"""
@@ -285,7 +324,16 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
 
     # Reduce learning rate and add weight decay for regularization
-    latent_conditioner_optimized = torch.optim.AdamW(latent_conditioner.parameters(), lr=latent_conditioner_lr, weight_decay=weight_decay)
+    base_optimizer = torch.optim.AdamW(latent_conditioner.parameters(), lr=latent_conditioner_lr, weight_decay=weight_decay)
+    latent_conditioner_optimized = SAMOptimizer(base_optimizer, rho=0.05)
+    
+    # EMA for weight averaging
+    ema_decay = 0.999
+    ema_model = {name: param.clone() for name, param in latent_conditioner.named_parameters()}
+    
+    # Snapshot ensemble - save models at different stages
+    snapshot_models = []
+    snapshot_interval = latent_conditioner_epoch // 10  # Save 10 snapshots
     
     # Advanced learning rate scheduling
     warmup_epochs = 10
@@ -354,6 +402,13 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
     for epoch in range(latent_conditioner_epoch):
         start_time = time.time()
         latent_conditioner.train(True)
+        
+        # Progressive dropout - start high, reduce over time
+        current_dropout = max(0.1, 0.3 * (1 - epoch / latent_conditioner_epoch))
+        for module in latent_conditioner.modules():
+            if isinstance(module, nn.Dropout):
+                module.p = current_dropout
+                
         epoch_loss = 0
         epoch_loss_y1 = 0
         epoch_loss_y2 = 0
@@ -383,17 +438,36 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
                 if i == 2:  # Mark analysis as complete after 3 batches
                     data_analyzed = True
                     print("=== Data Analysis Complete ===\n")
-            # Data augmentation disabled - inappropriate for physical simulation data
-            # Issues found: wrong scaling (multiply by 255 when data already 0-255),
-            # inappropriate transforms (flip/rotate change physical meaning),
-            # and shape/device mismatches
-            # if torch.rand(1) < 0.3:  # 30% chance of augmentation
-            #     x_aug = []
-            #     for img in x:
-            #         img_np = (img.squeeze().cpu().numpy() * 255).astype(np.uint8)
-            #         img_aug = augmentation(img_np)
-            #         x_aug.append(img_aug.unsqueeze(0))
-            #     x = torch.cat(x_aug, dim=0)
+            # Cutout - randomly mask patches for severe overfitting
+            if torch.rand(1) < 0.4:  # 40% chance
+                cutout_size = 16  # 16x16 patches on 128x128 images
+                for b in range(x.size(0)):
+                    if torch.rand(1) < 0.5:  # 50% of samples get cutout
+                        img_size = int(math.sqrt(x.shape[1]))
+                        cx = np.random.randint(0, img_size)
+                        cy = np.random.randint(0, img_size)
+                        x1 = max(0, cx - cutout_size // 2)
+                        y1_cut = max(0, cy - cutout_size // 2)
+                        x2 = min(img_size, cx + cutout_size // 2)
+                        y2_cut = min(img_size, cy + cutout_size // 2)
+                        
+                        # Convert to flattened indices
+                        mask = torch.ones_like(x[b])
+                        for i in range(x1, x2):
+                            for j in range(y1_cut, y2_cut):
+                                mask[i * img_size + j] = 0
+                        x[b] = x[b] * mask
+            
+            # Mixup augmentation for better generalization  
+            if torch.rand(1) < 0.2 and x.size(0) > 1:  # Reduced to 20% to combine with cutout
+                alpha = 0.2
+                lam = np.random.beta(alpha, alpha)
+                batch_size = x.size(0)
+                index = torch.randperm(batch_size).to(x.device)
+                
+                x = lam * x + (1 - lam) * x[index, :]
+                y1 = lam * y1 + (1 - lam) * y1[index, :]
+                y2 = lam * y2 + (1 - lam) * y2[index, :]
             
             x, y1, y2 = x.to(device), y1.to(device), y2.to(device)
             
@@ -407,15 +481,56 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
                 print(f"  Y1_pred - Min: {y_pred1.min().item():.6f}, Max: {y_pred1.max().item():.6f}, Mean: {y_pred1.mean().item():.6f}, Std: {y_pred1.std().item():.6f}")
                 print(f"  Y2_pred - Min: {y_pred2.min().item():.6f}, Max: {y_pred2.max().item():.6f}, Mean: {y_pred2.mean().item():.6f}, Std: {y_pred2.std().item():.6f}")
 
-            A = nn.MSELoss()(y_pred1, y1)
-            B = nn.MSELoss()(y_pred2, y2)
+            # Label smoothing for better generalization
+            epsilon = 0.1
+            A = nn.MSELoss()(y_pred1, y1) + epsilon * torch.mean(y_pred1**2)
+            B = nn.MSELoss()(y_pred2, y2) + epsilon * torch.mean(y_pred2**2)
             
             # Log individual losses for first few batches
             if not data_analyzed and epoch == 0 and i < 3:
                 print(f"  Loss A (Y1): {A.item():.6f}, Loss B (Y2): {B.item():.6f}, Ratio A/B: {A.item()/B.item():.3f}")
                 print("---")
 
-            loss = A + B
+            # Gradient penalty for smoothness
+            if epoch > 10:  # Apply after initial convergence
+                x.requires_grad_(True)
+                y_pred1_gp, y_pred2_gp = latent_conditioner(x)
+                
+                grad_outputs1 = torch.ones_like(y_pred1_gp)
+                grad_outputs2 = torch.ones_like(y_pred2_gp)
+                
+                gradients1 = torch.autograd.grad(outputs=y_pred1_gp, inputs=x, 
+                                               grad_outputs=grad_outputs1, 
+                                               create_graph=True, retain_graph=True)[0]
+                gradients2 = torch.autograd.grad(outputs=y_pred2_gp, inputs=x, 
+                                               grad_outputs=grad_outputs2, 
+                                               create_graph=True, retain_graph=True)[0]
+                
+                gradient_penalty = torch.mean(gradients1**2) + torch.mean(gradients2**2)
+                x.requires_grad_(False)
+                
+                loss = A + B + 0.01 * gradient_penalty
+            else:
+                loss = A + B
+                
+            # Information bottleneck regularization (most aggressive)
+            kl_loss = 0
+            if epoch > 50:  # Apply after some convergence
+                for name, param in latent_conditioner.named_parameters():
+                    if 'weight' in name and len(param.shape) > 1:  # Only weight matrices
+                        # Encourage low-rank structure (information bottleneck)
+                        U, S, V = torch.svd(param)
+                        # Penalize large singular values beyond top-k
+                        k = min(param.shape) // 4  # Keep only 1/4 of singular values large
+                        if len(S) > k:
+                            kl_loss += 0.001 * torch.sum(S[k:] ** 2)
+            
+            loss = loss + kl_loss
+            
+            # Update EMA model
+            with torch.no_grad():
+                for name, param in latent_conditioner.named_parameters():
+                    ema_model[name] = ema_decay * ema_model[name] + (1 - ema_decay) * param
             epoch_loss += loss.item()
             epoch_loss_y1 += A.item()
             epoch_loss_y2 += B.item()
@@ -447,10 +562,37 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
                 x_val = x_val.reshape([x_val.shape[0], int(math.sqrt(x_val.shape[1])), int(math.sqrt(x_val.shape[1]))])
                 x_val, y1_val, y2_val = x_val.to(device), y1_val.to(device), y2_val.to(device)
                 
-                y_pred1_val, y_pred2_val = latent_conditioner(x_val)
+                # Test-Time Augmentation - average multiple predictions
+                if epoch % 10 == 0:  # Only every 10 epochs to save compute
+                    tta_predictions_1 = []
+                    tta_predictions_2 = []
+                    
+                    for tta_iter in range(5):  # 5 different noise patterns
+                        x_tta = x_val.clone()
+                        if tta_iter > 0:  # Add different noise patterns
+                            noise = torch.randn_like(x_tta) * 0.01  # 1% noise
+                            x_tta = x_tta + noise
+                        
+                        with torch.no_grad():
+                            pred1, pred2 = latent_conditioner(x_tta)
+                            tta_predictions_1.append(pred1)
+                            tta_predictions_2.append(pred2)
+                    
+                    # Average predictions
+                    y_pred1_val = torch.mean(torch.stack(tta_predictions_1), dim=0)
+                    y_pred2_val = torch.mean(torch.stack(tta_predictions_2), dim=0)
+                else:
+                    y_pred1_val, y_pred2_val = latent_conditioner(x_val)
 
-                A_val = nn.MSELoss()(y_pred1_val, y1_val)
-                B_val = nn.MSELoss()(y_pred2_val, y2_val)
+                A_val = nn.MSELoss()(y_pred1_val, y1_val) + epsilon * torch.mean(y_pred1_val**2)
+                B_val = nn.MSELoss()(y_pred2_val, y2_val) + epsilon * torch.mean(y_pred2_val**2)
+                
+                # Cosine similarity loss for better latent structure
+                if y1_val.numel() > 1:  # Need multiple samples
+                    cos_sim_target = torch.cosine_similarity(y1_val[:-1], y1_val[1:], dim=-1)
+                    cos_sim_pred = torch.cosine_similarity(y_pred1_val[:-1], y_pred1_val[1:], dim=-1)
+                    cosine_loss = nn.MSELoss()(cos_sim_pred, cos_sim_target)
+                    A_val += 0.05 * cosine_loss
 
                 # Diagnostic logging for first validation batch
                 if not first_val_batch_logged and epoch % 10 == 0:
@@ -517,6 +659,12 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
             print(f'Early stopping at epoch {epoch}. Best validation loss: {best_val_loss:.4E}')
             break
 
+        # Save snapshots for ensemble
+        if epoch % snapshot_interval == 0 and epoch > 0:
+            snapshot_state = latent_conditioner.state_dict().copy()
+            snapshot_models.append(snapshot_state)
+            print(f"Saved snapshot {len(snapshot_models)} at epoch {epoch}")
+        
         # Save regular checkpoint
         if epoch % 50 == 0:
             torch.save(latent_conditioner.state_dict(), f'checkpoints/latent_conditioner_epoch_{epoch}.pth')
