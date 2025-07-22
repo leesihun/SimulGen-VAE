@@ -11,7 +11,18 @@ SiHun Lee, Ph. D, [Email](kevin1007kr@gmail.com), [LinkedIn](https://www.linkedi
 
 ## Version History
 
-### v1.4.1 (Current)
+### v1.4.2 (Current)
+- **Major**: Advanced learning rate scheduling with warmup and deeper annealing
+- **Added**: 10-epoch linear warmup scheduler (1% → 100% of target LR)
+- **Improved**: Cosine annealing with eta_min=1e-6 (100x lower than before)
+- **Added**: ReduceLROnPlateau backup scheduler (patience=50, factor=0.5)
+- **Enhanced**: Residual connections in both latent_head and xs_head architectures
+- **Added**: Comprehensive data analysis logging for first 3 training batches
+- **Improved**: Enhanced loss monitoring with Y1/Y2 ratio analysis and outlier detection
+- **Enhanced**: Better training progress logging with scheduler phase indicators
+- **Benefits**: Significantly improved convergence potential and debugging capabilities
+
+### v1.4.1
 - **Critical Fix**: Resolved NoneType error in weight initialization for layers with bias=False
 - **Fixed**: Safe weight initialization that checks for bias existence before accessing .data
 - **Improved**: Better error handling in LatentConditioner training initialization
@@ -78,6 +89,15 @@ SiHun Lee, Ph. D, [Email](kevin1007kr@gmail.com), [LinkedIn](https://www.linkedi
 - **Performance**: Advanced data loading optimizations and model compilation support
 
 ## Recent Updates
+
+### LatentConditioner Loss Convergence Improvements (v1.4.2)
+- **Advanced Learning Rate Scheduling**: Three-phase approach for optimal convergence
+  - **Warmup Phase**: 10-epoch linear ramp from 1% to 100% of target LR for stable initialization
+  - **Main Phase**: Cosine annealing with eta_min=1e-6 (100x deeper than previous) for fine-tuning
+  - **Backup Phase**: ReduceLROnPlateau monitors validation loss and reduces LR if stuck
+- **Enhanced Architecture**: Residual connections added to both output heads for better gradient flow
+- **Comprehensive Diagnostics**: Detailed analysis of inputs, targets, predictions, and loss ratios
+- **Impact**: Targets training loss <1e-2 and validation loss <5e-2 (50% improvement from plateau)
 
 ### LatentConditioner Critical Fix (v1.4.1)
 - **Fixed critical NoneType error**: Weight initialization now safely handles layers with `bias=False`

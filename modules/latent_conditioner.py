@@ -184,27 +184,32 @@ class LatentConditionerImg(nn.Module):
         self.adaptive_pool = nn.AdaptiveAvgPool2d((4, 4))
         final_feature_size = self.latent_conditioner_filter[-1] * 16  # 4*4
         
-        # Separate heads for different outputs
-        self.latent_head = nn.Sequential(
-            nn.Dropout(self.dropout_rate),
-            nn.Linear(final_feature_size, final_feature_size // 2),
-            nn.LayerNorm(final_feature_size // 2),
-            nn.GELU(),
-            nn.Dropout(self.dropout_rate // 2),
-            nn.Linear(final_feature_size // 2, self.latent_dim_end),
-            nn.Tanh()
-        )
+        # Separate heads with residual connections for different outputs
+        hidden_size = final_feature_size // 2
         
-        self.xs_head = nn.Sequential(
-            nn.Dropout(self.dropout_rate),
-            nn.Linear(final_feature_size, final_feature_size // 2),
-            nn.LayerNorm(final_feature_size // 2),
-            nn.GELU(),
-            nn.Dropout(self.dropout_rate // 2),
-            nn.Linear(final_feature_size // 2, self.latent_dim * self.size2),
-            nn.Unflatten(1, (self.size2, self.latent_dim)),
-            nn.Tanh()
-        )
+        # Latent head with residual connection
+        self.latent_head_layers = nn.ModuleDict({
+            'dropout1': nn.Dropout(self.dropout_rate),
+            'linear1': nn.Linear(final_feature_size, hidden_size),
+            'norm1': nn.LayerNorm(hidden_size),
+            'dropout2': nn.Dropout(self.dropout_rate // 2),
+            'linear2': nn.Linear(hidden_size, hidden_size),
+            'norm2': nn.LayerNorm(hidden_size),
+            'output': nn.Linear(hidden_size, self.latent_dim_end),
+            'projection': nn.Linear(final_feature_size, hidden_size)  # For residual connection
+        })
+        
+        # XS head with residual connection  
+        self.xs_head_layers = nn.ModuleDict({
+            'dropout1': nn.Dropout(self.dropout_rate),
+            'linear1': nn.Linear(final_feature_size, hidden_size),
+            'norm1': nn.LayerNorm(hidden_size),
+            'dropout2': nn.Dropout(self.dropout_rate // 2),
+            'linear2': nn.Linear(hidden_size, hidden_size),
+            'norm2': nn.LayerNorm(hidden_size),
+            'output': nn.Linear(hidden_size, self.latent_dim * self.size2),
+            'projection': nn.Linear(final_feature_size, hidden_size)  # For residual connection
+        })
 
     def forward(self, x):
         im_size = 128
@@ -219,9 +224,38 @@ class LatentConditionerImg(nn.Module):
         features = self.adaptive_pool(features)
         features = features.flatten(1)
         
-        # Separate outputs
-        latent_out = self.latent_head(features)
-        xs_out = self.xs_head(features)
+        # Latent head with residual connection
+        latent_x = self.latent_head_layers['dropout1'](features)
+        latent_x = self.latent_head_layers['linear1'](latent_x)
+        latent_x = self.latent_head_layers['norm1'](latent_x)
+        latent_x = F.gelu(latent_x)
+        
+        # Residual connection for latent head
+        latent_residual = self.latent_head_layers['projection'](features)
+        latent_x = latent_x + latent_residual
+        
+        latent_x = self.latent_head_layers['dropout2'](latent_x)
+        latent_x = self.latent_head_layers['linear2'](latent_x)
+        latent_x = self.latent_head_layers['norm2'](latent_x)
+        latent_x = F.gelu(latent_x)
+        latent_out = torch.tanh(self.latent_head_layers['output'](latent_x))
+        
+        # XS head with residual connection
+        xs_x = self.xs_head_layers['dropout1'](features)
+        xs_x = self.xs_head_layers['linear1'](xs_x)
+        xs_x = self.xs_head_layers['norm1'](xs_x)
+        xs_x = F.gelu(xs_x)
+        
+        # Residual connection for xs head
+        xs_residual = self.xs_head_layers['projection'](features)
+        xs_x = xs_x + xs_residual
+        
+        xs_x = self.xs_head_layers['dropout2'](xs_x)
+        xs_x = self.xs_head_layers['linear2'](xs_x)
+        xs_x = self.xs_head_layers['norm2'](xs_x)
+        xs_x = F.gelu(xs_x)
+        xs_x = self.xs_head_layers['output'](xs_x)
+        xs_out = torch.tanh(xs_x.unflatten(1, (self.size2, self.latent_dim)))
 
         return latent_out, xs_out
 
@@ -271,7 +305,31 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
 
     # Reduce learning rate and add weight decay for regularization
     latent_conditioner_optimized = torch.optim.AdamW(latent_conditioner.parameters(), lr=latent_conditioner_lr, weight_decay=weight_decay)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(latent_conditioner_optimized, T_max = latent_conditioner_epoch, eta_min = latent_conditioner_lr * 0.01)
+    
+    # Advanced learning rate scheduling
+    warmup_epochs = 10
+    # Linear warmup scheduler for first 10 epochs
+    warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
+        latent_conditioner_optimized, 
+        start_factor=0.01, 
+        total_iters=warmup_epochs
+    )
+    
+    # Main cosine scheduler with much lower eta_min
+    main_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        latent_conditioner_optimized, 
+        T_max=latent_conditioner_epoch - warmup_epochs, 
+        eta_min=1e-6
+    )
+    
+    # Plateau scheduler as backup
+    plateau_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        latent_conditioner_optimized, 
+        mode='min', 
+        patience=50, 
+        factor=0.5, 
+        verbose=True
+    )
     
     # Early stopping parameters
     best_val_loss = float('inf')
@@ -290,7 +348,9 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
     from torchinfo import summary
     import math
 
-    # summary(latent_conditioner, (64,1,im_size,im_size))
+    summary(latent_conditioner, (64,1,im_size,im_size))
+
+    
     latent_conditioner = latent_conditioner.to(device)
     def safe_initialize_weights_He(m):
         if isinstance(m, (nn.Conv1d, nn.ConvTranspose1d, nn.Conv2d, nn.ConvTranspose2d)):
@@ -303,6 +363,9 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
                 nn.init.constant_(m.bias.data, 0)
     
     latent_conditioner.apply(safe_initialize_weights_He)
+
+    # Data analysis for first epoch
+    data_analyzed = False
 
     for epoch in range(latent_conditioner_epoch):
         start_time = time.time()
@@ -318,23 +381,52 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
             
             if epoch==0 and i==0:
                 print('dataset_shape', x.shape,y1.shape,y2.shape)
+                
+            # Comprehensive data analysis for first few batches
+            if not data_analyzed and epoch == 0 and i < 3:
+                print(f"\n=== Data Analysis Batch {i} ===")
+                print(f"Input Statistics:")
+                print(f"  X - Min: {x.min().item():.6f}, Max: {x.max().item():.6f}, Mean: {x.mean().item():.6f}, Std: {x.std().item():.6f}")
+                print(f"Target Statistics:")
+                print(f"  Y1 - Min: {y1.min().item():.6f}, Max: {y1.max().item():.6f}, Mean: {y1.mean().item():.6f}, Std: {y1.std().item():.6f}")
+                print(f"  Y2 - Min: {y2.min().item():.6f}, Max: {y2.max().item():.6f}, Mean: {y2.mean().item():.6f}, Std: {y2.std().item():.6f}")
+                
+                # Check for outliers
+                y1_outliers = torch.sum(torch.abs(y1) > 3 * y1.std()).item()
+                y2_outliers = torch.sum(torch.abs(y2) > 3 * y2.std()).item()
+                print(f"Outliers (>3σ): Y1={y1_outliers}, Y2={y2_outliers}")
+                
+                if i == 2:  # Mark analysis as complete after 3 batches
+                    data_analyzed = True
+                    print("=== Data Analysis Complete ===\n")
             # Apply data augmentation randomly to some samples
-            if torch.rand(1) < 0.3:  # 30% chance of augmentation
-                x_aug = []
-                for img in x:
-                    img_np = (img.squeeze().cpu().numpy() * 255).astype(np.uint8)
-                    img_aug = augmentation(img_np)
-                    x_aug.append(img_aug.unsqueeze(0))
-                x = torch.cat(x_aug, dim=0)
+            # if torch.rand(1) < 0.3:  # 30% chance of augmentation
+            #     x_aug = []
+            #     for img in x:
+            #         img_np = (img.squeeze().cpu().numpy() * 255).astype(np.uint8)
+            #         img_aug = augmentation(img_np)
+            #         x_aug.append(img_aug.unsqueeze(0))
+            #     x = torch.cat(x_aug, dim=0)
             
             x, y1, y2 = x.to(device), y1.to(device), y2.to(device)
             
             latent_conditioner_optimized.zero_grad(set_to_none=True)
 
             y_pred1, y_pred2 = latent_conditioner(x)
+            
+            # Analyze predictions for first few batches
+            if not data_analyzed and epoch == 0 and i < 3:
+                print(f"Prediction Statistics Batch {i}:")
+                print(f"  Y1_pred - Min: {y_pred1.min().item():.6f}, Max: {y_pred1.max().item():.6f}, Mean: {y_pred1.mean().item():.6f}, Std: {y_pred1.std().item():.6f}")
+                print(f"  Y2_pred - Min: {y_pred2.min().item():.6f}, Max: {y_pred2.max().item():.6f}, Mean: {y_pred2.mean().item():.6f}, Std: {y_pred2.std().item():.6f}")
 
             A = nn.MSELoss()(y_pred1, y1)
             B = nn.MSELoss()(y_pred2, y2)
+            
+            # Log individual losses for first few batches
+            if not data_analyzed and epoch == 0 and i < 3:
+                print(f"  Loss A (Y1): {A.item():.6f}, Loss B (Y2): {B.item():.6f}, Ratio A/B: {A.item()/B.item():.3f}")
+                print("---")
 
             loss = A + B
             epoch_loss += loss.item()
@@ -387,8 +479,14 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
         else:
             patience_counter += 1
             
-        # Learning rate scheduling
-        scheduler.step()
+        # Advanced learning rate scheduling
+        if epoch < warmup_epochs:
+            warmup_scheduler.step()
+        else:
+            main_scheduler.step()
+        
+        # Plateau scheduler (monitors validation loss)
+        plateau_scheduler.step(avg_val_loss)
 
         end_time = time.time()
         epoch_duration = end_time - start_time
@@ -402,10 +500,13 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
             writer.add_scalar('LatentConditioner Loss/val_y2', avg_val_loss_y2, epoch)
             writer.add_scalar('Learning Rate', latent_conditioner_optimized.param_groups[0]['lr'], epoch)
 
-        print('[%d/%d]\tTrain: %.4E (y1:%.4E, y2:%.4E), Val: %.4E (y1:%.4E, y2:%.4E), LR: %.2E, ETA: %.2f h, Patience: %d/%d' % 
+        current_lr = latent_conditioner_optimized.param_groups[0]['lr']
+        scheduler_info = f"Warmup" if epoch < warmup_epochs else f"Cosine"
+        
+        print('[%d/%d]\tTrain: %.4E (y1:%.4E, y2:%.4E), Val: %.4E (y1:%.4E, y2:%.4E), LR: %.2E (%s), ETA: %.2f h, Patience: %d/%d' % 
               (epoch, latent_conditioner_epoch, avg_train_loss, avg_train_loss_y1, avg_train_loss_y2, 
                avg_val_loss, avg_val_loss_y1, avg_val_loss_y2,
-               latent_conditioner_optimized.param_groups[0]['lr'], 
+               current_lr, scheduler_info,
                (latent_conditioner_epoch-epoch)*epoch_duration/3600, patience_counter, patience))
                
         # Early stopping
