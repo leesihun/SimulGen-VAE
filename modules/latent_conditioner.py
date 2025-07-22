@@ -244,7 +244,7 @@ class LatentConditionerImg(nn.Module):
 
 
 import time
-from modules.common import initialize_weights_He
+from modules.common import initialize_weights_He, add_sn
 from torchvision.transforms import v2
 from torch.utils.tensorboard import SummaryWriter
 from torchvision import transforms
@@ -346,6 +346,7 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
                 nn.init.constant_(m.bias.data, 0)
     
     latent_conditioner.apply(safe_initialize_weights_He)
+    latent_conditioner.apply(add_sn)  # Apply spectral normalization for 1-Lipschitz constraint
 
     # Data analysis for first epoch
     data_analyzed = False

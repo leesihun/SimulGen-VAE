@@ -4,7 +4,7 @@ import numpy as np
 from torch.nn.utils import spectral_norm
 
 def add_sn(m):
-    if isinstance(m, (nn.Conv1d, nn.ConvTranspose1d)):
+    if isinstance(m, (nn.Conv1d, nn.ConvTranspose1d, nn.Conv2d, nn.ConvTranspose2d, nn.Linear)):
         if m.weight.numel() > 0:
             return spectral_norm(m)
         else:
