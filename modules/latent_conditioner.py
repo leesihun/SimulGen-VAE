@@ -68,8 +68,8 @@ class LatentConditioner(nn.Module):
         # Simplified output heads - same as image version
         final_feature_size = self.latent_conditioner_filter[-2]
         
-        # Severely reduced capacity to fight overfitting
-        hidden_size = final_feature_size // 4  # Much smaller bottleneck
+        # Extremely aggressive bottleneck to prevent overfitting
+        hidden_size = final_feature_size // 8  # Even smaller bottleneck
         self.latent_out = nn.Sequential(
             nn.Dropout(0.2),
             nn.Linear(final_feature_size, hidden_size),
@@ -182,13 +182,11 @@ class LatentConditionerImg(nn.Module):
             nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
         ))
         
-        # Progressive feature extraction with attention
+        # Simplified feature extraction - single ResBlock per stage to reduce overfitting
         for i in range(1, self.num_latent_conditioner_filter):
             stride = 2 if i < self.num_latent_conditioner_filter - 1 else 1
-            block = nn.Sequential(
-                ImprovedConvResBlock(self.latent_conditioner_filter[i-1], self.latent_conditioner_filter[i], stride),
-                ImprovedConvResBlock(self.latent_conditioner_filter[i], self.latent_conditioner_filter[i], 1)
-            )
+            # Only one ResBlock per stage instead of two
+            block = ImprovedConvResBlock(self.latent_conditioner_filter[i-1], self.latent_conditioner_filter[i], stride)
             self.backbone.append(block)
         
         # Adaptive pooling and feature size calculation
@@ -198,8 +196,8 @@ class LatentConditionerImg(nn.Module):
         # Simplified output heads - removing complexity that causes overfitting
         # Keep feature dimension to avoid bottleneck
         
-        # Severely reduced capacity to fight overfitting
-        hidden_size = final_feature_size // 4  # Much smaller bottleneck
+        # Extremely aggressive bottleneck to prevent overfitting
+        hidden_size = final_feature_size // 8  # Even smaller bottleneck
         self.latent_out = nn.Sequential(
             nn.Dropout(0.2),
             nn.Linear(final_feature_size, hidden_size),
@@ -286,8 +284,8 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
     loss=0
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
 
-    # Reduce learning rate and add weight decay for regularization
-    latent_conditioner_optimized = torch.optim.AdamW(latent_conditioner.parameters(), lr=latent_conditioner_lr, weight_decay=weight_decay)
+    # Stronger weight decay for regularization
+    latent_conditioner_optimized = torch.optim.AdamW(latent_conditioner.parameters(), lr=latent_conditioner_lr, weight_decay=1e-3)  # Increased from 1e-4
     
     
     # Snapshot ensemble - save models at different stages
@@ -322,12 +320,12 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
     
     # Early stopping parameters - much more aggressive for overfitting
     best_val_loss = float('inf')
-    patience = 100   # Reduced patience - stop quickly if not improving
+    patience = 200   # Much more aggressive early stopping
     patience_counter = 0
-    min_delta = 1e-4  # Require meaningful improvement
+    min_delta = 1e-8  # Require meaningful improvement
     
     # Track overfitting ratio
-    overfitting_threshold = 10.0  # Stop if val_loss > 10x train_loss
+    overfitting_threshold = 100.0  # Stop if val_loss > 10x train_loss
 
     # Data augmentation transforms
     augmentation = transforms.Compose([
@@ -356,10 +354,10 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
                 nn.init.constant_(m.bias.data, 0)
     
     latent_conditioner.apply(safe_initialize_weights_He)
-    # latent_conditioner.apply(add_sn)  # DISABLED - potential NaN source
+    latent_conditioner.apply(add_sn)  # Re-enabled for regularization
 
-    # EMA for weight averaging - initialize AFTER spectral normalization
-    ema_decay = 0.999
+    # EMA for weight averaging - more aggressive averaging
+    ema_decay = 0.995  # Faster EMA updates for better regularization
     ema_model = {name: param.clone() for name, param in latent_conditioner.named_parameters()}
     print(f"EMA initialized with {len(ema_model)} parameters")
 
