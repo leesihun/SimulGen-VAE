@@ -68,8 +68,8 @@ class LatentConditioner(nn.Module):
         # Simplified output heads - same as image version
         final_feature_size = self.latent_conditioner_filter[-2]
         
-        # Balanced heads to match image version
-        hidden_size = final_feature_size // 2
+        # Severely reduced capacity to fight overfitting
+        hidden_size = final_feature_size // 4  # Much smaller bottleneck
         self.latent_out = nn.Sequential(
             nn.Dropout(0.2),
             nn.Linear(final_feature_size, hidden_size),
@@ -198,8 +198,8 @@ class LatentConditionerImg(nn.Module):
         # Simplified output heads - removing complexity that causes overfitting
         # Keep feature dimension to avoid bottleneck
         
-        # Balanced latent head - single hidden layer to prevent underfitting
-        hidden_size = final_feature_size // 2
+        # Severely reduced capacity to fight overfitting
+        hidden_size = final_feature_size // 4  # Much smaller bottleneck
         self.latent_out = nn.Sequential(
             nn.Dropout(0.2),
             nn.Linear(final_feature_size, hidden_size),
@@ -320,11 +320,14 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
         verbose=True
     )
     
-    # Early stopping parameters - reduced patience for faster convergence and stricter improvement threshold
+    # Early stopping parameters - much more aggressive for overfitting
     best_val_loss = float('inf')
-    patience = 2000   # Increased to allow more training for validation improvement
+    patience = 100   # Reduced patience - stop quickly if not improving
     patience_counter = 0
-    min_delta = 1e-5  # Relaxed for easier improvement detection
+    min_delta = 1e-4  # Require meaningful improvement
+    
+    # Track overfitting ratio
+    overfitting_threshold = 10.0  # Stop if val_loss > 10x train_loss
 
     # Data augmentation transforms
     augmentation = transforms.Compose([
@@ -367,8 +370,8 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
         start_time = time.time()
         latent_conditioner.train(True)
         
-        # Progressive dropout - start high, reduce over time
-        current_dropout = max(0.1, 0.3 * (1 - epoch / latent_conditioner_epoch))
+        # Much more aggressive progressive dropout - start very high
+        current_dropout = max(0.2, 0.6 * (1 - epoch / latent_conditioner_epoch))  # 60% -> 20%
         for module in latent_conditioner.modules():
             if isinstance(module, nn.Dropout):
                 module.p = current_dropout
@@ -402,11 +405,11 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
                 if i == 2:  # Mark analysis as complete after 3 batches
                     data_analyzed = True
                     print("=== Data Analysis Complete ===\n")
-            # Cutout - randomly mask patches for severe overfitting
-            if torch.rand(1) < 0.4:  # 40% chance
-                cutout_size = 16  # 16x16 patches on 128x128 images
+            # More aggressive cutout - randomly mask patches for severe overfitting
+            if torch.rand(1) < 0.7:  # 70% chance (increased from 40%)
+                cutout_size = 24  # Larger 24x24 patches (increased from 16x16)
                 for b in range(x.size(0)):
-                    if torch.rand(1) < 0.5:  # 50% of samples get cutout
+                    if torch.rand(1) < 0.8:  # 80% of samples get cutout (increased from 50%)
                         img_size = int(math.sqrt(x.shape[1]))
                         cx = np.random.randint(0, img_size)
                         cy = np.random.randint(0, img_size)
@@ -422,9 +425,9 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
                                 mask[i * img_size + j] = 0
                         x[b] = x[b] * mask
             
-            # Mixup augmentation for better generalization  
-            if torch.rand(1) < 0.2 and x.size(0) > 1:  # Reduced to 20% to combine with cutout
-                alpha = 0.2
+            # More aggressive mixup augmentation for better generalization  
+            if torch.rand(1) < 0.5 and x.size(0) > 1:  # Increased to 50%
+                alpha = 0.4  # More aggressive mixing (increased from 0.2)
                 lam = np.random.beta(alpha, alpha)
                 batch_size = x.size(0)
                 index = torch.randperm(batch_size).to(x.device)
@@ -434,6 +437,11 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
                 y2 = lam * y2 + (1 - lam) * y2[index, :]
             
             x, y1, y2 = x.to(device), y1.to(device), y2.to(device)
+            
+            # Add Gaussian noise for regularization
+            if torch.rand(1) < 0.5:  # 50% chance
+                noise = torch.randn_like(x) * 0.02  # 2% noise
+                x = x + noise
             
             latent_conditioner_optimized.zero_grad(set_to_none=True)
 
@@ -537,6 +545,13 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
         avg_val_loss_y1 = val_loss_y1 / val_batches
         avg_val_loss_y2 = val_loss_y2 / val_batches
 
+        # Check for severe overfitting and stop early
+        overfitting_ratio = avg_val_loss / max(avg_train_loss, 1e-8)
+        if overfitting_ratio > overfitting_threshold:
+            print(f'🚨 Severe overfitting detected! Val/Train ratio: {overfitting_ratio:.1f}')
+            print(f'Stopping early at epoch {epoch}')
+            break
+            
         # Early stopping check with minimum improvement threshold
         if avg_val_loss < best_val_loss - min_delta:
             best_val_loss = avg_val_loss
