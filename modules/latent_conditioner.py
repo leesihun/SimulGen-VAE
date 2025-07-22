@@ -294,10 +294,6 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
     sam_rho = 0.05
     print(f"SAM enabled: {use_sam}, rho: {sam_rho}")
     
-    # EMA for weight averaging
-    ema_decay = 0.999
-    ema_model = {name: param.clone() for name, param in latent_conditioner.named_parameters()}
-    
     # Snapshot ensemble - save models at different stages
     snapshot_models = []
     snapshot_interval = latent_conditioner_epoch // 10  # Save 10 snapshots
@@ -362,6 +358,11 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
     
     latent_conditioner.apply(safe_initialize_weights_He)
     latent_conditioner.apply(add_sn)  # Apply spectral normalization for 1-Lipschitz constraint
+
+    # EMA for weight averaging - initialize AFTER spectral normalization
+    ema_decay = 0.999
+    ema_model = {name: param.clone() for name, param in latent_conditioner.named_parameters()}
+    print(f"EMA initialized with {len(ema_model)} parameters")
 
     # Data analysis for first epoch
     data_analyzed = False
