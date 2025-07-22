@@ -315,9 +315,9 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
     
     # Early stopping parameters - reduced patience for faster convergence and stricter improvement threshold
     best_val_loss = float('inf')
-    patience = 50   # Reduced from 500 to 50 to prevent overfitting
+    patience = 200   # Increased to allow more training for validation improvement
     patience_counter = 0
-    min_delta = 1e-4  # Increased from 1e-6 for stricter improvement requirement
+    min_delta = 1e-5  # Relaxed for easier improvement detection
 
     # Data augmentation transforms
     augmentation = transforms.Compose([
@@ -382,7 +382,10 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
                 if i == 2:  # Mark analysis as complete after 3 batches
                     data_analyzed = True
                     print("=== Data Analysis Complete ===\n")
-            # Apply data augmentation randomly to some samples
+            # Data augmentation disabled - inappropriate for physical simulation data
+            # Issues found: wrong scaling (multiply by 255 when data already 0-255),
+            # inappropriate transforms (flip/rotate change physical meaning),
+            # and shape/device mismatches
             # if torch.rand(1) < 0.3:  # 30% chance of augmentation
             #     x_aug = []
             #     for img in x:
@@ -440,6 +443,7 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
         
         with torch.no_grad():
             for i, (x_val, y1_val, y2_val) in enumerate(latent_conditioner_validation_dataloader):
+                x_val = x_val.reshape([x_val.shape[0], int(math.sqrt(x_val.shape[1])), int(math.sqrt(x_val.shape[1]))])
                 x_val, y1_val, y2_val = x_val.to(device), y1_val.to(device), y2_val.to(device)
                 
                 y_pred1_val, y_pred2_val = latent_conditioner(x_val)
