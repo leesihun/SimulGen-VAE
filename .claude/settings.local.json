@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(mv:*)"
+      "Bash(mv:*)",
+      "WebFetch(domain:docs.anthropic.com)"
     ],
     "deny": []
   }

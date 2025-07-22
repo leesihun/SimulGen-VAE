@@ -71,19 +71,19 @@ class LatentConditioner(nn.Module):
         # Balanced heads to match image version
         hidden_size = final_feature_size // 2
         self.latent_out = nn.Sequential(
-            nn.Dropout(0.1),
+            nn.Dropout(0.4),
             nn.Linear(final_feature_size, hidden_size),
             nn.GELU(),
-            nn.Dropout(0.05),
+            nn.Dropout(0.3),
             nn.Linear(hidden_size, self.latent_dim_end),
             nn.Tanh()
         )
 
         self.xs_out = nn.Sequential(
-            nn.Dropout(0.1),
+            nn.Dropout(0.4),
             nn.Linear(final_feature_size, hidden_size),
             nn.GELU(),
-            nn.Dropout(0.05),
+            nn.Dropout(0.3),
             nn.Linear(hidden_size, self.latent_dim * self.size2),
             nn.Tanh()
         )
@@ -202,20 +202,20 @@ class LatentConditionerImg(nn.Module):
         # Balanced latent head - single hidden layer to prevent underfitting
         hidden_size = final_feature_size // 2
         self.latent_out = nn.Sequential(
-            nn.Dropout(0.1),
+            nn.Dropout(0.4),
             nn.Linear(final_feature_size, hidden_size),
             nn.GELU(),
-            nn.Dropout(0.05),
+            nn.Dropout(0.3),
             nn.Linear(hidden_size, self.latent_dim_end),
             nn.Tanh()
         )
         
         # Balanced xs head - single hidden layer to prevent underfitting  
         self.xs_out = nn.Sequential(
-            nn.Dropout(0.1),
+            nn.Dropout(0.4),
             nn.Linear(final_feature_size, hidden_size),
             nn.GELU(),
-            nn.Dropout(0.05),
+            nn.Dropout(0.3),
             nn.Linear(hidden_size, self.latent_dim * self.size2),
             nn.Tanh()
         )
@@ -314,11 +314,11 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
         verbose=True
     )
     
-    # Early stopping parameters - increased patience and added minimum improvement threshold
+    # Early stopping parameters - reduced patience for faster convergence and stricter improvement threshold
     best_val_loss = float('inf')
-    patience = 500  # Increased from 200 to 500
+    patience = 50   # Reduced from 500 to 50 to prevent overfitting
     patience_counter = 0
-    min_delta = 1e-6  # Minimum improvement to reset patience
+    min_delta = 1e-4  # Increased from 1e-6 for stricter improvement requirement
 
     # Data augmentation transforms
     augmentation = transforms.Compose([
