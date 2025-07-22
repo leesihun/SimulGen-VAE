@@ -71,19 +71,19 @@ class LatentConditioner(nn.Module):
         # Balanced heads to match image version
         hidden_size = final_feature_size // 2
         self.latent_out = nn.Sequential(
-            nn.Dropout(0.4),
+            nn.Dropout(0.2),
             nn.Linear(final_feature_size, hidden_size),
             nn.GELU(),
-            nn.Dropout(0.3),
+            nn.Dropout(0.15),
             nn.Linear(hidden_size, self.latent_dim_end),
             nn.Tanh()
         )
 
         self.xs_out = nn.Sequential(
-            nn.Dropout(0.4),
+            nn.Dropout(0.2),
             nn.Linear(final_feature_size, hidden_size),
             nn.GELU(),
-            nn.Dropout(0.3),
+            nn.Dropout(0.15),
             nn.Linear(hidden_size, self.latent_dim * self.size2),
             nn.Tanh()
         )
@@ -103,24 +103,24 @@ class ImprovedConvResBlock(nn.Module):
     def __init__(self, in_channel, out_channel, stride=1):
         super().__init__()
         
-        self.conv1 = nn.Conv2d(in_channel, out_channel, kernel_size=3, stride=stride, padding=1, bias=False)
-        self.bn1 = nn.BatchNorm2d(out_channel)
-        self.conv2 = nn.Conv2d(out_channel, out_channel, kernel_size=3, padding=1, bias=False)
-        self.bn2 = nn.BatchNorm2d(out_channel)
+        self.conv1 = nn.Conv2d(in_channel, out_channel, kernel_size=3, stride=stride, padding=1, bias=True)
+        self.gn1 = nn.GroupNorm(min(32, out_channel//4), out_channel)
+        self.conv2 = nn.Conv2d(out_channel, out_channel, kernel_size=3, padding=1, bias=True)
+        self.gn2 = nn.GroupNorm(min(32, out_channel//4), out_channel)
         
         # Skip connection handling
         self.skip = nn.Sequential()
         if stride != 1 or in_channel != out_channel:
             self.skip = nn.Sequential(
-                nn.Conv2d(in_channel, out_channel, kernel_size=1, stride=stride, bias=False),
-                nn.BatchNorm2d(out_channel)
+                nn.Conv2d(in_channel, out_channel, kernel_size=1, stride=stride, bias=True),
+                nn.GroupNorm(min(32, out_channel//4), out_channel)
             )
 
     def forward(self, x):
         residual = self.skip(x)
         
-        out = F.gelu(self.bn1(self.conv1(x)))
-        out = self.bn2(self.conv2(out))
+        out = F.gelu(self.gn1(self.conv1(x)))
+        out = self.gn2(self.conv2(out))
         out += residual
         out = F.gelu(out)
         return out
@@ -151,7 +151,7 @@ class ConvBlock(nn.Module):
 
         self.seq = nn.Sequential(
             nn.Conv2d(in_channel, out_channel, kernel_size=3, padding=1),
-            nn.BatchNorm2d(out_channel),
+            nn.GroupNorm(min(32, out_channel//4), out_channel),
             nn.GELU(),
             nn.AvgPool2d(2)
         )
@@ -176,8 +176,8 @@ class LatentConditionerImg(nn.Module):
         
         # Initial conv
         self.backbone.append(nn.Sequential(
-            nn.Conv2d(1, self.latent_conditioner_filter[0], kernel_size=7, stride=2, padding=3, bias=False),
-            nn.BatchNorm2d(self.latent_conditioner_filter[0]),
+            nn.Conv2d(1, self.latent_conditioner_filter[0], kernel_size=7, stride=2, padding=3, bias=True),
+            nn.GroupNorm(min(32, self.latent_conditioner_filter[0]//4), self.latent_conditioner_filter[0]),
             nn.GELU(),
             nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
         ))
@@ -187,8 +187,7 @@ class LatentConditionerImg(nn.Module):
             stride = 2 if i < self.num_latent_conditioner_filter - 1 else 1
             block = nn.Sequential(
                 ImprovedConvResBlock(self.latent_conditioner_filter[i-1], self.latent_conditioner_filter[i], stride),
-                ImprovedConvResBlock(self.latent_conditioner_filter[i], self.latent_conditioner_filter[i], 1),
-                SEBlock(self.latent_conditioner_filter[i])
+                ImprovedConvResBlock(self.latent_conditioner_filter[i], self.latent_conditioner_filter[i], 1)
             )
             self.backbone.append(block)
         
@@ -202,20 +201,20 @@ class LatentConditionerImg(nn.Module):
         # Balanced latent head - single hidden layer to prevent underfitting
         hidden_size = final_feature_size // 2
         self.latent_out = nn.Sequential(
-            nn.Dropout(0.4),
+            nn.Dropout(0.2),
             nn.Linear(final_feature_size, hidden_size),
             nn.GELU(),
-            nn.Dropout(0.3),
+            nn.Dropout(0.15),
             nn.Linear(hidden_size, self.latent_dim_end),
             nn.Tanh()
         )
         
         # Balanced xs head - single hidden layer to prevent underfitting  
         self.xs_out = nn.Sequential(
-            nn.Dropout(0.4),
+            nn.Dropout(0.2),
             nn.Linear(final_feature_size, hidden_size),
             nn.GELU(),
-            nn.Dropout(0.3),
+            nn.Dropout(0.15),
             nn.Linear(hidden_size, self.latent_dim * self.size2),
             nn.Tanh()
         )
@@ -290,10 +289,10 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
     
     # Advanced learning rate scheduling
     warmup_epochs = 10
-    # Linear warmup scheduler for first 10 epochs
+    # Linear warmup scheduler for first 10 epochs - increased initial LR
     warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
         latent_conditioner_optimized, 
-        start_factor=0.01, 
+        start_factor=0.1,  # Increased from 0.01 to help validation learning
         total_iters=warmup_epochs
     )
     
@@ -420,8 +419,8 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
 
             loss.backward()
             
-            # Gradient clipping to prevent exploding gradients
-            torch.nn.utils.clip_grad_norm_(latent_conditioner.parameters(), max_norm=1.0)
+            # Gradient clipping - relaxed for better validation learning
+            torch.nn.utils.clip_grad_norm_(latent_conditioner.parameters(), max_norm=2.0)
             
             latent_conditioner_optimized.step()
         
@@ -436,6 +435,9 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
         val_loss_y2 = 0
         val_batches = 0
         
+        # Diagnostic variables for first few validation batches
+        first_val_batch_logged = False
+        
         with torch.no_grad():
             for i, (x_val, y1_val, y2_val) in enumerate(latent_conditioner_validation_dataloader):
                 x_val, y1_val, y2_val = x_val.to(device), y1_val.to(device), y2_val.to(device)
@@ -444,6 +446,18 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
 
                 A_val = nn.MSELoss()(y_pred1_val, y1_val)
                 B_val = nn.MSELoss()(y_pred2_val, y2_val)
+
+                # Diagnostic logging for first validation batch
+                if not first_val_batch_logged and epoch % 10 == 0:
+                    print(f"\n=== Validation Diagnostic (Epoch {epoch}) ===")
+                    print(f"Val Input stats - Min: {x_val.min().item():.6f}, Max: {x_val.max().item():.6f}")
+                    print(f"Val Y1 target - Min: {y1_val.min().item():.6f}, Max: {y1_val.max().item():.6f}, Mean: {y1_val.mean().item():.6f}")
+                    print(f"Val Y1 pred   - Min: {y_pred1_val.min().item():.6f}, Max: {y_pred1_val.max().item():.6f}, Mean: {y_pred1_val.mean().item():.6f}")
+                    print(f"Val Y2 target - Min: {y2_val.min().item():.6f}, Max: {y2_val.max().item():.6f}, Mean: {y2_val.mean().item():.6f}")
+                    print(f"Val Y2 pred   - Min: {y_pred2_val.min().item():.6f}, Max: {y_pred2_val.max().item():.6f}, Mean: {y_pred2_val.mean().item():.6f}")
+                    print(f"Val Loss Y1: {A_val.item():.6f}, Y2: {B_val.item():.6f}, Total: {(A_val + B_val).item():.6f}")
+                    print("=== End Diagnostic ===\n")
+                    first_val_batch_logged = True
 
                 val_loss += (A_val + B_val).item()
                 val_loss_y1 += A_val.item()
