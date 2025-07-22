@@ -315,7 +315,7 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
     
     # Early stopping parameters - reduced patience for faster convergence and stricter improvement threshold
     best_val_loss = float('inf')
-    patience = 200   # Increased to allow more training for validation improvement
+    patience = 2000   # Increased to allow more training for validation improvement
     patience_counter = 0
     min_delta = 1e-5  # Relaxed for easier improvement detection
 
