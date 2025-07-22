@@ -46,7 +46,7 @@ def read_latent_conditioner_dataset(param_dir, param_data_type): # For normal pa
 
 
 class LatentConditioner(nn.Module):
-    def __init__(self, latent_conditioner_filter, latent_dim_end, input_shape, latent_dim, size2):
+    def __init__(self, latent_conditioner_filter, latent_dim_end, input_shape, latent_dim, size2, dropout_rate=0.3):
         super(LatentConditioner, self).__init__()
         self.latent_dim = latent_dim
         self.size2 = size2
@@ -54,34 +54,38 @@ class LatentConditioner(nn.Module):
         self.latent_dim_end = latent_dim_end
         self.input_shape = input_shape
         self.num_latent_conditioner_filter = len(self.latent_conditioner_filter)
+        self.dropout_rate = dropout_rate
 
+        # Backbone feature extractor
         modules = []
         modules.append(nn.Linear(self.input_shape, self.latent_conditioner_filter[0]))
         for i in range(1, self.num_latent_conditioner_filter-1):
             modules.append(nn.Linear(self.latent_conditioner_filter[i-1], self.latent_conditioner_filter[i]))
             modules.append(nn.LeakyReLU(0.2))
-            modules.append(nn.Dropout(0.2))
+            modules.append(nn.Dropout(0.1))  # Reduced dropout
         self.latent_conditioner = nn.Sequential(*modules)
 
-        self.latent_out = nn.Sequential(nn.Linear(self.latent_conditioner_filter[-2], self.latent_conditioner_filter[-1]),
-                                        nn.LeakyReLU(0.2),
-                                        nn.GroupNorm(1, self.latent_conditioner_filter[-1]),
-                                        nn.Dropout(0.2),
-                                        nn.Linear(self.latent_conditioner_filter[-1], self.latent_dim_end),
-                                        nn.Tanh())
+        # Simplified output heads - same as image version
+        final_feature_size = self.latent_conditioner_filter[-2]
+        
+        self.latent_out = nn.Sequential(
+            nn.Dropout(0.1),  # Reduced dropout from 0.2
+            nn.Linear(final_feature_size, self.latent_dim_end),
+            nn.Tanh()
+        )
 
-        self.xs_out = nn.Sequential(nn.Linear(self.latent_conditioner_filter[-2], self.latent_conditioner_filter[-1]),
-                                    nn.LeakyReLU(0.2),
-                                    nn.GroupNorm(1, self.latent_conditioner_filter[-1]),
-                                    nn.Dropout(0.2),
-                                    nn.Linear(self.latent_conditioner_filter[-1], self.latent_dim*self.size2),
-                                    nn.Unflatten(1, (self.size2, self.latent_dim)),
-                                    nn.Tanh())
+        self.xs_out = nn.Sequential(
+            nn.Dropout(0.1),  # Reduced dropout from 0.2
+            nn.Linear(final_feature_size, self.latent_dim * self.size2),
+            nn.Tanh()
+        )
 
     def forward(self, x):
-        x = self.latent_conditioner(x)
-        latent_out = self.latent_out(x)
-        xs_out = self.xs_out(x)
+        features = self.latent_conditioner(x)
+        latent_out = self.latent_out(features)
+        
+        xs_out = self.xs_out(features)
+        xs_out = xs_out.unflatten(1, (self.size2, self.latent_dim))
 
         return latent_out, xs_out
 
@@ -184,32 +188,22 @@ class LatentConditionerImg(nn.Module):
         self.adaptive_pool = nn.AdaptiveAvgPool2d((4, 4))
         final_feature_size = self.latent_conditioner_filter[-1] * 16  # 4*4
         
-        # Separate heads with residual connections for different outputs
-        hidden_size = final_feature_size // 2
+        # Simplified output heads - removing complexity that causes overfitting
+        # Keep feature dimension to avoid bottleneck
         
-        # Latent head with residual connection
-        self.latent_head_layers = nn.ModuleDict({
-            'dropout1': nn.Dropout(self.dropout_rate),
-            'linear1': nn.Linear(final_feature_size, hidden_size),
-            'norm1': nn.LayerNorm(hidden_size),
-            'dropout2': nn.Dropout(self.dropout_rate // 2),
-            'linear2': nn.Linear(hidden_size, hidden_size),
-            'norm2': nn.LayerNorm(hidden_size),
-            'output': nn.Linear(hidden_size, self.latent_dim_end),
-            'projection': nn.Linear(final_feature_size, hidden_size)  # For residual connection
-        })
+        # Simple latent head
+        self.latent_out = nn.Sequential(
+            nn.Dropout(0.1),  # Reduced dropout from 0.3
+            nn.Linear(final_feature_size, self.latent_dim_end),
+            nn.Tanh()
+        )
         
-        # XS head with residual connection  
-        self.xs_head_layers = nn.ModuleDict({
-            'dropout1': nn.Dropout(self.dropout_rate),
-            'linear1': nn.Linear(final_feature_size, hidden_size),
-            'norm1': nn.LayerNorm(hidden_size),
-            'dropout2': nn.Dropout(self.dropout_rate // 2),
-            'linear2': nn.Linear(hidden_size, hidden_size),
-            'norm2': nn.LayerNorm(hidden_size),
-            'output': nn.Linear(hidden_size, self.latent_dim * self.size2),
-            'projection': nn.Linear(final_feature_size, hidden_size)  # For residual connection
-        })
+        # Simple xs head
+        self.xs_out = nn.Sequential(
+            nn.Dropout(0.1),  # Reduced dropout from 0.3
+            nn.Linear(final_feature_size, self.latent_dim * self.size2),
+            nn.Tanh()
+        )
 
     def forward(self, x):
         im_size = 128
@@ -224,38 +218,11 @@ class LatentConditionerImg(nn.Module):
         features = self.adaptive_pool(features)
         features = features.flatten(1)
         
-        # Latent head with residual connection
-        latent_x = self.latent_head_layers['dropout1'](features)
-        latent_x = self.latent_head_layers['linear1'](latent_x)
-        latent_x = self.latent_head_layers['norm1'](latent_x)
-        latent_x = F.gelu(latent_x)
+        # Simplified forward pass through output heads
+        latent_out = self.latent_out(features)
         
-        # Residual connection for latent head
-        latent_residual = self.latent_head_layers['projection'](features)
-        latent_x = latent_x + latent_residual
-        
-        latent_x = self.latent_head_layers['dropout2'](latent_x)
-        latent_x = self.latent_head_layers['linear2'](latent_x)
-        latent_x = self.latent_head_layers['norm2'](latent_x)
-        latent_x = F.gelu(latent_x)
-        latent_out = torch.tanh(self.latent_head_layers['output'](latent_x))
-        
-        # XS head with residual connection
-        xs_x = self.xs_head_layers['dropout1'](features)
-        xs_x = self.xs_head_layers['linear1'](xs_x)
-        xs_x = self.xs_head_layers['norm1'](xs_x)
-        xs_x = F.gelu(xs_x)
-        
-        # Residual connection for xs head
-        xs_residual = self.xs_head_layers['projection'](features)
-        xs_x = xs_x + xs_residual
-        
-        xs_x = self.xs_head_layers['dropout2'](xs_x)
-        xs_x = self.xs_head_layers['linear2'](xs_x)
-        xs_x = self.xs_head_layers['norm2'](xs_x)
-        xs_x = F.gelu(xs_x)
-        xs_x = self.xs_head_layers['output'](xs_x)
-        xs_out = torch.tanh(xs_x.unflatten(1, (self.size2, self.latent_dim)))
+        xs_out = self.xs_out(features)
+        xs_out = xs_out.unflatten(1, (self.size2, self.latent_dim))
 
         return latent_out, xs_out
 

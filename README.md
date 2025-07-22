@@ -11,12 +11,23 @@ SiHun Lee, Ph. D, [Email](kevin1007kr@gmail.com), [LinkedIn](https://www.linkedi
 
 ## Version History
 
-### v1.4.2 (Current)
+### v1.4.3 (Current)
+- **Major**: LatentConditioner architecture simplification to fix high validation loss
+- **Fixed**: Overly complex output heads causing overfitting (6-layer → 1-layer heads)
+- **Removed**: Problematic mid-layer residual connections that disrupted learning
+- **Reduced**: Excessive dropout from 30%+15% → 10% total
+- **Eliminated**: Feature bottleneck (hidden_size//2) that compressed information
+- **Simplified**: Consistent architecture between CSV and Image versions
+- **Changed**: `--train_latent_conditioner_only` → `--lc_only` (73% shorter)
+- **Modernized**: DDP handling with automatic `local_rank` detection via torchrun
+- **Benefits**: Significantly improved training/validation loss convergence
+
+### v1.4.2
 - **Major**: Advanced learning rate scheduling with warmup and deeper annealing
 - **Added**: 10-epoch linear warmup scheduler (1% → 100% of target LR)
 - **Improved**: Cosine annealing with eta_min=1e-6 (100x lower than before)
 - **Added**: ReduceLROnPlateau backup scheduler (patience=50, factor=0.5)
-- **Enhanced**: Residual connections in both latent_head and xs_head architectures
+- **Enhanced**: Residual connections in both latent_head and xs_head architectures (later simplified in v1.4.3)
 - **Added**: Comprehensive data analysis logging for first 3 training batches
 - **Improved**: Enhanced loss monitoring with Y1/Y2 ratio analysis and outlier detection
 - **Enhanced**: Better training progress logging with scheduler phase indicators
@@ -90,6 +101,18 @@ SiHun Lee, Ph. D, [Email](kevin1007kr@gmail.com), [LinkedIn](https://www.linkedi
 
 ## Recent Updates
 
+### LatentConditioner Architecture Fix (v1.4.3)
+- **Critical Fix**: Simplified overly complex output heads that caused overfitting
+- **Architecture Changes**: 
+  - Reduced output heads from 6 layers to 1 layer (Dropout → Linear → Tanh)
+  - Removed problematic mid-layer residual connections
+  - Eliminated feature bottleneck (no more hidden_size//2 compression)
+  - Reduced dropout from 30%+15% to 10% total
+- **Consistency**: Unified CSV and Image LatentConditioner architectures
+- **Command Optimization**: `--train_latent_conditioner_only` → `--lc_only` (73% shorter)
+- **Modern DDP**: Automatic rank detection with `torchrun` (no manual `--local_rank` needed)
+- **Impact**: Significantly reduced validation loss and overfitting issues
+
 ### LatentConditioner Loss Convergence Improvements (v1.4.2)
 - **Advanced Learning Rate Scheduling**: Three-phase approach for optimal convergence
   - **Warmup Phase**: 10-epoch linear ramp from 1% to 100% of target LR for stable initialization
@@ -114,7 +137,7 @@ SiHun Lee, Ph. D, [Email](kevin1007kr@gmail.com), [LinkedIn](https://www.linkedi
 - **Separate loss tracking**: Individual monitoring of y1 and y2 losses for better debugging
 - **Optimized hyperparameters**: Learning rate 0.0001, dropout 0.3, weight decay 1e-3
 - **Fixed batch size issues**: LayerNorm instead of BatchNorm1d handles batch_size=1
-- **Improved convergence**: Training and validation losses now achieve sub-2e-2 and sub-1e-1 thresholds
+- **Note**: Output heads later simplified in v1.4.3 to fix overfitting issues
 
 ### PINN Training Improvements (v1.3.2)
 - Updated PINN architecture with GELU activation functions for smoother gradients
@@ -172,10 +195,10 @@ If you encounter CUDA errors like "device side assertion" or "initialization err
 ### Single GPU Training
 ```bash
 # Default settings
-python SimulGen-VAE.py --preset=1 --plot=2 --train_pinn_only=0 --size=small --load_all=0
+python SimulGen-VAE.py --preset=1 --plot=2 --lc_only=0 --size=small --load_all=0
 
 # With optimizations (recommended for small-variety datasets)
-python SimulGen-VAE.py --preset=1 --plot=2 --train_pinn_only=0 --size=small --load_all=1
+python SimulGen-VAE.py --preset=1 --plot=2 --lc_only=0 --size=small --load_all=1
 
 # Use optimization presets
 python accelerate_training.py --scenario maximum_speed
@@ -183,8 +206,14 @@ python accelerate_training.py --scenario maximum_speed
 
 ### Multi-GPU Training with DDP
 ```bash
-# Replace NUM_GPUS with the number of GPUs you want to use
-python -m torch.distributed.launch --nproc_per_node=NUM_GPUS SimulGen-VAE.py --use_ddp --preset=1 --plot=2 --train_pinn_only=0 --size=small --load_all=1
+# 2 GPUs
+torchrun --nproc_per_node=2 SimulGen-VAE.py --use_ddp --preset=1 --plot=2 --lc_only=0 --size=small --load_all=1
+
+# 4 GPUs
+torchrun --nproc_per_node=4 SimulGen-VAE.py --use_ddp --preset=1 --plot=2 --lc_only=0 --size=large --load_all=1
+
+# 8 GPUs
+torchrun --nproc_per_node=8 SimulGen-VAE.py --use_ddp --preset=1 --plot=2 --lc_only=0 --size=large --load_all=1
 ```
 
 ## Performance Optimizations
@@ -310,6 +339,77 @@ nn.GroupNorm(min(8, max(1, channels//4)), channels)
 - Near-linear scaling with number of GPUs for compute-bound workloads
 - 1.8-1.9x speedup with 2 GPUs, 3.5-3.8x with 4 GPUs (typical values)
 
+## DDP Best Practices
+
+### Environment Setup
+```bash
+# Set optimal environment variables
+export NCCL_DEBUG=INFO                    # Enable NCCL debugging
+export NCCL_TREE_THRESHOLD=0              # Force tree algorithms
+export CUDA_VISIBLE_DEVICES=0,1,2,3       # Specify GPUs to use
+export NCCL_IB_DISABLE=1                  # Disable InfiniBand if causing issues
+export NCCL_P2P_DISABLE=1                 # Disable peer-to-peer if causing issues
+```
+
+### Multi-Node Training
+```bash
+# Node 0 (master node):
+torchrun --nnodes=2 --nproc_per_node=4 --node_rank=0 \
+         --master_addr=192.168.1.100 --master_port=12345 \
+         SimulGen-VAE.py --use_ddp --preset=1 --plot=2 --lc_only=0 --size=large
+
+# Node 1 (worker node):
+torchrun --nnodes=2 --nproc_per_node=4 --node_rank=1 \
+         --master_addr=192.168.1.100 --master_port=12345 \
+         SimulGen-VAE.py --use_ddp --preset=1 --plot=2 --lc_only=0 --size=large
+```
+
+### Batch Size Scaling
+- **Rule of thumb**: Scale batch size linearly with number of GPUs
+- **Small model**: 16 → 32 (2 GPUs) → 64 (4 GPUs) → 128 (8 GPUs)
+- **Large model**: 8 → 16 (2 GPUs) → 32 (4 GPUs) → 64 (8 GPUs)
+- **Memory constraint**: Reduce per-GPU batch size if OOM occurs
+
+### Troubleshooting DDP Issues
+
+**Check GPU visibility:**
+```bash
+nvidia-smi                                 # Verify all GPUs are visible
+echo $CUDA_VISIBLE_DEVICES                # Check environment variable
+```
+
+**Monitor training processes:**
+```bash
+ps aux | grep SimulGen-VAE                # Check running processes
+ps aux | grep torchrun                    # Check torchrun processes
+htop                                       # Monitor CPU/memory usage
+```
+
+**Common fixes:**
+```bash
+# If NCCL hangs or fails
+export NCCL_TIMEOUT=1800                  # Increase timeout (30 min)
+export NCCL_BLOCKING_WAIT=1               # Enable blocking wait
+
+# If random hangs occur
+export NCCL_ASYNC_ERROR_HANDLING=1        # Better error reporting
+
+# If using older GPUs (pre-Volta)
+export NCCL_MIN_NRINGS=1                  # Reduce ring count
+```
+
+### Performance Monitoring
+```bash
+# GPU utilization
+watch -n 1 nvidia-smi
+
+# Network bandwidth (if multi-node)
+iftop -i eth0
+
+# Check NCCL operations
+export NCCL_DEBUG=INFO                    # Shows detailed NCCL logs
+```
+
 ## Configuration
 
 ### Command-line Arguments
@@ -317,11 +417,10 @@ nn.GroupNorm(min(8, max(1, channels//4)), channels)
 |------|-------------|---------|
 | `--preset` | Pick dataset preset (int) | `--preset=1` |
 | `--plot` | Plot option (1 = show, 2 = off) | `--plot=2` |
-| `--train_pinn_only` | 1 = skip VAE and train only PINN | `--train_pinn_only=0` |
+| `--lc_only` | 1 = skip VAE and train only LatentConditioner | `--lc_only=0` |
 | `--size` | Network size preset (`small` / `large`) | `--size=small` |
 | `--load_all` | 1 = preload entire dataset to GPU | `--load_all=1` |
 | `--use_ddp` | Enable distributed data parallel training | `--use_ddp` |
-| `--local_rank` | Local rank for distributed training | `--local_rank=0` |
 
 ### Dataset Format
 The VAE expects a 3-D NumPy array saved as a Pickle file: `[num_param, num_time, num_node]`

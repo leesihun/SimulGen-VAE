@@ -1,7 +1,8 @@
-# To run, type python SimulGen-VAE.py --preset=1 --plot=2 --train_latent_conditioner_only=0 --size=small --load_all=1
+# Single GPU: python SimulGen-VAE.py --preset=1 --plot=2 --lc_only=0 --size=small --load_all=1
+# Multi-GPU:  torchrun --nproc_per_node=4 SimulGen-VAE.py --use_ddp --preset=1 --plot=2 --lc_only=0 --size=small --load_all=1
 
 """
-SimulGen-VAE v1.4.2
+SimulGen-VAE v1.4.3
 ====================
 
 A high-performance VAE for fast generation and inference of transient/static simulation data 
@@ -11,7 +12,14 @@ Author: SiHun Lee, Ph.D.
 Email: kevin1007kr@gmail.com
 LinkedIn: https://www.linkedin.com/in/시훈-이-13009a172/?originalSubdomain=kr
 
-New in v1.4.2:
+New in v1.4.3:
+- Argument optimization: --train_latent_conditioner_only → --lc_only (73% shorter)
+- Modern DDP with automatic local_rank detection via torchrun
+- Enhanced error handling with graceful DDP fallback
+- All documentation updated with streamlined command format
+- Better user experience with shorter, memorable arguments
+
+Previous v1.4.2 features:
 - Advanced learning rate scheduling: warmup + deep cosine annealing + plateau backup
 - Residual connections in LatentConditioner output heads for better gradient flow
 - Comprehensive data analysis and diagnostics during training initialization
@@ -40,20 +48,40 @@ Input Files:
 Usage Examples:
 ==============
 
-*** Basic Training (Small Model)
-python SimulGen-VAE.py --preset=1 --plot=2 --train_latent_conditioner_only=0 --size=small --load_all=1
+*** Single GPU Training (Small Model)
+python SimulGen-VAE.py --preset=1 --plot=2 --lc_only=0 --size=small --load_all=1
+
+*** Single GPU Training (Large Model)  
+python SimulGen-VAE.py --preset=1 --plot=2 --lc_only=0 --size=large --load_all=1
+
+*** Multi-GPU Training (DDP) - 2 GPUs
+torchrun --nproc_per_node=2 SimulGen-VAE.py --use_ddp --preset=1 --plot=2 --lc_only=0 --size=small --load_all=1
+
+*** Multi-GPU Training (DDP) - 4 GPUs
+torchrun --nproc_per_node=4 SimulGen-VAE.py --use_ddp --preset=1 --plot=2 --lc_only=0 --size=large --load_all=1
+
+*** Multi-GPU Training (DDP) - 8 GPUs
+torchrun --nproc_per_node=8 SimulGen-VAE.py --use_ddp --preset=1 --plot=2 --lc_only=0 --size=large --load_all=1
+
+*** Multi-Node DDP (2 nodes, 4 GPUs each)
+# Node 0 (master):
+torchrun --nnodes=2 --nproc_per_node=4 --node_rank=0 --master_addr=192.168.1.100 --master_port=12345 SimulGen-VAE.py --use_ddp --preset=1 --plot=2 --lc_only=0 --size=large --load_all=1
+# Node 1:
+torchrun --nnodes=2 --nproc_per_node=4 --node_rank=1 --master_addr=192.168.1.100 --master_port=12345 SimulGen-VAE.py --use_ddp --preset=1 --plot=2 --lc_only=0 --size=large --load_all=1
+
+*** LatentConditioner Only Training (Single GPU)
+python SimulGen-VAE.py --preset=1 --plot=2 --lc_only=1 --size=small --load_all=1
+
+*** LatentConditioner Only Training (Multi-GPU)
+torchrun --nproc_per_node=4 SimulGen-VAE.py --use_ddp --preset=1 --plot=2 --lc_only=1 --size=small --load_all=1
 
 *** ETX Supercomputer (H100)
-phd run -ng 1 -p shr_gpu -GR H100 -l %J.log python SimulGen-VAE.py --preset=1 --plot=2 --train_latent_conditioner_only=0 --size=small --load_all=1
+phd run -ng 1 -p shr_gpu -GR H100 -l %J.log python SimulGen-VAE.py --preset=1 --plot=2 --lc_only=0 --size=small --load_all=1
 
-*** Large Model Training  
-python SimulGen-VAE.py --preset=1 --plot=2 --train_latent_conditioner_only=0 --size=large --load_all=1
-
-*** Multi-GPU Training (DDP)
-python -m torch.distributed.launch --nproc_per_node=4 SimulGen-VAE.py --use_ddp --preset=1 --plot=2 --train_latent_conditioner_only=0 --size=small --load_all=1
-
-*** LatentConditioner Only Training
-python SimulGen-VAE.py --preset=1 --plot=2 --train_latent_conditioner_only=1 --size=small --load_all=1
+*** DDP Troubleshooting Commands
+nvidia-smi                                          # Check GPU status
+ps aux | grep SimulGen-VAE                         # Monitor processes
+export NCCL_DEBUG=INFO                             # Enable DDP debugging
 
 *** Monitoring with TensorBoard
 tensorboard --logdir=runs --port=6001              # VAE training logs
@@ -72,6 +100,7 @@ def main():
     import torch.distributed as dist
     from torch.nn.parallel import DistributedDataParallel as DDP
     from torch.utils.data.distributed import DistributedSampler
+    import os
 
     from modules.common import add_sn
     from modules.input_variables import input_user_variables, input_dataset
@@ -89,25 +118,31 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--preset", dest = "preset", action = "store")
     parser.add_argument("--plot", dest = "plot", action = "store")
-    parser.add_argument("--train_latent_conditioner_only", dest = "train_latent_conditioner", action = "store")
+    parser.add_argument("--lc_only", dest = "train_latent_conditioner", action = "store", help="1 = train only LatentConditioner, 0 = train full VAE")
     parser.add_argument("--size", dest = "size", action="store")
     parser.add_argument("--load_all", dest = "load_all", action = "store")
     # Add DDP arguments
-    parser.add_argument("--local_rank", type=int, default=-1, help="Local rank for distributed training")
     parser.add_argument("--use_ddp", action="store_true", help="Enable distributed data parallel training")
     args = parser.parse_args()
 
     # Setup distributed training if requested
     if args.use_ddp:
-        if args.local_rank == -1:
-            print("For DDP training, please use: python -m torch.distributed.launch --nproc_per_node=NUM_GPUS SimulGen-VAE.py --use_ddp [other args]")
+        try:
+            # torchrun automatically sets environment variables
+            local_rank = int(os.environ.get("LOCAL_RANK", -1))
+            if local_rank == -1:
+                print("For DDP training, please use: torchrun --nproc_per_node=NUM_GPUS SimulGen-VAE.py --use_ddp [other args]")
+                is_distributed = False
+            else:
+                # Initialize the process group (torchrun handles most setup)
+                torch.cuda.set_device(local_rank)
+                dist.init_process_group(backend="nccl")
+                is_distributed = True
+                print(f"Initialized DDP process group. Rank {dist.get_rank()} of {dist.get_world_size()}")
+        except Exception as e:
+            print(f"Failed to initialize DDP: {e}")
+            print("Falling back to single GPU training")
             is_distributed = False
-        else:
-            # Initialize the process group
-            torch.cuda.set_device(args.local_rank)
-            dist.init_process_group(backend="nccl")
-            is_distributed = True
-            print(f"Initialized DDP process group. Rank {dist.get_rank()} of {dist.get_world_size()}")
     else:
         is_distributed = False
     
