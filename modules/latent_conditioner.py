@@ -319,7 +319,7 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
     main_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         latent_conditioner_optimized, 
         T_max=latent_conditioner_epoch - warmup_epochs, 
-        eta_min=1e-6
+        eta_min=1e-8
     )
     
     # Plateau scheduler as backup
@@ -327,13 +327,13 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
         latent_conditioner_optimized, 
         mode='min', 
         patience=50, 
-        factor=0.5, 
+        factor=0.8, 
         verbose=True
     )
     
     # Early stopping parameters
     best_val_loss = float('inf')
-    patience = 100
+    patience = 200
     patience_counter = 0
 
     # Data augmentation transforms
