@@ -353,7 +353,7 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
                 nn.init.constant_(m.bias.data, 0)
     
     latent_conditioner.apply(safe_initialize_weights_He)
-    latent_conditioner.apply(add_sn)  # Apply spectral normalization for 1-Lipschitz constraint
+    # latent_conditioner.apply(add_sn)  # DISABLED - potential NaN source
 
     # EMA for weight averaging - initialize AFTER spectral normalization
     ema_decay = 0.999
@@ -445,10 +445,9 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
                 print(f"  Y1_pred - Min: {y_pred1.min().item():.6f}, Max: {y_pred1.max().item():.6f}, Mean: {y_pred1.mean().item():.6f}, Std: {y_pred1.std().item():.6f}")
                 print(f"  Y2_pred - Min: {y_pred2.min().item():.6f}, Max: {y_pred2.max().item():.6f}, Mean: {y_pred2.mean().item():.6f}, Std: {y_pred2.std().item():.6f}")
 
-            # Label smoothing for better generalization
-            epsilon = 0.1
-            A = nn.MSELoss()(y_pred1, y1) + epsilon * torch.mean(y_pred1**2)
-            B = nn.MSELoss()(y_pred2, y2) + epsilon * torch.mean(y_pred2**2)
+            # Simple MSE loss without label smoothing (was causing NaN)
+            A = nn.MSELoss()(y_pred1, y1)
+            B = nn.MSELoss()(y_pred2, y2)
             
             # Log individual losses for first few batches
             if not data_analyzed and epoch == 0 and i < 3:
@@ -491,16 +490,31 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
                 x_val, y1_val, y2_val = x_val.to(device), y1_val.to(device), y2_val.to(device)
                 
                 y_pred1_val, y_pred2_val = latent_conditioner(x_val)
-
-                A_val = nn.MSELoss()(y_pred1_val, y1_val) + epsilon * torch.mean(y_pred1_val**2)
-                B_val = nn.MSELoss()(y_pred2_val, y2_val) + epsilon * torch.mean(y_pred2_val**2)
                 
-                # Cosine similarity loss for better latent structure
-                if y1_val.numel() > 1:  # Need multiple samples
-                    cos_sim_target = torch.cosine_similarity(y1_val[:-1], y1_val[1:], dim=-1)
-                    cos_sim_pred = torch.cosine_similarity(y_pred1_val[:-1], y_pred1_val[1:], dim=-1)
-                    cosine_loss = nn.MSELoss()(cos_sim_pred, cos_sim_target)
-                    A_val += 0.05 * cosine_loss
+                # Check for NaN in predictions
+                if torch.isnan(y_pred1_val).any():
+                    print(f"🚨 NaN detected in y_pred1_val at epoch {epoch}, batch {i}")
+                    print(f"Input stats: min={x_val.min():.6f}, max={x_val.max():.6f}, mean={x_val.mean():.6f}")
+                    print(f"Target stats: min={y1_val.min():.6f}, max={y1_val.max():.6f}, mean={y1_val.mean():.6f}")
+                    
+                if torch.isnan(y_pred2_val).any():
+                    print(f"🚨 NaN detected in y_pred2_val at epoch {epoch}, batch {i}")
+
+                A_val = nn.MSELoss()(y_pred1_val, y1_val)
+                B_val = nn.MSELoss()(y_pred2_val, y2_val)
+                
+                # Check for NaN in loss
+                if torch.isnan(A_val):
+                    print(f"🚨 NaN detected in A_val (y1 loss) at epoch {epoch}, batch {i}")
+                if torch.isnan(B_val):
+                    print(f"🚨 NaN detected in B_val (y2 loss) at epoch {epoch}, batch {i}")
+                
+                # Cosine similarity loss - DISABLED (potential NaN source)
+                # if y1_val.numel() > 1:  # Need multiple samples
+                #     cos_sim_target = torch.cosine_similarity(y1_val[:-1], y1_val[1:], dim=-1)
+                #     cos_sim_pred = torch.cosine_similarity(y_pred1_val[:-1], y_pred1_val[1:], dim=-1)
+                #     cosine_loss = nn.MSELoss()(cos_sim_pred, cos_sim_target)
+                #     A_val += 0.05 * cosine_loss
 
                 # Diagnostic logging for first validation batch
                 if not first_val_batch_logged and epoch % 10 == 0:
