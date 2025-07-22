@@ -304,19 +304,21 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
         eta_min=1e-8
     )
     
-    # Plateau scheduler as backup
+    # Plateau scheduler as backup with more conservative settings
     plateau_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         latent_conditioner_optimized, 
         mode='min', 
-        patience=50, 
-        factor=0.8, 
+        patience=100,  # Increased from 50 to 100
+        factor=0.5,    # More aggressive reduction from 0.8 to 0.5
+        min_lr=1e-7,   # Added minimum learning rate
         verbose=True
     )
     
-    # Early stopping parameters
+    # Early stopping parameters - increased patience and added minimum improvement threshold
     best_val_loss = float('inf')
-    patience = 200
+    patience = 500  # Increased from 200 to 500
     patience_counter = 0
+    min_delta = 1e-6  # Minimum improvement to reset patience
 
     # Data augmentation transforms
     augmentation = transforms.Compose([
@@ -452,8 +454,8 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
         avg_val_loss_y1 = val_loss_y1 / val_batches
         avg_val_loss_y2 = val_loss_y2 / val_batches
 
-        # Early stopping check
-        if avg_val_loss < best_val_loss:
+        # Early stopping check with minimum improvement threshold
+        if avg_val_loss < best_val_loss - min_delta:
             best_val_loss = avg_val_loss
             patience_counter = 0
             # Save best model
