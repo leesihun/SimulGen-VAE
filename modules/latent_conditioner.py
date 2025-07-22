@@ -68,15 +68,23 @@ class LatentConditioner(nn.Module):
         # Simplified output heads - same as image version
         final_feature_size = self.latent_conditioner_filter[-2]
         
+        # Balanced heads to match image version
+        hidden_size = final_feature_size // 2
         self.latent_out = nn.Sequential(
-            nn.Dropout(0.1),  # Reduced dropout from 0.2
-            nn.Linear(final_feature_size, self.latent_dim_end),
+            nn.Dropout(0.1),
+            nn.Linear(final_feature_size, hidden_size),
+            nn.GELU(),
+            nn.Dropout(0.05),
+            nn.Linear(hidden_size, self.latent_dim_end),
             nn.Tanh()
         )
 
         self.xs_out = nn.Sequential(
-            nn.Dropout(0.1),  # Reduced dropout from 0.2
-            nn.Linear(final_feature_size, self.latent_dim * self.size2),
+            nn.Dropout(0.1),
+            nn.Linear(final_feature_size, hidden_size),
+            nn.GELU(),
+            nn.Dropout(0.05),
+            nn.Linear(hidden_size, self.latent_dim * self.size2),
             nn.Tanh()
         )
 
@@ -191,17 +199,24 @@ class LatentConditionerImg(nn.Module):
         # Simplified output heads - removing complexity that causes overfitting
         # Keep feature dimension to avoid bottleneck
         
-        # Simple latent head
+        # Balanced latent head - single hidden layer to prevent underfitting
+        hidden_size = final_feature_size // 2
         self.latent_out = nn.Sequential(
-            nn.Dropout(0.1),  # Reduced dropout from 0.3
-            nn.Linear(final_feature_size, self.latent_dim_end),
+            nn.Dropout(0.1),
+            nn.Linear(final_feature_size, hidden_size),
+            nn.GELU(),
+            nn.Dropout(0.05),
+            nn.Linear(hidden_size, self.latent_dim_end),
             nn.Tanh()
         )
         
-        # Simple xs head
+        # Balanced xs head - single hidden layer to prevent underfitting  
         self.xs_out = nn.Sequential(
-            nn.Dropout(0.1),  # Reduced dropout from 0.3
-            nn.Linear(final_feature_size, self.latent_dim * self.size2),
+            nn.Dropout(0.1),
+            nn.Linear(final_feature_size, hidden_size),
+            nn.GELU(),
+            nn.Dropout(0.05),
+            nn.Linear(hidden_size, self.latent_dim * self.size2),
             nn.Tanh()
         )
 
