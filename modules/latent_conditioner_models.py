@@ -196,11 +196,6 @@ class LatentConditionerImg(nn.Module):
         )
 
     def forward(self, x):
-        print(x.shape)
-        im_size = int(x.shape[-1])
-        print(im_size)
-        x = x.reshape(-1, 1, im_size, im_size)
-        print(x.shape)
         
         # Shared feature extraction
         features = x

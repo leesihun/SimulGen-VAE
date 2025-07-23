@@ -15,8 +15,6 @@ def read_latent_conditioner_dataset_img(param_dir, param_data_type):
     cur_dir = os.getcwd()
     file_dir = cur_dir+param_dir
 
-    
-
     if param_data_type == ".jpg" or param_data_type == ".png":
         print('Reading image dataset from '+file_dir+'\n')
 
@@ -45,7 +43,6 @@ def read_latent_conditioner_dataset(param_dir, param_data_type): # For normal pa
     latent_conditioner_data = latent_conditioner_data.values
 
     return latent_conditioner_data
-
 
 import time
 from modules.common import initialize_weights_He, add_sn
@@ -99,7 +96,6 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
     loss=0
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
 
-    # EXTREME weight decay for regularization
     latent_conditioner_optimized = torch.optim.AdamW(latent_conditioner.parameters(), lr=latent_conditioner_lr, weight_decay=weight_decay)
     
     # Advanced learning rate scheduling
@@ -107,7 +103,7 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
     # Linear warmup scheduler for first 10 epochs - increased initial LR
     warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
         latent_conditioner_optimized, 
-        start_factor=0.1,  # Increased from 0.01 to help validation learning
+        start_factor=0.01,  # Increased from 0.01 to help validation learning
         total_iters=warmup_epochs
     )
     
@@ -118,24 +114,14 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
         eta_min=1e-8
     )
     
-    # Plateau scheduler as backup with more conservative settings
-    plateau_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        latent_conditioner_optimized, 
-        mode='min', 
-        patience=100,  # Increased from 50 to 100
-        factor=0.5,    # More aggressive reduction from 0.8 to 0.5
-        min_lr=1e-7,   # Added minimum learning rate
-        verbose=True
-    )
-    
     # Early stopping parameters - much more aggressive for overfitting
     best_val_loss = float('inf')
-    patience = 200   # Much more aggressive early stopping
+    patience = 20000   # Much more aggressive early stopping
     patience_counter = 0
     min_delta = 1e-8  # Require meaningful improvement
     
     # Track overfitting ratio
-    overfitting_threshold = 100.0  # Stop if val_loss > 10x train_loss
+    overfitting_threshold = 10.0  # Stop if val_loss > 10x train_loss
 
     from torchinfo import summary
     import math
@@ -171,7 +157,7 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
                 print('dataset_shape', x.shape,y1.shape,y2.shape)
                 
             # EXTREME mixup augmentation for better generalization  
-            if torch.rand(1) < 0.8 and x.size(0) > 1:  # 80% chance
+            if torch.rand(1) < 0.2 and x.size(0) > 1:  # 80% chance
                 alpha = 0.8  # Much more aggressive mixing
                 lam = np.random.beta(alpha, alpha)
                 batch_size = x.size(0)
@@ -184,7 +170,7 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
             x, y1, y2 = x.to(device), y1.to(device), y2.to(device)
             
             # Add STRONG Gaussian noise for regularization
-            if torch.rand(1) < 0.8:  # 80% chance
+            if torch.rand(1) < 0.2:  # 80% chance
                 noise = torch.randn_like(x) * 0.05  # 5% noise - much stronger
                 x = x + noise
             
@@ -199,7 +185,7 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
                 print(f"  Y2_pred - Min: {y_pred2.min().item():.6f}, Max: {y_pred2.max().item():.6f}, Mean: {y_pred2.mean().item():.6f}, Std: {y_pred2.std().item():.6f}")
 
             # Add label smoothing for extreme regularization
-            label_smooth = 0.1  # 10% label smoothing
+            label_smooth = 0.2  # 10% label smoothing
             y1_smooth = y1 * (1 - label_smooth) + torch.randn_like(y1) * label_smooth * 0.1
             y2_smooth = y2 * (1 - label_smooth) + torch.randn_like(y2) * label_smooth * 0.1
             
@@ -311,9 +297,6 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
             warmup_scheduler.step()
         else:
             main_scheduler.step()
-        
-        # Plateau scheduler (monitors validation loss)
-        plateau_scheduler.step(avg_val_loss)
 
         end_time = time.time()
         epoch_duration = end_time - start_time
