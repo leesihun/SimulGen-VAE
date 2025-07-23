@@ -126,7 +126,7 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
     from torchinfo import summary
     import math
 
-    summary(latent_conditioner, (64,1,im_size,im_size))
+    summary(latent_conditioner, (64,1,im_size*im_size))
 
     latent_conditioner = latent_conditioner.to(device)
     

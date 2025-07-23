@@ -196,9 +196,7 @@ class LatentConditionerImg(nn.Module):
         )
 
     def forward(self, x):
-        # Reshape flattened input to 4D tensor for CNN processing
-        im_size = int(math.sqrt(x.shape[-1]))
-        x = x.reshape(-1, 1, im_size, im_size)
+        x = x.reshape([-1, 1, int(math.sqrt(x.shape[-1])), int(math.sqrt(x.shape[-1]))])
         
         # Shared feature extraction
         features = x
