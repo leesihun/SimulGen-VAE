@@ -203,6 +203,7 @@ def main():
     param_data_type = params['param_data_type']
     latent_conditioner_weight_decay = float(params.get('latent_conditioner_weight_decay', 1e-4))  # Default to 1e-4 if not specified
     latent_conditioner_dropout_rate = float(params.get('latent_conditioner_dropout_rate', 0.3))  # Default to 0.3 if not specified
+    use_spatial_attention = int(params.get('use_spatial_attention', 1))  # Default to 1 (enabled)
 
     print('latent_conditioner_data_type: ', latent_conditioner_data_type)
     print('param_data_type: ', param_data_type)
@@ -680,11 +681,11 @@ def main():
         try:
             print("Initializing LatentConditioner CNN image model...")
             device = safe_cuda_initialization()  # Get safe device
-            latent_conditioner = LatentConditionerImg(latent_conditioner_filter, latent_dim_end, input_shape, latent_dim, size2, latent_conditioner_data_shape, dropout_rate=latent_conditioner_dropout_rate).to(device)
+            latent_conditioner = LatentConditionerImg(latent_conditioner_filter, latent_dim_end, input_shape, latent_dim, size2, latent_conditioner_data_shape, dropout_rate=latent_conditioner_dropout_rate, use_attention=bool(use_spatial_attention)).to(device)
         except RuntimeError as e:
             print(f"Error initializing LatentConditioner CNN image model: {e}")
             print("Falling back to CPU-only model")
-            latent_conditioner = LatentConditionerImg(latent_conditioner_filter, latent_dim_end, input_shape, latent_dim, size2, latent_conditioner_data_shape, dropout_rate=latent_conditioner_dropout_rate).to("cpu")
+            latent_conditioner = LatentConditionerImg(latent_conditioner_filter, latent_dim_end, input_shape, latent_dim, size2, latent_conditioner_data_shape, dropout_rate=latent_conditioner_dropout_rate, use_attention=bool(use_spatial_attention)).to("cpu")
     elif latent_conditioner_data_type=='image_vit':
         try:
             print("Initializing LatentConditioner ViT image model...")

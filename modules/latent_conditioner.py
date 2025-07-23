@@ -208,6 +208,10 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
             num_batches += 1
             
             loss.backward()
+            
+            # Gradient clipping for training stability - prevents exploding gradients
+            torch.nn.utils.clip_grad_norm_(latent_conditioner.parameters(), max_norm=1.0)
+            
             latent_conditioner_optimized.step()
         
         avg_train_loss = epoch_loss / num_batches

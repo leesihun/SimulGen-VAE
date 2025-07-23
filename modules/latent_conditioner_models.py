@@ -120,27 +120,61 @@ class SEBlock(nn.Module):
         return x * y.expand_as(x)
 
 
-class ConvBlock(nn.Module):
-    """Simple convolutional block with configurable dropout"""
-    def __init__(self, in_channel, out_channel, dropout_rate=0.1):
+class SpatialAttention(nn.Module):
+    """Lightweight spatial attention module"""
+    def __init__(self):
         super().__init__()
-
-        self.seq = nn.Sequential(
-            nn.Conv2d(in_channel, out_channel, kernel_size=3, padding=1),
-            nn.GroupNorm(min(32, max(1, out_channel//4)), out_channel),
-            nn.GELU(),
-            nn.Dropout2d(dropout_rate * 0.5),  # Use 2D dropout for conv layers
-            nn.AvgPool2d(2)
-        )
+        self.conv = nn.Conv2d(2, 1, kernel_size=7, padding=3, bias=False)
+        self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
-        return self.seq(x)
+        # Global average and max pooling across channels
+        avg_out = torch.mean(x, dim=1, keepdim=True)  # (B,1,H,W)
+        max_out, _ = torch.max(x, dim=1, keepdim=True)  # (B,1,H,W)
+        
+        # Combine both pooling results
+        combined = torch.cat([avg_out, max_out], dim=1)  # (B,2,H,W)
+        
+        # Generate attention map
+        attention = self.sigmoid(self.conv(combined))  # (B,1,H,W)
+        
+        return x * attention
+
+
+class ConvBlock(nn.Module):
+    """Enhanced convolutional block with spatial attention and configurable dropout"""
+    def __init__(self, in_channel, out_channel, dropout_rate=0.1, use_attention=True):
+        super().__init__()
+        
+        self.conv = nn.Conv2d(in_channel, out_channel, kernel_size=3, padding=1)
+        self.norm = nn.GroupNorm(min(32, max(1, out_channel//4)), out_channel)
+        self.activation = nn.GELU()
+        self.dropout = nn.Dropout2d(dropout_rate * 0.5)
+        self.pool = nn.AvgPool2d(2)
+        
+        # Optional spatial attention
+        self.use_attention = use_attention
+        if use_attention:
+            self.spatial_attention = SpatialAttention()
+
+    def forward(self, x):
+        x = self.conv(x)
+        x = self.norm(x)
+        x = self.activation(x)
+        
+        # Apply spatial attention before dropout/pooling
+        if self.use_attention:
+            x = self.spatial_attention(x)
+            
+        x = self.dropout(x)
+        x = self.pool(x)
+        return x
 
 import math
 
 class LatentConditionerImg(nn.Module):
-    """CNN-based latent conditioner for image data"""
-    def __init__(self, latent_conditioner_filter, latent_dim_end, input_shape, latent_dim, size2, latent_conditioner_data_shape, dropout_rate=0.3):
+    """CNN-based latent conditioner for image data with spatial attention"""
+    def __init__(self, latent_conditioner_filter, latent_dim_end, input_shape, latent_dim, size2, latent_conditioner_data_shape, dropout_rate=0.3, use_attention=True):
         super(LatentConditionerImg, self).__init__()
         self.latent_dim = latent_dim
         self.size2 = size2
@@ -150,50 +184,62 @@ class LatentConditionerImg(nn.Module):
         self.num_latent_conditioner_filter = len(self.latent_conditioner_filter)
         self.latent_conditioner_data_shape = latent_conditioner_data_shape
         self.dropout_rate = dropout_rate
+        self.use_attention = use_attention
 
         # Shared feature extractor backbone
         self.backbone = nn.ModuleList()
         
         # Initial conv
         self.backbone.append(nn.Sequential(
-            nn.Conv2d(1, self.latent_conditioner_filter[0], kernel_size=7, stride=2, padding=3, bias=True),
+            nn.Conv2d(1, self.latent_conditioner_filter[0], kernel_size=3, stride=1, padding='same', bias=True),
             nn.GroupNorm(min(32, max(1, self.latent_conditioner_filter[0]//4)), self.latent_conditioner_filter[0]),
             nn.GELU(),
             nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
         ))
         
-        # MINIMAL feature extraction - only 1 additional layer to prevent overfitting
+        # Multi-scale feature extraction - gradual downsampling preserves more information
         if self.num_latent_conditioner_filter > 1:
-            # Single additional conv layer only
-            block = ConvBlock(self.latent_conditioner_filter[0], self.latent_conditioner_filter[1], dropout_rate=self.dropout_rate)
-            self.backbone.append(block)
+            # First scale: 16x16 -> 8x8 with spatial attention
+            block1 = ConvBlock(self.latent_conditioner_filter[0], self.latent_conditioner_filter[1], 
+                             dropout_rate=self.dropout_rate, use_attention=self.use_attention)
+            self.backbone.append(block1)
+            
+            # Optional second scale for deeper networks: 8x8 -> 4x4 with spatial attention
+            if self.num_latent_conditioner_filter > 2:
+                block2 = ConvBlock(self.latent_conditioner_filter[1], self.latent_conditioner_filter[2], 
+                                 dropout_rate=self.dropout_rate, use_attention=self.use_attention)
+                self.backbone.append(block2)
         
-        # Adaptive pooling and feature size calculation
+        # Multi-scale pooling - combines both average and max pooling for richer features
         self.adaptive_pool = nn.AdaptiveAvgPool2d((4, 4))
-        final_feature_size = self.latent_conditioner_filter[-1] * 16  # 4*4
+        self.max_pool = nn.AdaptiveMaxPool2d((4, 4))
         
-        # ULTRA-EXTREME bottleneck with single output heads
-        hidden_size = max(4, final_feature_size // 64)  # Even smaller bottleneck
+        # Calculate final feature size accounting for avg+max pooling
+        final_filter_idx = min(len(self.latent_conditioner_filter)-1, 2)
+        final_feature_size = self.latent_conditioner_filter[final_filter_idx] * 16 * 2  # 4*4*2 (avg+max)
         
-        # Single prediction head for latent output - using configurable dropout
-        self.latent_out = nn.Sequential(
+        # Smarter bottleneck - not too extreme since we have richer features now
+        hidden_size = max(8, final_feature_size // 32)  # Less extreme bottleneck
+        
+        # Residual prediction head for latent output - better gradient flow
+        self.latent_out_1 = nn.Sequential(
             nn.Dropout(self.dropout_rate),
             nn.Linear(final_feature_size, hidden_size),
             nn.GELU(),
-            nn.Dropout(self.dropout_rate * 0.8),  # Slightly less dropout in second layer
-            nn.Linear(hidden_size, self.latent_dim_end),
-            nn.Tanh()
+            nn.Dropout(self.dropout_rate * 0.8)
         )
+        self.latent_out_2 = nn.Linear(hidden_size, self.latent_dim_end)
+        self.latent_out_skip = nn.Linear(final_feature_size, self.latent_dim_end)  # Skip connection
         
-        # Single prediction head for xs output - using configurable dropout
-        self.xs_out = nn.Sequential(
+        # Residual prediction head for xs output - better gradient flow  
+        self.xs_out_1 = nn.Sequential(
             nn.Dropout(self.dropout_rate),
             nn.Linear(final_feature_size, hidden_size),
             nn.GELU(),
-            nn.Dropout(self.dropout_rate * 0.8),  # Slightly less dropout in second layer
-            nn.Linear(hidden_size, self.latent_dim * self.size2),
-            nn.Tanh()
+            nn.Dropout(self.dropout_rate * 0.8)
         )
+        self.xs_out_2 = nn.Linear(hidden_size, self.latent_dim * self.size2)
+        self.xs_out_skip = nn.Linear(final_feature_size, self.latent_dim * self.size2)  # Skip connection
 
     def forward(self, x):
         x = x.reshape([-1, 1, int(math.sqrt(x.shape[-1])), int(math.sqrt(x.shape[-1]))])
@@ -203,13 +249,24 @@ class LatentConditionerImg(nn.Module):
         for block in self.backbone:
             features = block(features)
         
-        # Global feature pooling
-        features = self.adaptive_pool(features)
+        # Multi-scale pooling - combine average and max pooling for richer representations
+        avg_features = self.adaptive_pool(features)
+        max_features = self.max_pool(features)
+        features = torch.cat([avg_features, max_features], dim=1)  # Concatenate along channel dimension
         features = features.flatten(1)
         
-        # Direct prediction from single heads
-        latent_out = self.latent_out(features)
-        xs_out = self.xs_out(features)
+        # Residual prediction heads with skip connections
+        # Latent output with residual connection
+        latent_main = self.latent_out_1(features)
+        latent_main = self.latent_out_2(latent_main)
+        latent_skip = self.latent_out_skip(features)
+        latent_out = torch.tanh(latent_main + latent_skip * 0.1)  # Small residual weight
+        
+        # XS output with residual connection
+        xs_main = self.xs_out_1(features)
+        xs_main = self.xs_out_2(xs_main)
+        xs_skip = self.xs_out_skip(features)
+        xs_out = torch.tanh(xs_main + xs_skip * 0.1)  # Small residual weight
         xs_out = xs_out.unflatten(1, (self.size2, self.latent_dim))
 
         return latent_out, xs_out
