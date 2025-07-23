@@ -551,9 +551,11 @@ def main():
 
     if latent_conditioner_data_type=='image':
         print('Loading image data...')
+        image=True
         latent_conditioner_data, latent_conditioner_data_shape = read_latent_conditioner_dataset_img(param_dir, param_data_type)
     elif latent_conditioner_data_type=='csv':
         print('Loading csv data...')
+        image=False
         latent_conditioner_data = read_latent_conditioner_dataset(param_dir, param_data_type)
     else:
         NotImplementedError('Unrecoginized latent_conditioner_data_type arg')
@@ -708,7 +710,7 @@ def main():
 
     try:
         print("Starting LatentConditioner training...")
-        LatentConditioner_loss = train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_dataloader, latent_conditioner_validation_dataloader, latent_conditioner, latent_conditioner_lr, weight_decay=latent_conditioner_weight_decay)
+        LatentConditioner_loss = train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_dataloader, latent_conditioner_validation_dataloader, latent_conditioner, latent_conditioner_lr, weight_decay=latent_conditioner_weight_decay, is_image_data=image)
         print("LatentConditioner training completed successfully")
     except Exception as e:
         print(f"Error during LatentConditioner training: {e}")

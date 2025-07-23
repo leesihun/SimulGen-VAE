@@ -45,202 +45,6 @@ def read_latent_conditioner_dataset(param_dir, param_data_type): # For normal pa
     return latent_conditioner_data
 
 
-class LatentConditioner(nn.Module):
-    def __init__(self, latent_conditioner_filter, latent_dim_end, input_shape, latent_dim, size2, dropout_rate=0.3):
-        super(LatentConditioner, self).__init__()
-        self.latent_dim = latent_dim
-        self.size2 = size2
-        self.latent_conditioner_filter = latent_conditioner_filter
-        self.latent_dim_end = latent_dim_end
-        self.input_shape = input_shape
-        self.num_latent_conditioner_filter = len(self.latent_conditioner_filter)
-        self.dropout_rate = dropout_rate
-
-        # Backbone feature extractor
-        modules = []
-        modules.append(nn.Linear(self.input_shape, self.latent_conditioner_filter[0]))
-        for i in range(1, self.num_latent_conditioner_filter-1):
-            modules.append(nn.Linear(self.latent_conditioner_filter[i-1], self.latent_conditioner_filter[i]))
-            modules.append(nn.LeakyReLU(0.2))
-            modules.append(nn.Dropout(0.1))  # Reduced dropout
-        self.latent_conditioner = nn.Sequential(*modules)
-
-        # Simplified output heads - same as image version
-        final_feature_size = self.latent_conditioner_filter[-2]
-        
-        # Extremely aggressive bottleneck to prevent overfitting
-        hidden_size = final_feature_size // 8  # Even smaller bottleneck
-        self.latent_out = nn.Sequential(
-            nn.Dropout(0.2),
-            nn.Linear(final_feature_size, hidden_size),
-            nn.GELU(),
-            nn.Dropout(0.15),
-            nn.Linear(hidden_size, self.latent_dim_end),
-            nn.Tanh()
-        )
-
-        self.xs_out = nn.Sequential(
-            nn.Dropout(0.2),
-            nn.Linear(final_feature_size, hidden_size),
-            nn.GELU(),
-            nn.Dropout(0.15),
-            nn.Linear(hidden_size, self.latent_dim * self.size2),
-            nn.Tanh()
-        )
-
-    def forward(self, x):
-        features = self.latent_conditioner(x)
-        latent_out = self.latent_out(features)
-        
-        xs_out = self.xs_out(features)
-        xs_out = xs_out.unflatten(1, (self.size2, self.latent_dim))
-
-        return latent_out, xs_out
-
-
-
-class ImprovedConvResBlock(nn.Module):
-    def __init__(self, in_channel, out_channel, stride=1):
-        super().__init__()
-        
-        self.conv1 = nn.Conv2d(in_channel, out_channel, kernel_size=3, stride=stride, padding=1, bias=True)
-        self.gn1 = nn.GroupNorm(min(32, out_channel//4), out_channel)
-        self.conv2 = nn.Conv2d(out_channel, out_channel, kernel_size=3, padding=1, bias=True)
-        self.gn2 = nn.GroupNorm(min(32, out_channel//4), out_channel)
-        
-        # Skip connection handling
-        self.skip = nn.Sequential()
-        if stride != 1 or in_channel != out_channel:
-            self.skip = nn.Sequential(
-                nn.Conv2d(in_channel, out_channel, kernel_size=1, stride=stride, bias=True),
-                nn.GroupNorm(min(32, out_channel//4), out_channel)
-            )
-
-    def forward(self, x):
-        residual = self.skip(x)
-        
-        out = F.gelu(self.gn1(self.conv1(x)))
-        out = self.gn2(self.conv2(out))
-        out += residual
-        out = F.gelu(out)
-        return out
-
-class SEBlock(nn.Module):
-    """Squeeze-and-Excitation block for channel attention"""
-    def __init__(self, channel, reduction=16):
-        super().__init__()
-        self.avg_pool = nn.AdaptiveAvgPool2d(1)
-        self.fc = nn.Sequential(
-            nn.Linear(channel, channel // reduction, bias=False),
-            nn.GELU(),
-            nn.Linear(channel // reduction, channel, bias=False),
-            nn.Sigmoid()
-        )
-
-    def forward(self, x):
-        if x is None or x.size(0) == 0:
-            return x
-        b, c, _, _ = x.size()
-        y = self.avg_pool(x).view(b, c)
-        y = self.fc(y).view(b, c, 1, 1)
-        return x * y.expand_as(x)
-
-class ConvBlock(nn.Module):
-    def __init__(self, in_channel, out_channel):
-        super().__init__()
-
-        self.seq = nn.Sequential(
-            nn.Conv2d(in_channel, out_channel, kernel_size=3, padding=1),
-            nn.GroupNorm(min(32, out_channel//4), out_channel),
-            nn.GELU(),
-            nn.AvgPool2d(2)
-        )
-
-    def forward(self, x):
-        return self.seq(x)
-
-class LatentConditionerImg(nn.Module):
-    def __init__(self, latent_conditioner_filter, latent_dim_end, input_shape, latent_dim, size2, latent_conditioner_data_shape, dropout_rate=0.3):
-        super(LatentConditionerImg, self).__init__()
-        self.latent_dim = latent_dim
-        self.size2 = size2
-        self.latent_conditioner_filter = latent_conditioner_filter
-        self.latent_dim_end = latent_dim_end
-        self.input_shape = input_shape
-        self.num_latent_conditioner_filter = len(self.latent_conditioner_filter)
-        self.latent_conditioner_data_shape = latent_conditioner_data_shape
-        self.dropout_rate = dropout_rate
-
-        # Shared feature extractor backbone
-        self.backbone = nn.ModuleList()
-        
-        # Initial conv
-        self.backbone.append(nn.Sequential(
-            nn.Conv2d(1, self.latent_conditioner_filter[0], kernel_size=7, stride=2, padding=3, bias=True),
-            nn.GroupNorm(min(32, self.latent_conditioner_filter[0]//4), self.latent_conditioner_filter[0]),
-            nn.GELU(),
-            nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
-        ))
-        
-        # Simplified feature extraction - single ResBlock per stage to reduce overfitting
-        for i in range(1, self.num_latent_conditioner_filter):
-            stride = 2 if i < self.num_latent_conditioner_filter - 1 else 1
-            # Only one ResBlock per stage instead of two
-            block = ImprovedConvResBlock(self.latent_conditioner_filter[i-1], self.latent_conditioner_filter[i], stride)
-            self.backbone.append(block)
-        
-        # Adaptive pooling and feature size calculation
-        self.adaptive_pool = nn.AdaptiveAvgPool2d((4, 4))
-        final_feature_size = self.latent_conditioner_filter[-1] * 16  # 4*4
-        
-        # Simplified output heads - removing complexity that causes overfitting
-        # Keep feature dimension to avoid bottleneck
-        
-        # Extremely aggressive bottleneck to prevent overfitting
-        hidden_size = final_feature_size // 8  # Even smaller bottleneck
-        self.latent_out = nn.Sequential(
-            nn.Dropout(0.2),
-            nn.Linear(final_feature_size, hidden_size),
-            nn.GELU(),
-            nn.Dropout(0.15),
-            nn.Linear(hidden_size, self.latent_dim_end),
-            nn.Tanh()
-        )
-        
-        # Balanced xs head - single hidden layer to prevent underfitting  
-        self.xs_out = nn.Sequential(
-            nn.Dropout(0.2),
-            nn.Linear(final_feature_size, hidden_size),
-            nn.GELU(),
-            nn.Dropout(0.15),
-            nn.Linear(hidden_size, self.latent_dim * self.size2),
-            nn.Tanh()
-        )
-
-    def forward(self, x):
-        im_size = 128
-        x = x.reshape(-1, 1, im_size, im_size)
-        
-        # Shared feature extraction
-        features = x
-        for block in self.backbone:
-            features = block(features)
-        
-        # Global feature pooling
-        features = self.adaptive_pool(features)
-        features = features.flatten(1)
-        
-        # Simplified forward pass through output heads
-        latent_out = self.latent_out(features)
-        
-        xs_out = self.xs_out(features)
-        xs_out = xs_out.unflatten(1, (self.size2, self.latent_dim))
-
-        return latent_out, xs_out
-
-
-
-
 import time
 from modules.common import initialize_weights_He, add_sn
 from torchvision.transforms import v2
@@ -276,7 +80,17 @@ def safe_cuda_initialization():
             print("Could not retrieve CUDA diagnostic information")
         return "cpu"
 
-def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_dataloader, latent_conditioner_validation_dataloader, latent_conditioner, latent_conditioner_lr, weight_decay=1e-4):
+def safe_initialize_weights_He(m):
+    if isinstance(m, (nn.Conv1d, nn.ConvTranspose1d, nn.Conv2d, nn.ConvTranspose2d)):
+        nn.init.kaiming_uniform_(m.weight.data, nonlinearity='relu')
+        if m.bias is not None:
+            nn.init.constant_(m.bias.data, 0)
+    elif isinstance(m, nn.Linear):
+        nn.init.kaiming_uniform_(m.weight.data)
+        if m.bias is not None:  # Add this check
+            nn.init.constant_(m.bias.data, 0)
+
+def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_dataloader, latent_conditioner_validation_dataloader, latent_conditioner, latent_conditioner_lr, weight_decay=1e-4, is_image_data=True):
     im_size = 128
 
     writer = SummaryWriter(log_dir = './LatentConditionerRuns', comment = 'LatentConditioner')
@@ -284,13 +98,8 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
     loss=0
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
 
-    # Stronger weight decay for regularization
-    latent_conditioner_optimized = torch.optim.AdamW(latent_conditioner.parameters(), lr=latent_conditioner_lr, weight_decay=1e-3)  # Increased from 1e-4
-    
-    
-    # Snapshot ensemble - save models at different stages
-    snapshot_models = []
-    snapshot_interval = latent_conditioner_epoch // 10  # Save 10 snapshots
+    # EXTREME weight decay for regularization
+    latent_conditioner_optimized = torch.optim.AdamW(latent_conditioner.parameters(), lr=latent_conditioner_lr)
     
     # Advanced learning rate scheduling
     warmup_epochs = 10
@@ -327,39 +136,15 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
     # Track overfitting ratio
     overfitting_threshold = 100.0  # Stop if val_loss > 10x train_loss
 
-    # Data augmentation transforms
-    augmentation = transforms.Compose([
-        transforms.ToPILImage(),
-        transforms.RandomRotation(10),
-        transforms.RandomHorizontalFlip(p=0.5),
-        transforms.ColorJitter(brightness=0.1, contrast=0.1),
-        transforms.ToTensor(),
-    ])
-
     from torchinfo import summary
     import math
 
     summary(latent_conditioner, (64,1,im_size,im_size))
 
-    
     latent_conditioner = latent_conditioner.to(device)
-    def safe_initialize_weights_He(m):
-        if isinstance(m, (nn.Conv1d, nn.ConvTranspose1d, nn.Conv2d, nn.ConvTranspose2d)):
-            nn.init.kaiming_uniform_(m.weight.data, nonlinearity='relu')
-            if m.bias is not None:
-                nn.init.constant_(m.bias.data, 0)
-        elif isinstance(m, nn.Linear):
-            nn.init.kaiming_uniform_(m.weight.data)
-            if m.bias is not None:  # Add this check
-                nn.init.constant_(m.bias.data, 0)
     
     latent_conditioner.apply(safe_initialize_weights_He)
     latent_conditioner.apply(add_sn)  # Re-enabled for regularization
-
-    # EMA for weight averaging - more aggressive averaging
-    ema_decay = 0.995  # Faster EMA updates for better regularization
-    ema_model = {name: param.clone() for name, param in latent_conditioner.named_parameters()}
-    print(f"EMA initialized with {len(ema_model)} parameters")
 
     # Data analysis for first epoch
     data_analyzed = False
@@ -368,64 +153,25 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
         start_time = time.time()
         latent_conditioner.train(True)
         
-        # Much more aggressive progressive dropout - start very high
-        current_dropout = max(0.2, 0.6 * (1 - epoch / latent_conditioner_epoch))  # 60% -> 20%
-        for module in latent_conditioner.modules():
-            if isinstance(module, nn.Dropout):
-                module.p = current_dropout
-                
         epoch_loss = 0
         epoch_loss_y1 = 0
         epoch_loss_y2 = 0
         num_batches = 0
         
         for i, (x, y1, y2) in enumerate(latent_conditioner_dataloader):
-
-            x = x.reshape([x.shape[0], int(math.sqrt(x.shape[1])), int(math.sqrt(x.shape[1]))])
+            
+            # Conditional reshaping based on data type
+            if is_image_data:
+                # Reshape flattened image data back to 2D 
+                x = x.reshape([x.shape[0], int(math.sqrt(x.shape[1])), int(math.sqrt(x.shape[1]))])
+            # For parametric data, keep as 1D vector (no reshaping needed)
             
             if epoch==0 and i==0:
                 print('dataset_shape', x.shape,y1.shape,y2.shape)
                 
-            # Comprehensive data analysis for first few batches
-            if not data_analyzed and epoch == 0 and i < 3:
-                print(f"\n=== Data Analysis Batch {i} ===")
-                print(f"Input Statistics:")
-                print(f"  X - Min: {x.min().item():.6f}, Max: {x.max().item():.6f}, Mean: {x.mean().item():.6f}, Std: {x.std().item():.6f}")
-                print(f"Target Statistics:")
-                print(f"  Y1 - Min: {y1.min().item():.6f}, Max: {y1.max().item():.6f}, Mean: {y1.mean().item():.6f}, Std: {y1.std().item():.6f}")
-                print(f"  Y2 - Min: {y2.min().item():.6f}, Max: {y2.max().item():.6f}, Mean: {y2.mean().item():.6f}, Std: {y2.std().item():.6f}")
-                
-                # Check for outliers
-                y1_outliers = torch.sum(torch.abs(y1) > 3 * y1.std()).item()
-                y2_outliers = torch.sum(torch.abs(y2) > 3 * y2.std()).item()
-                print(f"Outliers (>3σ): Y1={y1_outliers}, Y2={y2_outliers}")
-                
-                if i == 2:  # Mark analysis as complete after 3 batches
-                    data_analyzed = True
-                    print("=== Data Analysis Complete ===\n")
-            # More aggressive cutout - randomly mask patches for severe overfitting
-            if torch.rand(1) < 0.7:  # 70% chance (increased from 40%)
-                cutout_size = 24  # Larger 24x24 patches (increased from 16x16)
-                for b in range(x.size(0)):
-                    if torch.rand(1) < 0.8:  # 80% of samples get cutout (increased from 50%)
-                        img_size = int(math.sqrt(x.shape[1]))
-                        cx = np.random.randint(0, img_size)
-                        cy = np.random.randint(0, img_size)
-                        x1 = max(0, cx - cutout_size // 2)
-                        y1_cut = max(0, cy - cutout_size // 2)
-                        x2 = min(img_size, cx + cutout_size // 2)
-                        y2_cut = min(img_size, cy + cutout_size // 2)
-                        
-                        # Convert to flattened indices
-                        mask = torch.ones_like(x[b])
-                        for i in range(x1, x2):
-                            for j in range(y1_cut, y2_cut):
-                                mask[i * img_size + j] = 0
-                        x[b] = x[b] * mask
-            
-            # More aggressive mixup augmentation for better generalization  
-            if torch.rand(1) < 0.5 and x.size(0) > 1:  # Increased to 50%
-                alpha = 0.4  # More aggressive mixing (increased from 0.2)
+            # EXTREME mixup augmentation for better generalization  
+            if torch.rand(1) < 0.8 and x.size(0) > 1:  # 80% chance
+                alpha = 0.8  # Much more aggressive mixing
                 lam = np.random.beta(alpha, alpha)
                 batch_size = x.size(0)
                 index = torch.randperm(batch_size).to(x.device)
@@ -436,9 +182,9 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
             
             x, y1, y2 = x.to(device), y1.to(device), y2.to(device)
             
-            # Add Gaussian noise for regularization
-            if torch.rand(1) < 0.5:  # 50% chance
-                noise = torch.randn_like(x) * 0.02  # 2% noise
+            # Add STRONG Gaussian noise for regularization
+            if torch.rand(1) < 0.8:  # 80% chance
+                noise = torch.randn_like(x) * 0.05  # 5% noise - much stronger
                 x = x + noise
             
             latent_conditioner_optimized.zero_grad(set_to_none=True)
@@ -451,29 +197,33 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
                 print(f"  Y1_pred - Min: {y_pred1.min().item():.6f}, Max: {y_pred1.max().item():.6f}, Mean: {y_pred1.mean().item():.6f}, Std: {y_pred1.std().item():.6f}")
                 print(f"  Y2_pred - Min: {y_pred2.min().item():.6f}, Max: {y_pred2.max().item():.6f}, Mean: {y_pred2.mean().item():.6f}, Std: {y_pred2.std().item():.6f}")
 
-            # Simple MSE loss without label smoothing (was causing NaN)
-            A = nn.MSELoss()(y_pred1, y1)
-            B = nn.MSELoss()(y_pred2, y2)
+            # Add label smoothing for extreme regularization
+            label_smooth = 0.1  # 10% label smoothing
+            y1_smooth = y1 * (1 - label_smooth) + torch.randn_like(y1) * label_smooth * 0.1
+            y2_smooth = y2 * (1 - label_smooth) + torch.randn_like(y2) * label_smooth * 0.1
+            
+            A = nn.MSELoss()(y_pred1, y1_smooth)
+            B = nn.MSELoss()(y_pred2, y2_smooth)
             
             # Log individual losses for first few batches
             if not data_analyzed and epoch == 0 and i < 3:
                 print(f"  Loss A (Y1): {A.item():.6f}, Loss B (Y2): {B.item():.6f}, Ratio A/B: {A.item()/B.item():.3f}")
                 print("---")
 
-            loss = A + B
-                
+            loss = A + B 
+
+            # Add target noise injection during training for more robust learning
+            if torch.rand(1) < 0.2:  # 20% chance
+                target_noise_scale = 0.01
+                loss += target_noise_scale * (torch.norm(y1, p=2) + torch.norm(y2, p=2))
             
-            # Update EMA model
-            with torch.no_grad():
-                for name, param in latent_conditioner.named_parameters():
-                    ema_model[name] = ema_decay * ema_model[name] + (1 - ema_decay) * param
+            # CRITICAL FIX: Accumulate losses for proper training monitoring
             epoch_loss += loss.item()
             epoch_loss_y1 += A.item()
             epoch_loss_y2 += B.item()
             num_batches += 1
-
+            
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(latent_conditioner.parameters(), max_norm=5.0)
             latent_conditioner_optimized.step()
         
         avg_train_loss = epoch_loss / num_batches
@@ -492,7 +242,10 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
         
         with torch.no_grad():
             for i, (x_val, y1_val, y2_val) in enumerate(latent_conditioner_validation_dataloader):
-                x_val = x_val.reshape([x_val.shape[0], int(math.sqrt(x_val.shape[1])), int(math.sqrt(x_val.shape[1]))])
+                # Conditional reshaping for validation data
+                if is_image_data:
+                    x_val = x_val.reshape([x_val.shape[0], int(math.sqrt(x_val.shape[1])), int(math.sqrt(x_val.shape[1]))])
+                # For parametric data, keep as 1D vector
                 x_val, y1_val, y2_val = x_val.to(device), y1_val.to(device), y2_val.to(device)
                 
                 y_pred1_val, y_pred2_val = latent_conditioner(x_val)
@@ -514,13 +267,6 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
                     print(f"🚨 NaN detected in A_val (y1 loss) at epoch {epoch}, batch {i}")
                 if torch.isnan(B_val):
                     print(f"🚨 NaN detected in B_val (y2 loss) at epoch {epoch}, batch {i}")
-                
-                # Cosine similarity loss - DISABLED (potential NaN source)
-                # if y1_val.numel() > 1:  # Need multiple samples
-                #     cos_sim_target = torch.cosine_similarity(y1_val[:-1], y1_val[1:], dim=-1)
-                #     cos_sim_pred = torch.cosine_similarity(y_pred1_val[:-1], y_pred1_val[1:], dim=-1)
-                #     cosine_loss = nn.MSELoss()(cos_sim_pred, cos_sim_target)
-                #     A_val += 0.05 * cosine_loss
 
                 # Diagnostic logging for first validation batch
                 if not first_val_batch_logged and epoch % 10 == 0:
@@ -594,12 +340,6 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
             print(f'Early stopping at epoch {epoch}. Best validation loss: {best_val_loss:.4E}')
             break
 
-        # Save snapshots for ensemble
-        if epoch % snapshot_interval == 0 and epoch > 0:
-            snapshot_state = latent_conditioner.state_dict().copy()
-            snapshot_models.append(snapshot_state)
-            print(f"Saved snapshot {len(snapshot_models)} at epoch {epoch}")
-        
         # Save regular checkpoint
         if epoch % 50 == 0:
             torch.save(latent_conditioner.state_dict(), f'checkpoints/latent_conditioner_epoch_{epoch}.pth')
