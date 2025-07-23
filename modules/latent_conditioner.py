@@ -93,7 +93,6 @@ def safe_initialize_weights_He(m):
             nn.init.constant_(m.bias.data, 0)
 
 def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_dataloader, latent_conditioner_validation_dataloader, latent_conditioner, latent_conditioner_lr, weight_decay=1e-4, is_image_data=True):
-    im_size = 128
 
     writer = SummaryWriter(log_dir = './LatentConditionerRuns', comment = 'LatentConditioner')
 
