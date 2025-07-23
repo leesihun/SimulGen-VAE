@@ -77,16 +77,16 @@ class ImprovedConvResBlock(nn.Module):
         super().__init__()
         
         self.conv1 = nn.Conv2d(in_channel, out_channel, kernel_size=3, stride=stride, padding=1, bias=True)
-        self.gn1 = nn.GroupNorm(min(32, out_channel//4), out_channel)
+        self.gn1 = nn.GroupNorm(min(32, max(1, out_channel//4)), out_channel)
         self.conv2 = nn.Conv2d(out_channel, out_channel, kernel_size=3, padding=1, bias=True)
-        self.gn2 = nn.GroupNorm(min(32, out_channel//4), out_channel)
+        self.gn2 = nn.GroupNorm(min(32, max(1, out_channel//4)), out_channel)
         
         # Skip connection handling
         self.skip = nn.Sequential()
         if stride != 1 or in_channel != out_channel:
             self.skip = nn.Sequential(
                 nn.Conv2d(in_channel, out_channel, kernel_size=1, stride=stride, bias=True),
-                nn.GroupNorm(min(32, out_channel//4), out_channel)
+                nn.GroupNorm(min(32, max(1, out_channel//4)), out_channel)
             )
 
     def forward(self, x):
@@ -127,7 +127,7 @@ class ConvBlock(nn.Module):
 
         self.seq = nn.Sequential(
             nn.Conv2d(in_channel, out_channel, kernel_size=3, padding=1),
-            nn.GroupNorm(min(32, out_channel//4), out_channel),
+            nn.GroupNorm(min(32, max(1, out_channel//4)), out_channel),
             nn.GELU(),
             nn.AvgPool2d(2)
         )
@@ -156,7 +156,7 @@ class LatentConditionerImg(nn.Module):
         # Initial conv
         self.backbone.append(nn.Sequential(
             nn.Conv2d(1, self.latent_conditioner_filter[0], kernel_size=7, stride=2, padding=3, bias=True),
-            nn.GroupNorm(min(32, self.latent_conditioner_filter[0]//4), self.latent_conditioner_filter[0]),
+            nn.GroupNorm(min(32, max(1, self.latent_conditioner_filter[0]//4)), self.latent_conditioner_filter[0]),
             nn.GELU(),
             nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
         ))
