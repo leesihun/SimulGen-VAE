@@ -756,7 +756,7 @@ def main():
 
     try:
         print("Starting LatentConditioner training...")
-        LatentConditioner_loss = train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_dataloader, latent_conditioner_validation_dataloader, latent_conditioner, latent_conditioner_lr, weight_decay=latent_conditioner_weight_decay, is_image_data=image)
+        LatentConditioner_loss = train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_dataloader, latent_conditioner_validation_dataloader, latent_conditioner, latent_conditioner_lr, weight_decay=latent_conditioner_weight_decay, is_image_data=image, image_size=256)
         print("LatentConditioner training completed successfully")
     except Exception as e:
         print(f"Error during LatentConditioner training: {e}")

@@ -137,7 +137,7 @@ def safe_initialize_weights_He(m):
         if m.bias is not None:  # Add this check
             nn.init.constant_(m.bias.data, 0)
 
-def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_dataloader, latent_conditioner_validation_dataloader, latent_conditioner, latent_conditioner_lr, weight_decay=1e-4, is_image_data=True):
+def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_dataloader, latent_conditioner_validation_dataloader, latent_conditioner, latent_conditioner_lr, weight_decay=1e-4, is_image_data=True, image_size=256):
 
     writer = SummaryWriter(log_dir = './LatentConditionerRuns', comment = 'LatentConditioner')
 
@@ -174,7 +174,7 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
     from torchinfo import summary
     import math
 
-    summary(latent_conditioner, (64,1,im_size*im_size))
+    summary(latent_conditioner, (64, 1, image_size*image_size))
 
     latent_conditioner = latent_conditioner.to(device)
     
