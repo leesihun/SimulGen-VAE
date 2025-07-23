@@ -9,7 +9,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import natsort
 
-im_size = 32
+im_size = 256  # High resolution for sharp outline detection
 
 def read_latent_conditioner_dataset_img(param_dir, param_data_type):
     cur_dir = os.getcwd()
@@ -50,6 +50,54 @@ from torchvision.transforms import v2
 from torch.utils.tensorboard import SummaryWriter
 from torchvision import transforms
 import pytorch_warmup as warmup
+import torchvision.transforms.functional as TF
+import random
+import math
+
+# Outline-specific augmentation functions - preserves edge information
+def apply_outline_preserving_augmentations(x, prob=0.5):
+    """
+    Apply outline-preserving augmentations for edge detection tasks
+    x: tensor of shape (batch, height, width) - 2D grayscale outline images
+    
+    CRITICAL: Avoids intensity changes that could destroy outline visibility
+    """
+    if not torch.rand(1) < prob:
+        return x  # Skip augmentation
+    
+    batch_size, height, width = x.shape
+    augmented = x.clone()
+    
+    for i in range(batch_size):
+        img = x[i].unsqueeze(0)  # Add channel dim: (1, H, W)
+        
+        # Small rotation ONLY (-5 to +5 degrees) - preserve outline topology
+        if torch.rand(1) < 0.4:
+            angle = random.uniform(-5, 5)
+            img = TF.rotate(img, angle, fill=0)
+        
+        # Small translation (±1 pixel) - very conservative to preserve outlines
+        if torch.rand(1) < 0.5:
+            translate_x = random.randint(-1, 1)
+            translate_y = random.randint(-1, 1)
+            img = TF.affine(img, angle=0, translate=[translate_x, translate_y], 
+                           scale=1.0, shear=0, fill=0)
+        
+        # Random horizontal flip - only if outline symmetry allows
+        if torch.rand(1) < 0.3:
+            img = TF.hflip(img)
+        
+        # Very subtle scale changes (±5%) - preserve outline proportions
+        if torch.rand(1) < 0.3:
+            scale = random.uniform(0.95, 1.05)
+            img = TF.affine(img, angle=0, translate=[0, 0], 
+                           scale=scale, shear=0, fill=0)
+        
+        # AVOID: brightness, contrast, gamma, noise - these destroy outline clarity!
+        
+        augmented[i] = img.squeeze(0)  # Remove channel dim
+    
+    return augmented
 
 # Cleaned up training without problematic regularization
 
@@ -152,9 +200,17 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
             
             if epoch==0 and i==0:
                 print('dataset_shape', x.shape,y1.shape,y2.shape)
+            
+            # Apply outline-preserving augmentations for CNN (only for image data)
+            if is_image_data and torch.rand(1) < 0.6:  # 60% chance - more conservative for outlines
+                # Temporarily reshape to 2D for augmentation
+                im_size = int(math.sqrt(x.shape[-1]))
+                x_2d = x.reshape(-1, im_size, im_size)
+                x_2d = apply_outline_preserving_augmentations(x_2d, prob=0.6)
+                x = x_2d.reshape(x.shape[0], -1)  # Flatten back
                 
             # EXTREME mixup augmentation for better generalization  
-            if torch.rand(1) < 0.2 and x.size(0) > 1:  # 80% chance
+            if torch.rand(1) < 0.2 and x.size(0) > 1:  # 20% chance
                 alpha = 0.8  # Much more aggressive mixing
                 lam = np.random.beta(alpha, alpha)
                 batch_size = x.size(0)
@@ -166,9 +222,9 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
             
             x, y1, y2 = x.to(device), y1.to(device), y2.to(device)
             
-            # Add STRONG Gaussian noise for regularization
-            if torch.rand(1) < 0.2:  # 80% chance
-                noise = torch.randn_like(x) * 0.05  # 5% noise - much stronger
+            # Add STRONG Gaussian noise for regularization (reduced since we have image augmentations)
+            if torch.rand(1) < 0.1:  # Reduced from 20% to 10% chance
+                noise = torch.randn_like(x) * 0.03  # Reduced noise - we have better augmentations now
                 x = x + noise
             
             latent_conditioner_optimized.zero_grad(set_to_none=True)

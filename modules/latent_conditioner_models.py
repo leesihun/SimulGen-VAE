@@ -186,37 +186,57 @@ class LatentConditionerImg(nn.Module):
         self.dropout_rate = dropout_rate
         self.use_attention = use_attention
 
+        # Edge detection preprocessing - helps with outline detection
+        self.edge_enhance = nn.Conv2d(1, 4, kernel_size=3, stride=1, padding=1, bias=False)
+        # Initialize with edge detection kernels (Sobel, Laplacian, etc.)
+        with torch.no_grad():
+            # Sobel X
+            self.edge_enhance.weight[0, 0] = torch.tensor([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], dtype=torch.float32)
+            # Sobel Y  
+            self.edge_enhance.weight[1, 0] = torch.tensor([[-1, -2, -1], [0, 0, 0], [1, 2, 1]], dtype=torch.float32)
+            # Laplacian
+            self.edge_enhance.weight[2, 0] = torch.tensor([[0, -1, 0], [-1, 4, -1], [0, -1, 0]], dtype=torch.float32)
+            # Identity (preserve original)
+            self.edge_enhance.weight[3, 0] = torch.tensor([[0, 0, 0], [0, 1, 0], [0, 0, 0]], dtype=torch.float32)
+        
         # Shared feature extractor backbone
         self.backbone = nn.ModuleList()
         
-        # Initial conv
+        # Edge-aware initial processing for 256x256 outline detection
         self.backbone.append(nn.Sequential(
-            nn.Conv2d(1, self.latent_conditioner_filter[0], kernel_size=3, stride=1, padding='same', bias=True),
+            # Process both original + edge-enhanced features
+            nn.Conv2d(5, self.latent_conditioner_filter[0], kernel_size=7, stride=1, padding=3, bias=True),  # 1+4=5 input channels
             nn.GroupNorm(min(32, max(1, self.latent_conditioner_filter[0]//4)), self.latent_conditioner_filter[0]),
             nn.GELU(),
-            nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+            nn.MaxPool2d(kernel_size=2, stride=2)  # 256->128
         ))
         
-        # Multi-scale feature extraction - gradual downsampling preserves more information
+        # Multi-scale feature extraction for 256x256 outline detection
         if self.num_latent_conditioner_filter > 1:
-            # First scale: 16x16 -> 8x8 with spatial attention
+            # Scale 1: 128->64 with spatial attention for edge preservation
             block1 = ConvBlock(self.latent_conditioner_filter[0], self.latent_conditioner_filter[1], 
                              dropout_rate=self.dropout_rate, use_attention=self.use_attention)
             self.backbone.append(block1)
             
-            # Optional second scale for deeper networks: 8x8 -> 4x4 with spatial attention
+            # Scale 2: 64->32 with spatial attention
             if self.num_latent_conditioner_filter > 2:
                 block2 = ConvBlock(self.latent_conditioner_filter[1], self.latent_conditioner_filter[2], 
                                  dropout_rate=self.dropout_rate, use_attention=self.use_attention)
                 self.backbone.append(block2)
+                
+            # Scale 3: 32->16 with spatial attention for deeper edge understanding
+            if self.num_latent_conditioner_filter > 3:
+                block3 = ConvBlock(self.latent_conditioner_filter[2], self.latent_conditioner_filter[3], 
+                                 dropout_rate=self.dropout_rate, use_attention=self.use_attention)
+                self.backbone.append(block3)
         
-        # Multi-scale pooling - combines both average and max pooling for richer features
-        self.adaptive_pool = nn.AdaptiveAvgPool2d((4, 4))
-        self.max_pool = nn.AdaptiveMaxPool2d((4, 4))
+        # Multi-scale pooling - richer features for outline analysis
+        self.adaptive_pool = nn.AdaptiveAvgPool2d((8, 8))  # Larger than 4x4 for 256x256
+        self.max_pool = nn.AdaptiveMaxPool2d((8, 8))
         
         # Calculate final feature size accounting for avg+max pooling
-        final_filter_idx = min(len(self.latent_conditioner_filter)-1, 2)
-        final_feature_size = self.latent_conditioner_filter[final_filter_idx] * 16 * 2  # 4*4*2 (avg+max)
+        final_filter_idx = min(len(self.latent_conditioner_filter)-1, 3)
+        final_feature_size = self.latent_conditioner_filter[final_filter_idx] * 64 * 2  # 8*8*2 (avg+max)
         
         # Smarter bottleneck - not too extreme since we have richer features now
         hidden_size = max(8, final_feature_size // 32)  # Less extreme bottleneck
@@ -244,8 +264,14 @@ class LatentConditionerImg(nn.Module):
     def forward(self, x):
         x = x.reshape([-1, 1, int(math.sqrt(x.shape[-1])), int(math.sqrt(x.shape[-1]))])
         
+        # Edge enhancement preprocessing for outline detection
+        edge_features = self.edge_enhance(x)  # (B, 4, H, W) - Sobel X, Y, Laplacian, Identity
+        
+        # Combine original + edge features
+        x_enhanced = torch.cat([x, edge_features], dim=1)  # (B, 5, H, W)
+        
         # Shared feature extraction
-        features = x
+        features = x_enhanced
         for block in self.backbone:
             features = block(features)
         
