@@ -117,6 +117,32 @@ SiHun Lee, Ph. D, [Email](kevin1007kr@gmail.com), [LinkedIn](https://www.linkedi
 - **Enhanced**: Troubleshooting section with in-place operation error fix
 - **Added**: Version history tracking
 
+### v1.5.0 (Latest) - MODULAR ARCHITECTURE & MULTI-MODEL SUPPORT
+- **MAJOR**: Complete modular restructure with separate model and utility files
+- **NEW MODELS**: Added Vision Transformer (ViT) support alongside existing CNN and MLP
+- **THREE ARCHITECTURES**: 
+  - `LatentConditioner` (MLP) for parametric/CSV data
+  - `LatentConditionerImg` (CNN) for image data with ResNet-style blocks
+  - `TinyViTLatentConditioner` (ViT) for image data with patch-based attention
+- **MODEL SELECTION**: Extended `latent_conditioner_data_type` options:
+  - `'csv'` → MLP for parametric data
+  - `'image'` → CNN for image data  
+  - `'image_vit'` → ViT for image data (NEW)
+- **MODULAR DESIGN**: 
+  - `modules/latent_conditioner_models.py` → All model architectures
+  - `modules/latent_conditioner.py` → Training functions and utilities
+- **CRITICAL FIXES**:
+  - Fixed missing loss accumulation bug causing broken training metrics
+  - Added conditional data reshaping for parametric vs image data compatibility
+  - Fixed import dependencies for ViT training functions
+- **ANTI-OVERFITTING**: Removed ensemble heads for simpler, more stable architectures
+- **ViT SPECIFICATIONS**:
+  - 128×128 image → 16×16 patches (64 total patches)
+  - 2 transformer layers, 4 attention heads, 64 embedding dimensions
+  - Extreme regularization with 50-80% dropout scheduling
+- **TRAINING COMPATIBILITY**: Single training function supports all three architectures
+- **BENEFITS**: Cleaner codebase, easier model experimentation, better maintainability
+
 ### v1.0.0 (Initial Release)
 - **Initial**: High-performance VAE implementation with PINN integration
 - **Features**: Multi-GPU training with DDP support
@@ -124,6 +150,81 @@ SiHun Lee, Ph. D, [Email](kevin1007kr@gmail.com), [LinkedIn](https://www.linkedi
 - **Performance**: Advanced data loading optimizations and model compilation support
 
 ## Recent Updates
+
+### Modular Architecture & Multi-Model Support (v1.5.0)
+
+**MAJOR RESTRUCTURE**: Complete separation of model architectures from training utilities for better maintainability and experimentation.
+
+#### New Model Selection System
+Now supports **three different architectures** for latent conditioning:
+
+```python
+# Usage examples:
+latent_conditioner_data_type = 'csv'        # → LatentConditioner (MLP)
+latent_conditioner_data_type = 'image'      # → LatentConditionerImg (CNN) 
+latent_conditioner_data_type = 'image_vit'  # → TinyViTLatentConditioner (ViT)
+```
+
+#### Model Specifications
+
+**1. MLP Architecture (`'csv'`)**
+- **Purpose**: Parametric/tabular data
+- **Architecture**: Multi-layer perceptron with GELU activations
+- **Input**: 1D feature vectors
+- **Regularization**: Progressive dropout, extreme bottleneck (//32 compression)
+
+**2. CNN Architecture (`'image'`)**  
+- **Purpose**: Image data (traditional approach)
+- **Architecture**: ResNet-style blocks with GroupNorm
+- **Input**: 128×128 images (flattened)
+- **Features**: Adaptive pooling, ConvBlocks for efficiency
+
+**3. ViT Architecture (`'image_vit'`)** ⭐ **NEW**
+- **Purpose**: Image data (modern transformer approach) 
+- **Architecture**: Patch-based Vision Transformer
+- **Input**: 128×128 images → 64 patches (16×16 each)
+- **Specifications**:
+  - 2 transformer layers for minimal overfitting
+  - 4 multi-head attention heads
+  - 64 embedding dimensions
+  - Progressive dropout: 80% → 10%
+  - Global average pooling (no CLS token)
+
+#### Critical Bug Fixes
+- **🐛 FIXED**: Missing loss accumulation causing `avg_train_loss = 0.0` always
+- **🐛 FIXED**: Automatic data reshaping crash for non-square parametric data
+- **🐛 FIXED**: Import errors preventing ViT training function usage
+- **🔧 IMPROVED**: Removed ensemble complexity for stability
+
+#### File Structure Changes
+```
+modules/
+├── latent_conditioner_models.py  # 🆕 All model architectures
+├── latent_conditioner.py         # 🔄 Training functions & utilities  
+└── [other modules unchanged]
+```
+
+#### Usage Examples
+```bash
+# Train CNN on images
+python SimulGen-VAE.py --lc_only=1  # with latent_conditioner_data_type='image'
+
+# Train ViT on images (new!)
+python SimulGen-VAE.py --lc_only=1  # with latent_conditioner_data_type='image_vit'
+
+# Train MLP on parametric data  
+python SimulGen-VAE.py --lc_only=1  # with latent_conditioner_data_type='csv'
+```
+
+#### Import Changes
+Updated import statements in `SimulGen-VAE.py`:
+```python
+# Models from dedicated file
+from modules.latent_conditioner_models import LatentConditioner, LatentConditionerImg, TinyViTLatentConditioner
+
+# Utilities from main file
+from modules.latent_conditioner import train_latent_conditioner, read_latent_conditioner_dataset_img, ...
+```
 
 ### LatentConditioner Architecture Fix (v1.4.3)
 - **Critical Fix**: Simplified overly complex output heads that caused overfitting

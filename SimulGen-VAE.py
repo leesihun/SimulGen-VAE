@@ -553,15 +553,19 @@ def main():
 
 
     if latent_conditioner_data_type=='image':
-        print('Loading image data...')
+        print('Loading image data for CNN...')
+        image=True
+        latent_conditioner_data, latent_conditioner_data_shape = read_latent_conditioner_dataset_img(param_dir, param_data_type)
+    elif latent_conditioner_data_type=='image_vit':
+        print('Loading image data for ViT...')
         image=True
         latent_conditioner_data, latent_conditioner_data_shape = read_latent_conditioner_dataset_img(param_dir, param_data_type)
     elif latent_conditioner_data_type=='csv':
-        print('Loading csv data...')
+        print('Loading csv data for MLP...')
         image=False
         latent_conditioner_data = read_latent_conditioner_dataset(param_dir, param_data_type)
     else:
-        NotImplementedError('Unrecoginized latent_conditioner_data_type arg')
+        raise NotImplementedError(f'Unrecognized latent_conditioner_data_type: {latent_conditioner_data_type}. Supported options: "image" (CNN), "image_vit" (ViT), "csv" (MLP)')
 
     physical_param_input = latent_conditioner_data
 
