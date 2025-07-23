@@ -121,14 +121,15 @@ class SEBlock(nn.Module):
 
 
 class ConvBlock(nn.Module):
-    """Simple convolutional block"""
-    def __init__(self, in_channel, out_channel):
+    """Simple convolutional block with configurable dropout"""
+    def __init__(self, in_channel, out_channel, dropout_rate=0.1):
         super().__init__()
 
         self.seq = nn.Sequential(
             nn.Conv2d(in_channel, out_channel, kernel_size=3, padding=1),
             nn.GroupNorm(min(32, max(1, out_channel//4)), out_channel),
             nn.GELU(),
+            nn.Dropout2d(dropout_rate * 0.5),  # Use 2D dropout for conv layers
             nn.AvgPool2d(2)
         )
 
@@ -161,11 +162,10 @@ class LatentConditionerImg(nn.Module):
             nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
         ))
         
-        # ULTRA-SIMPLE feature extraction - replace ResBlocks with basic conv to prevent overfitting
-        for i in range(1, min(3, self.num_latent_conditioner_filter)):  # Limit to max 3 layers
-            stride = 2 if i < self.num_latent_conditioner_filter - 1 else 1
-            # Replace complex ResBlocks with simple ConvBlocks
-            block = ConvBlock(self.latent_conditioner_filter[i-1], self.latent_conditioner_filter[i])
+        # MINIMAL feature extraction - only 1 additional layer to prevent overfitting
+        if self.num_latent_conditioner_filter > 1:
+            # Single additional conv layer only
+            block = ConvBlock(self.latent_conditioner_filter[0], self.latent_conditioner_filter[1], dropout_rate=self.dropout_rate)
             self.backbone.append(block)
         
         # Adaptive pooling and feature size calculation
@@ -173,29 +173,32 @@ class LatentConditionerImg(nn.Module):
         final_feature_size = self.latent_conditioner_filter[-1] * 16  # 4*4
         
         # ULTRA-EXTREME bottleneck with single output heads
-        hidden_size = max(8, final_feature_size // 32)
+        hidden_size = max(4, final_feature_size // 64)  # Even smaller bottleneck
         
-        # Single prediction head for latent output
+        # Single prediction head for latent output - using configurable dropout
         self.latent_out = nn.Sequential(
-            nn.Dropout(0.2),
+            nn.Dropout(self.dropout_rate),
             nn.Linear(final_feature_size, hidden_size),
             nn.GELU(),
-            nn.Dropout(0.15), 
+            nn.Dropout(self.dropout_rate * 0.8),  # Slightly less dropout in second layer
             nn.Linear(hidden_size, self.latent_dim_end),
             nn.Tanh()
         )
         
-        # Single prediction head for xs output
+        # Single prediction head for xs output - using configurable dropout
         self.xs_out = nn.Sequential(
-            nn.Dropout(0.2),
+            nn.Dropout(self.dropout_rate),
             nn.Linear(final_feature_size, hidden_size),
             nn.GELU(),
-            nn.Dropout(0.15),
+            nn.Dropout(self.dropout_rate * 0.8),  # Slightly less dropout in second layer
             nn.Linear(hidden_size, self.latent_dim * self.size2),
             nn.Tanh()
         )
 
     def forward(self, x):
+        # Reshape flattened input to 4D tensor for CNN processing
+        im_size = int(math.sqrt(x.shape[-1]))
+        x = x.reshape(-1, 1, im_size, im_size)
         
         # Shared feature extraction
         features = x

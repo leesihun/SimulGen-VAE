@@ -147,10 +147,7 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
         
         for i, (x, y1, y2) in enumerate(latent_conditioner_dataloader):
             
-            # Conditional reshaping based on data type
-            if is_image_data:
-                # Reshape flattened image data back to 2D 
-                x = x.reshape([x.shape[0], int(math.sqrt(x.shape[1])), int(math.sqrt(x.shape[1]))])
+            # For image data, keep as flattened - model will handle reshaping internally
             # For parametric data, keep as 1D vector (no reshaping needed)
             
             if epoch==0 and i==0:
@@ -229,9 +226,7 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
         
         with torch.no_grad():
             for i, (x_val, y1_val, y2_val) in enumerate(latent_conditioner_validation_dataloader):
-                # Conditional reshaping for validation data
-                if is_image_data:
-                    x_val = x_val.reshape([x_val.shape[0], int(math.sqrt(x_val.shape[1])), int(math.sqrt(x_val.shape[1]))])
+                # For image data, keep as flattened - model will handle reshaping internally
                 # For parametric data, keep as 1D vector
                 x_val, y1_val, y2_val = x_val.to(device), y1_val.to(device), y2_val.to(device)
                 
