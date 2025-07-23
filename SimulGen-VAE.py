@@ -817,26 +817,25 @@ def main():
         target_output_np = target_output_np.reshape((-1, num_node))
         target_output_np = np.reshape(target_output_np, [num_time, num_node, 1])
 
-        for i in range(10):
-            plt.figure()
-            plt.title('Main latent')
-            plt.plot(y1[i,:], '*', label = 'True')
-            plt.plot(y_pred1[i,:], 'o', label = 'Predicted')
-            plt.legend()
+        plt.figure()
+        plt.title('Main latent')
+        plt.plot(y1[0,:], '*', label = 'True')
+        plt.plot(y_pred1[0,:], 'o', label = 'Predicted')
+        plt.legend()
 
-            plt.figure()
-            plt.title('Hierarchical latent')
-            plt.plot(y2[i,:], '*', label = 'True')
-            plt.plot(y_pred2[i,0, :], 'o', label = 'Predicted')
-            plt.legend()
-            
-            plt.figure()
-            plt.title('Reconstruction')
-            plt.plot(target_output_np[i,:,0], '.', label = 'Recon')
-            plt.plot(new_x_train[i, :, int(num_time/2)], '.', label = 'True')
-            plt.legend()
+        plt.figure()
+        plt.title('Hierarchical latent')
+        plt.plot(y2[0,:], '*', label = 'True')
+        plt.plot(y_pred2[0,0, :], 'o', label = 'Predicted')
+        plt.legend()
+        
+        plt.figure()
+        plt.title('Reconstruction')
+        plt.plot(target_output_np[0,:,0], '.', label = 'Recon')
+        plt.plot(new_x_train[0, :, int(num_time/2)], '.', label = 'True')
+        plt.legend()
 
-            plt.show()
+        plt.show()
 
 
 if __name__ == "__main__":
