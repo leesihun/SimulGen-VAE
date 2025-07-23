@@ -105,7 +105,10 @@ def main():
     from modules.common import add_sn
     from modules.input_variables import input_user_variables, input_dataset
     from modules.data_preprocess import reduce_dataset, data_augmentation, data_scaler, latent_conditioner_scaler, latent_conditioner_scaler_input
-    from modules.latent_conditioner import LatentConditionerImg, train_latent_conditioner, read_latent_conditioner_dataset_img, read_latent_conditioner_dataset, LatentConditioner, safe_cuda_initialization
+    # Import models from the models file
+    from modules.latent_conditioner_models import LatentConditionerImg, LatentConditioner, TinyViTLatentConditioner
+    # Import utilities and training functions from the main file  
+    from modules.latent_conditioner import train_latent_conditioner, read_latent_conditioner_dataset_img, read_latent_conditioner_dataset, safe_cuda_initialization
     from modules.plotter import temporal_plotter
     from modules.VAE_network import VAE
     from modules.train import train, print_gpu_mem_checkpoint
@@ -671,24 +674,62 @@ def main():
 
     if latent_conditioner_data_type=='image':
         try:
-            print("Initializing LatentConditioner image model...")
+            print("Initializing LatentConditioner CNN image model...")
             device = safe_cuda_initialization()  # Get safe device
             latent_conditioner = LatentConditionerImg(latent_conditioner_filter, latent_dim_end, input_shape, latent_dim, size2, latent_conditioner_data_shape, dropout_rate=latent_conditioner_dropout_rate).to(device)
         except RuntimeError as e:
-            print(f"Error initializing LatentConditioner image model: {e}")
+            print(f"Error initializing LatentConditioner CNN image model: {e}")
             print("Falling back to CPU-only model")
             latent_conditioner = LatentConditionerImg(latent_conditioner_filter, latent_dim_end, input_shape, latent_dim, size2, latent_conditioner_data_shape, dropout_rate=latent_conditioner_dropout_rate).to("cpu")
+    elif latent_conditioner_data_type=='image_vit':
+        try:
+            print("Initializing LatentConditioner ViT image model...")
+            device = safe_cuda_initialization()  # Get safe device
+            # ViT-specific parameters (can be made configurable later)
+            img_size = int(latent_conditioner_data_shape[0])  # Should be 128
+            patch_size = 16
+            embed_dim = 64
+            num_layers = 2
+            num_heads = 4
+            mlp_ratio = 2
+            latent_conditioner = TinyViTLatentConditioner(
+                latent_dim_end=latent_dim_end, 
+                latent_dim=latent_dim, 
+                size2=size2,
+                img_size=img_size,
+                patch_size=patch_size,
+                embed_dim=embed_dim,
+                num_layers=num_layers,
+                num_heads=num_heads,
+                mlp_ratio=mlp_ratio,
+                dropout=latent_conditioner_dropout_rate
+            ).to(device)
+        except RuntimeError as e:
+            print(f"Error initializing LatentConditioner ViT image model: {e}")
+            print("Falling back to CPU-only model")
+            latent_conditioner = TinyViTLatentConditioner(
+                latent_dim_end=latent_dim_end, 
+                latent_dim=latent_dim, 
+                size2=size2,
+                img_size=img_size,
+                patch_size=patch_size,
+                embed_dim=embed_dim,
+                num_layers=num_layers,
+                num_heads=num_heads,
+                mlp_ratio=mlp_ratio,
+                dropout=latent_conditioner_dropout_rate
+            ).to("cpu")
     elif latent_conditioner_data_type=='csv':
         try:
-            print("Initializing LatentConditioner CSV model...")
+            print("Initializing LatentConditioner MLP CSV model...")
             device = safe_cuda_initialization()  # Get safe device
             latent_conditioner = LatentConditioner(latent_conditioner_filter, latent_dim_end, input_shape, latent_dim, size2, dropout_rate=latent_conditioner_dropout_rate).to(device)
         except RuntimeError as e:
-            print(f"Error initializing LatentConditioner CSV model: {e}")
+            print(f"Error initializing LatentConditioner MLP CSV model: {e}")
             print("Falling back to CPU-only model")
             latent_conditioner = LatentConditioner(latent_conditioner_filter, latent_dim_end, input_shape, latent_dim, size2, dropout_rate=latent_conditioner_dropout_rate).to("cpu")
     else:
-        NotImplementedError('Unrecoginized latent_conditioner_data_type arg')
+        raise NotImplementedError(f'Unrecognized latent_conditioner_data_type: {latent_conditioner_data_type}. Supported options: "image" (CNN), "image_vit" (ViT), "csv" (MLP)')
 
     print(latent_conditioner)
 
