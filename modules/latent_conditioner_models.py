@@ -135,6 +135,7 @@ class ConvBlock(nn.Module):
     def forward(self, x):
         return self.seq(x)
 
+import math
 
 class LatentConditionerImg(nn.Module):
     """CNN-based latent conditioner for image data"""
@@ -195,7 +196,7 @@ class LatentConditionerImg(nn.Module):
         )
 
     def forward(self, x):
-        im_size = 128
+        im_size = int(math.sqrt(x.shape[-1]))
         x = x.reshape(-1, 1, im_size, im_size)
         
         # Shared feature extraction

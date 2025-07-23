@@ -9,11 +9,13 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import natsort
 
+im_size = 32
+
 def read_latent_conditioner_dataset_img(param_dir, param_data_type):
     cur_dir = os.getcwd()
     file_dir = cur_dir+param_dir
 
-    im_size = 128
+    
 
     if param_data_type == ".jpg" or param_data_type == ".png":
         print('Reading image dataset from '+file_dir+'\n')
@@ -99,7 +101,7 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
 
     # EXTREME weight decay for regularization
-    latent_conditioner_optimized = torch.optim.AdamW(latent_conditioner.parameters(), lr=latent_conditioner_lr)
+    latent_conditioner_optimized = torch.optim.AdamW(latent_conditioner.parameters(), lr=latent_conditioner_lr, weight_decay=weight_decay)
     
     # Advanced learning rate scheduling
     warmup_epochs = 10
