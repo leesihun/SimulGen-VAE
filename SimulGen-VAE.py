@@ -817,84 +817,27 @@ def main():
         target_output_np = target_output_np.reshape((-1, num_node))
         target_output_np = np.reshape(target_output_np, [num_time, num_node, 1])
 
-        plt.figure()
-        plt.title('Main latent')
-        plt.plot(y1[0,:], '*', label = 'True')
-        plt.plot(y_pred1[0,:], 'o', label = 'Predicted')
-        plt.legend()
+        for i in range(10):
+            plt.figure()
+            plt.title('Main latent')
+            plt.plot(y1[i,:], '*', label = 'True')
+            plt.plot(y_pred1[i,:], 'o', label = 'Predicted')
+            plt.legend()
 
-        plt.figure()
-        plt.title('Hierarchical latent')
-        plt.plot(y2[0,:], '*', label = 'True')
-        plt.plot(y_pred2[0,0, :], 'o', label = 'Predicted')
-        plt.legend()
-        
-        plt.figure()
-        plt.title('Reconstruction')
-        plt.plot(target_output_np[0,:,0], '.', label = 'Recon')
-        plt.plot(new_x_train[i, :, int(num_time/2)], '.', label = 'True')
-        plt.legend()
+            plt.figure()
+            plt.title('Hierarchical latent')
+            plt.plot(y2[i,:], '*', label = 'True')
+            plt.plot(y_pred2[i,0, :], 'o', label = 'Predicted')
+            plt.legend()
+            
+            plt.figure()
+            plt.title('Reconstruction')
+            plt.plot(target_output_np[i,:,0], '.', label = 'Recon')
+            plt.plot(new_x_train[i, :, int(num_time/2)], '.', label = 'True')
+            plt.legend()
 
-        plt.show()
+            plt.show()
 
-        # Modify the dataset and dataloader creation to use DDP samplers if needed
-        train_dataset = MyBaseDataset(new_x_train, load_all)
-        
-        # If using load_all=True, prefetch data to GPU
-        if load_all:
-            if not is_distributed or dist.get_rank() == 0:
-                print("Prefetching dataset to GPU...")
-            train_dataset.prefetch()
-            if not is_distributed or dist.get_rank() == 0:
-                print("Dataset prefetched to GPU successfully")
-        
-        # Create DDP samplers if using distributed training
-        if is_distributed:
-            train_sampler = DistributedSampler(train_dataset, shuffle=True)
-            train_dataloader = DataLoader(train_dataset, batch_size=batch_size, sampler=train_sampler, 
-                                          pin_memory=not load_all, num_workers=0 if load_all else 4)
-            val_dataloader = train_dataloader  # Use same for validation in this example
-        else:
-            train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, 
-                                         pin_memory=not load_all, num_workers=0 if load_all else 4)
-            val_dataloader = train_dataloader  # Use same for validation in this example
-
-        # Modify the training function call to handle DDP
-        def train_model():
-            # Create model
-            model = VAE(latent_dim, latent_dim_end, num_filter_enc, num_filter_dec, num_node, num_time, lossfun=loss, batch_size=batch_size, small=small)
-            
-            # Move model to device
-            device = torch.device(f"cuda:{args.local_rank}" if is_distributed else "cuda:0" if torch.cuda.is_available() else "cpu")
-            model = model.to(device)
-            
-            # Wrap model in DDP if using distributed training
-            if is_distributed:
-                model = DDP(model, device_ids=[args.local_rank], output_device=args.local_rank)
-                if dist.get_rank() == 0:
-                    print("Model wrapped in DistributedDataParallel")
-            
-            # Train the model
-            loss_print, recon_print, kl_print, loss_val_print = train(
-                n_epochs, batch_size, train_dataloader, val_dataloader, LR, 
-                num_filter_enc, num_filter_dec, num_node, latent_dim, latent_dim_end, 
-                num_time, alpha, loss, small, load_all
-            )
-            
-            return loss_print, recon_print, kl_print, loss_val_print
-        
-        # Train the model
-        loss_print, recon_print, kl_print, loss_val_print = train_model()
-        
-        # Clean up distributed process group
-        if is_distributed:
-            dist.destroy_process_group()
 
 if __name__ == "__main__":
     main()
-
-# Add a helper script for launching DDP training
-"""
-To use DDP training, run:
-python -m torch.distributed.launch --nproc_per_node=NUM_GPUS SimulGen-VAE.py --use_ddp --preset=1 --plot=2 --train_latent_conditioner_only=0 --size=small --load_all=1
-"""
