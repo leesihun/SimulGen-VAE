@@ -142,7 +142,38 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
     writer = SummaryWriter(log_dir = './LatentConditionerRuns', comment = 'LatentConditioner')
 
     loss=0
-    device = "cuda:0" if torch.cuda.is_available() else "cpu"
+    
+    # Enhanced device detection and debugging
+    print("\n🔍 === LATENT CONDITIONER DEVICE DEBUGGING ===")
+    print(f"CUDA available: {torch.cuda.is_available()}")
+    if torch.cuda.is_available():
+        print(f"CUDA device count: {torch.cuda.device_count()}")
+        print(f"Current CUDA device: {torch.cuda.current_device()}")
+        print(f"Device name: {torch.cuda.get_device_name(0)}")
+    
+    # Get the device the model is currently on
+    model_device = next(latent_conditioner.parameters()).device
+    print(f"Latent conditioner model is currently on: {model_device}")
+    
+    # Use the same device as the model (don't override)
+    device = model_device
+    print(f"Using device for training: {device}")
+    
+    # Ensure model is on the correct device
+    if torch.cuda.is_available() and device.type == 'cpu':
+        print("⚠️  WARNING: Model is on CPU but CUDA is available!")
+        print("   Moving model to CUDA...")
+        try:
+            latent_conditioner = latent_conditioner.to('cuda:0')
+            device = torch.device('cuda:0')
+            print(f"✓ Successfully moved model to {device}")
+        except Exception as e:
+            print(f"❌ Failed to move model to CUDA: {e}")
+            print("   Continuing with CPU training")
+            device = torch.device('cpu')
+    
+    print(f"Final training device: {device}")
+    print("============================================\n")
 
     latent_conditioner_optimized = torch.optim.AdamW(latent_conditioner.parameters(), lr=latent_conditioner_lr, weight_decay=weight_decay)
     
@@ -200,6 +231,12 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
             
             if epoch==0 and i==0:
                 print('dataset_shape', x.shape,y1.shape,y2.shape)
+                print(f"🔍 Batch 0 device info:")
+                print(f"  Input x device: {x.device}")
+                print(f"  Target y1 device: {y1.device}")
+                print(f"  Target y2 device: {y2.device}")
+                print(f"  Model device: {next(latent_conditioner.parameters()).device}")
+                print(f"  Training device: {device}")
             
             # Apply outline-preserving augmentations for CNN (only for image data)
             if is_image_data and torch.rand(1) < 0.9:  # 90% chance - much more aggressive

@@ -677,19 +677,26 @@ def main():
     size2 = len(num_filter_enc)-1
 
 
+    # Get optimal device with comprehensive debugging
+    print("\n🔍 === LATENT CONDITIONER INITIALIZATION DEBUGGING ===")
+    device = safe_cuda_initialization()  # Get safe device
+    print(f"Selected device: {device}")
+    print("===================================================\n")
+    
     if latent_conditioner_data_type=='image':
         try:
             print("Initializing LatentConditioner CNN image model...")
-            device = safe_cuda_initialization()  # Get safe device
             latent_conditioner = LatentConditionerImg(latent_conditioner_filter, latent_dim_end, input_shape, latent_dim, size2, latent_conditioner_data_shape, dropout_rate=latent_conditioner_dropout_rate, use_attention=bool(use_spatial_attention)).to(device)
+            print(f"✓ CNN model successfully initialized on {device}")
         except RuntimeError as e:
-            print(f"Error initializing LatentConditioner CNN image model: {e}")
-            print("Falling back to CPU-only model")
-            latent_conditioner = LatentConditionerImg(latent_conditioner_filter, latent_dim_end, input_shape, latent_dim, size2, latent_conditioner_data_shape, dropout_rate=latent_conditioner_dropout_rate, use_attention=bool(use_spatial_attention)).to("cuda:0" if torch.cuda.is_available() else "cpu")
+            print(f"❌ Error initializing LatentConditioner CNN image model: {e}")
+            print("   Falling back to CPU-only model")
+            device = torch.device('cpu')
+            latent_conditioner = LatentConditionerImg(latent_conditioner_filter, latent_dim_end, input_shape, latent_dim, size2, latent_conditioner_data_shape, dropout_rate=latent_conditioner_dropout_rate, use_attention=bool(use_spatial_attention)).to(device)
+            print(f"✓ CNN model fallback initialized on {device}")
     elif latent_conditioner_data_type=='image_vit':
         try:
             print("Initializing LatentConditioner ViT image model...")
-            device = safe_cuda_initialization()  # Get safe device
             # ViT-specific parameters (can be made configurable later)
             img_size = int(latent_conditioner_data_shape[0])  # Should be 128
             patch_size = 16
@@ -709,9 +716,11 @@ def main():
                 mlp_ratio=mlp_ratio,
                 dropout=latent_conditioner_dropout_rate
             ).to(device)
+            print(f"✓ ViT model successfully initialized on {device}")
         except RuntimeError as e:
-            print(f"Error initializing LatentConditioner ViT image model: {e}")
-            print("Falling back to CPU-only model")
+            print(f"❌ Error initializing LatentConditioner ViT image model: {e}")
+            print("   Falling back to CPU-only model")
+            device = torch.device('cpu')
             latent_conditioner = TinyViTLatentConditioner(
                 latent_dim_end=latent_dim_end, 
                 latent_dim=latent_dim, 
@@ -723,16 +732,19 @@ def main():
                 num_heads=num_heads,
                 mlp_ratio=mlp_ratio,
                 dropout=latent_conditioner_dropout_rate
-            ).to("cuda:0" if torch.cuda.is_available() else "cpu")
+            ).to(device)
+            print(f"✓ ViT model fallback initialized on {device}")
     elif latent_conditioner_data_type=='csv':
         try:
             print("Initializing LatentConditioner MLP CSV model...")
-            device = safe_cuda_initialization()  # Get safe device
             latent_conditioner = LatentConditioner(latent_conditioner_filter, latent_dim_end, input_shape, latent_dim, size2, dropout_rate=latent_conditioner_dropout_rate).to(device)
+            print(f"✓ MLP model successfully initialized on {device}")
         except RuntimeError as e:
-            print(f"Error initializing LatentConditioner MLP CSV model: {e}")
-            print("Falling back to CPU-only model")
-            latent_conditioner = LatentConditioner(latent_conditioner_filter, latent_dim_end, input_shape, latent_dim, size2, dropout_rate=latent_conditioner_dropout_rate).to("cuda:0" if torch.cuda.is_available() else "cpu")
+            print(f"❌ Error initializing LatentConditioner MLP CSV model: {e}")
+            print("   Falling back to CPU-only model")
+            device = torch.device('cpu')
+            latent_conditioner = LatentConditioner(latent_conditioner_filter, latent_dim_end, input_shape, latent_dim, size2, dropout_rate=latent_conditioner_dropout_rate).to(device)
+            print(f"✓ MLP model fallback initialized on {device}")
     else:
         raise NotImplementedError(f'Unrecognized latent_conditioner_data_type: {latent_conditioner_data_type}. Supported options: "image" (CNN), "image_vit" (ViT), "csv" (MLP)')
 
@@ -771,8 +783,22 @@ def main():
     latent_x = np.linspace(0, latent_dim_end-1, latent_dim_end)
     latent_hierarchical_x = np.linspace(0, latent_dim-1, latent_dim)
 
-    device = "cuda:0" if torch.cuda.is_available() else "cpu"
-    latent_conditioner = latent_conditioner.to(device)
+    # Ensure latent conditioner is on the correct device for evaluation
+    print(f"\n🔍 Pre-evaluation device check:")
+    print(f"  Model device before: {next(latent_conditioner.parameters()).device}")
+    
+    eval_device = "cuda:0" if torch.cuda.is_available() else "cpu"
+    print(f"  Target evaluation device: {eval_device}")
+    
+    try:
+        latent_conditioner = latent_conditioner.to(eval_device)
+        print(f"  ✓ Model moved to: {next(latent_conditioner.parameters()).device}")
+    except Exception as e:
+        print(f"  ❌ Failed to move model: {e}")
+        eval_device = next(latent_conditioner.parameters()).device
+        print(f"  Using current device: {eval_device}")
+    
+    device = eval_device  # Update device variable for consistency
 
     if VAE in globals():
         del VAE
