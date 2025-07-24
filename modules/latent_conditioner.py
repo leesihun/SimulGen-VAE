@@ -104,27 +104,40 @@ def apply_outline_preserving_augmentations(x, prob=0.5):
 # Add CUDA error handling
 def safe_cuda_initialization():
     """Safely check CUDA availability with error handling and diagnostics"""
+    print(f"🔍 CUDA Initialization Debug:")
+    print(f"   torch.cuda.is_available(): {torch.cuda.is_available()}")
+    
+    if not torch.cuda.is_available():
+        print("❌ CUDA not available, using CPU")
+        return "cpu"
+        
     try:
-        if torch.cuda.is_available():
-            # Test CUDA with a small tensor operation
-            test_tensor = torch.zeros(1).cuda()
-            del test_tensor
-            print("✓ CUDA initialized successfully")
-            return "cuda"
-        else:
-            print("CUDA not available, using CPU")
-            return "cpu"
+        print(f"   CUDA device count: {torch.cuda.device_count()}")
+        print(f"   Current device: {torch.cuda.current_device()}")
+        print(f"   Device name: {torch.cuda.get_device_name(0)}")
+        
+        # Test CUDA with a small tensor operation
+        print("   Testing CUDA tensor allocation...")
+        test_tensor = torch.zeros(1).cuda()
+        print(f"   Test tensor device: {test_tensor.device}")
+        
+        # Test a small operation
+        result = test_tensor + 1
+        print(f"   Test operation result device: {result.device}")
+        
+        del test_tensor, result
+        torch.cuda.empty_cache()  # Clear any cached memory
+        
+        print("✓ CUDA initialized successfully")
+        return "cuda"
+        
     except RuntimeError as e:
-        print(f"⚠️ CUDA initialization error: {e}")
-        print("Falling back to CPU. To enable device side assertions, recompile PyTorch with torch_USA_CUDA_DSA=1")
-        # Get CUDA diagnostic information
-        try:
-            if torch.cuda.is_available():
-                print(f"CUDA device count: {torch.cuda.device_count()}")
-                print(f"Current device: {torch.cuda.current_device()}")
-                print(f"Device name: {torch.cuda.get_device_name(0)}")
-        except:
-            print("Could not retrieve CUDA diagnostic information")
+        print(f"❌ CUDA initialization error: {e}")
+        print("   Falling back to CPU")
+        return "cpu"
+    except Exception as e:
+        print(f"❌ Unexpected CUDA error: {e}")
+        print("   Falling back to CPU")
         return "cpu"
 
 def safe_initialize_weights_He(m):
