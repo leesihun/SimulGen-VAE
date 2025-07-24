@@ -608,7 +608,23 @@ def main():
         print(f"  - out_latent_vectors shape: {out_latent_vectors.shape}")
         print(f"  - out_hierarchical_latent_vectors shape: {out_hierarchical_latent_vectors.shape}")
     
-    latent_conditioner_dataset = LatentConditionerDataset(np.float32(physical_param_input), np.float32(out_latent_vectors), np.float32(out_hierarchical_latent_vectors))
+    # Create GPU-optimized dataset with preloading
+    try:
+        latent_conditioner_dataset = LatentConditionerDataset(
+            np.float32(physical_param_input), 
+            np.float32(out_latent_vectors), 
+            np.float32(out_hierarchical_latent_vectors),
+            preload_gpu=True  # Enable GPU preloading for maximum speed
+        )
+    except Exception as e:
+        print(f"Failed to create GPU-preloaded dataset: {e}")
+        print("Falling back to CPU dataset with pinned memory...")
+        latent_conditioner_dataset = LatentConditionerDataset(
+            np.float32(physical_param_input), 
+            np.float32(out_latent_vectors), 
+            np.float32(out_hierarchical_latent_vectors),
+            preload_gpu=False
+        )
 
     # Debug: Print shapes of LatentConditioner dataset inputs
     print(f"LatentConditioner dataset inputs:")
@@ -635,6 +651,10 @@ def main():
     # Optimize LatentConditioner DataLoaders with intelligent worker detection
     latent_conditioner_optimal_workers = 0#get_optimal_workers(latent_conditioner_dataset_size, False, latent_conditioner_batch_size)  # LatentConditioner data is not load_all
     
+    # Optimize DataLoader settings based on whether data is GPU-preloaded
+    is_gpu_preloaded = hasattr(latent_conditioner_dataset, 'on_gpu') and latent_conditioner_dataset.on_gpu
+    pin_memory_setting = False if is_gpu_preloaded else True  # No need for pinning if already on GPU
+    
     if latent_conditioner_optimal_workers == 0:
         # Single-threaded LatentConditioner DataLoaders
         latent_conditioner_dataloader = torch.utils.data.DataLoader(
@@ -642,16 +662,21 @@ def main():
             batch_size=latent_conditioner_batch_size, 
             shuffle=True, 
             num_workers=0,
-            pin_memory=True
+            pin_memory=pin_memory_setting,
+            drop_last=True,  # Ensures consistent batch sizes
+            persistent_workers=False
         )
         latent_conditioner_validation_dataloader = torch.utils.data.DataLoader(
             latent_conditioner_validation_dataset, 
             batch_size=latent_conditioner_batch_size, 
             shuffle=False, 
             num_workers=0,
-            pin_memory=True
+            pin_memory=pin_memory_setting,
+            drop_last=False,
+            persistent_workers=False
         )
-        print(f"   ✓ LatentConditioner DataLoader: Single-threaded ({latent_conditioner_dataset_size} samples)")
+        gpu_status = "GPU-preloaded" if is_gpu_preloaded else "CPU with pinned memory"
+        print(f"   ✓ LatentConditioner DataLoader: Single-threaded, {gpu_status} ({latent_conditioner_dataset_size} samples)")
     else:
         # Multi-threaded LatentConditioner DataLoaders
         latent_conditioner_dataloader = torch.utils.data.DataLoader(

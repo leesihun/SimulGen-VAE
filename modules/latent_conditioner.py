@@ -279,35 +279,43 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
         for i, (x, y1, y2) in enumerate(latent_conditioner_dataloader):
             batch_start = time.time()
             
-            # For image data, keep as flattened - model will handle reshaping internally
-            # For parametric data, keep as 1D vector (no reshaping needed)
-            
-            # GPU-optimized outline-preserving augmentations (only for image data)
-            if is_image_data and torch.rand(1, device=x.device) < 0.9:  # 90% chance
-                aug_start = time.time()
-                # Temporarily reshape to 2D for augmentation
-                im_size = int(math.sqrt(x.shape[-1]))
-                x_2d = x.reshape(-1, im_size, im_size)
-                x_2d = apply_outline_preserving_augmentations(x_2d, prob=0.9)  # GPU-optimized
-                x = x_2d.reshape(x.shape[0], -1)  # Flatten back
-                aug_times.append(time.time() - aug_start)
-                
-            # GPU-optimized gentle mixup augmentation
-            if torch.rand(1, device=x.device) < 0.15 and x.size(0) > 1:  # 15% chance
-                alpha = 0.2  # Gentle mixing to preserve outline features
-                # Generate beta distribution sample on GPU
-                lam = torch.tensor(np.random.beta(alpha, alpha), device=x.device, dtype=x.dtype)
-                batch_size = x.size(0)
-                index = torch.randperm(batch_size, device=x.device)
-                
-                # Vectorized mixup operations (all on GPU)
-                x = lam * x + (1 - lam) * x[index, :]
-                y1 = lam * y1 + (1 - lam) * y1[index, :]
-                y2 = lam * y2 + (1 - lam) * y2[index, :]
-            
-            # Move data to the same device as the model with error handling
+            # OPTIMIZED: Only move data to GPU if not already there
             try:
-                x, y1, y2 = x.to(device), y1.to(device), y2.to(device)
+                if x.device != device:
+                    x, y1, y2 = x.to(device, non_blocking=True), y1.to(device, non_blocking=True), y2.to(device, non_blocking=True)
+                    if epoch == 0 and i == 0:
+                        print(f"📊 Data transferred from {x.device} to {device}")
+                else:
+                    if epoch == 0 and i == 0:
+                        print(f"📊 Data already on {device} - no transfer needed!")
+                
+                # GPU-optimized outline-preserving augmentations (only for image data)  
+                if is_image_data and torch.rand(1, device=x.device) < 0.9:  # 90% chance
+                    aug_start = time.time()
+                    # Temporarily reshape to 2D for augmentation
+                    im_size = int(math.sqrt(x.shape[-1]))
+                    x_2d = x.reshape(-1, im_size, im_size)
+                    x_2d = apply_outline_preserving_augmentations(x_2d, prob=0.9)  # GPU-optimized
+                    x = x_2d.reshape(x.shape[0], -1)  # Flatten back
+                    aug_times.append(time.time() - aug_start)
+                    
+                # GPU-optimized gentle mixup augmentation
+                if torch.rand(1, device=x.device) < 0.15 and x.size(0) > 1:  # 15% chance
+                    alpha = 0.2  # Gentle mixing to preserve outline features
+                    # Generate beta distribution sample on GPU
+                    lam = torch.tensor(np.random.beta(alpha, alpha), device=x.device, dtype=x.dtype)
+                    batch_size = x.size(0)
+                    index = torch.randperm(batch_size, device=x.device)
+                    
+                    # Vectorized mixup operations (all on GPU)
+                    x = lam * x + (1 - lam) * x[index, :]
+                    y1 = lam * y1 + (1 - lam) * y1[index, :]
+                    y2 = lam * y2 + (1 - lam) * y2[index, :]
+                
+                # GPU-optimized Gaussian noise for regularization (very light for outline data)
+                if torch.rand(1, device=x.device) < 0.1:  # 10% chance
+                    noise = torch.randn_like(x) * 0.01  # Very light noise to preserve outlines
+                    x = x + noise
                 
                 # Debug device placement for first batch
                 if epoch == 0 and i == 0:
@@ -328,11 +336,6 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
                     print("   ✓ Optimizer updated for CPU parameters")
                 else:
                     raise  # Re-raise if it's not a CUDA issue
-            
-            # GPU-optimized Gaussian noise for regularization (very light for outline data)
-            if torch.rand(1, device=x.device) < 0.1:  # 10% chance
-                noise = torch.randn_like(x) * 0.01  # Very light noise to preserve outlines
-                x = x + noise
             
             latent_conditioner_optimized.zero_grad(set_to_none=True)
 

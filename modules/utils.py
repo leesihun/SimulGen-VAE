@@ -152,40 +152,60 @@ def safe_to_device(tensor, device):
             raise e
 
 class LatentConditionerDataset(Dataset):
-    """Dataset for LatentConditioner training with improved error handling."""
-    def __init__(self, input_data, output_data1, output_data2):
-        self.input_data = input_data
-        self.output_data1 = output_data1
-        self.output_data2 = output_data2
-        
-        # Check for NaN values
+    """GPU-optimized dataset for LatentConditioner training - eliminates CPU bottleneck."""
+    def __init__(self, input_data, output_data1, output_data2, preload_gpu=True):
+        # Clean NaN values
         if np.isnan(input_data).any():
             print("Warning: NaN values detected in input_data, replacing with zeros")
-            self.input_data = np.nan_to_num(input_data, nan=0.0)
+            input_data = np.nan_to_num(input_data, nan=0.0)
         
         if np.isnan(output_data1).any():
             print("Warning: NaN values detected in output_data1, replacing with zeros")
-            self.output_data1 = np.nan_to_num(output_data1, nan=0.0)
+            output_data1 = np.nan_to_num(output_data1, nan=0.0)
         
         if np.isnan(output_data2).any():
             print("Warning: NaN values detected in output_data2, replacing with zeros")
-            self.output_data2 = np.nan_to_num(output_data2, nan=0.0)
+            output_data2 = np.nan_to_num(output_data2, nan=0.0)
+        
+        # CRITICAL OPTIMIZATION: Pre-convert to tensors and preload to GPU if possible
+        if preload_gpu and torch.cuda.is_available():
+            try:
+                print("🚀 Preloading LatentConditioner data to GPU for maximum speed...")
+                self.input_data = torch.from_numpy(input_data).float().cuda()
+                self.output_data1 = torch.from_numpy(output_data1).float().cuda() 
+                self.output_data2 = torch.from_numpy(output_data2).float().cuda()
+                self.on_gpu = True
+                print(f"✅ Successfully preloaded {len(input_data)} samples to GPU")
+                print(f"   GPU memory used: {torch.cuda.memory_allocated()/1024**3:.2f} GB")
+            except RuntimeError as e:
+                print(f"⚠️ Failed to preload to GPU ({e}), using CPU tensors with pinned memory")
+                self.input_data = torch.from_numpy(input_data).float().pin_memory()
+                self.output_data1 = torch.from_numpy(output_data1).float().pin_memory()
+                self.output_data2 = torch.from_numpy(output_data2).float().pin_memory()
+                self.on_gpu = False
+        else:
+            # Fallback: Use pinned memory for faster CPU->GPU transfer
+            self.input_data = torch.from_numpy(input_data).float().pin_memory()
+            self.output_data1 = torch.from_numpy(output_data1).float().pin_memory()
+            self.output_data2 = torch.from_numpy(output_data2).float().pin_memory()
+            self.on_gpu = False
     
     def __len__(self):
         return len(self.input_data)
     
     def __getitem__(self, idx):
         try:
-            x = torch.FloatTensor(self.input_data[idx])
-            y1 = torch.FloatTensor(self.output_data1[idx])
-            y2 = torch.FloatTensor(self.output_data2[idx])
+            # Data is already tensors - just index them (extremely fast)
+            x = self.input_data[idx]
+            y1 = self.output_data1[idx] 
+            y2 = self.output_data2[idx]
             return x, y1, y2
         except Exception as e:
-            print(f"Error getting PINN dataset item {idx}: {e}")
+            print(f"Error getting LatentConditioner dataset item {idx}: {e}")
             # Return zeros as fallback
-            return torch.zeros_like(torch.FloatTensor(self.input_data[0])), \
-                   torch.zeros_like(torch.FloatTensor(self.output_data1[0])), \
-                   torch.zeros_like(torch.FloatTensor(self.output_data2[0]))
+            return torch.zeros_like(self.input_data[0]), \
+                   torch.zeros_like(self.output_data1[0]), \
+                   torch.zeros_like(self.output_data2[0])
 
 def get_optimal_workers(dataset_size, is_load_all=False, batch_size=32):
     """Determine optimal number of DataLoader workers based on system and dataset."""
