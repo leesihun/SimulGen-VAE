@@ -11,8 +11,8 @@ RESERVED	0
 Training_epochs	10002
 Batch_size	16
 LearningR	0.0005
-Latent_dim	4	# Hierarchical latent Dim1
-Latent_dim_end	8 # Main latent Dim1
+Latent_dim	2	# Hierarchical latent Dim1
+Latent_dim_end	2 # Main latent Dim1
 Loss_type	1	# 1: MSE, 2, MAE
 Stretch	0
 RESERVED	0
