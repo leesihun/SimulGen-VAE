@@ -544,7 +544,7 @@ def main():
         print('Training LatentConditioner only...')
         latent_vectors = np.load('model_save/latent_vectors.npy')
         hierarchical_latent_vectors = np.load('model_save/xs.npy')
-        device = "cpu"
+        device = "cuda:0" if torch.cuda.is_available() else "cpu"
         VAE_trained = torch.load('model_save/SimulGen-VAE', map_location= device, weights_only=False)
         VAE = VAE_trained.eval()
 
@@ -771,7 +771,7 @@ def main():
     latent_x = np.linspace(0, latent_dim_end-1, latent_dim_end)
     latent_hierarchical_x = np.linspace(0, latent_dim-1, latent_dim)
 
-    device = "cpu"
+    device = "cuda:0" if torch.cuda.is_available() else "cpu"
     latent_conditioner = latent_conditioner.to(device)
 
     if VAE in globals():
