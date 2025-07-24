@@ -388,7 +388,26 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
             epoch_loss_y2 += B.item()
             num_batches += 1
             
+            # Monitor GPU utilization during backward pass
+            if epoch == 0 and i == 0:
+                print(f"🔍 About to run backward pass:")
+                print(f"   Loss tensor device: {loss.device}")
+                if torch.cuda.is_available():
+                    print(f"   GPU memory before backward: {torch.cuda.memory_allocated()/1024**3:.2f} GB")
+            
             loss.backward()
+            
+            if epoch == 0 and i == 0:
+                if torch.cuda.is_available():
+                    print(f"   GPU memory after backward: {torch.cuda.memory_allocated()/1024**3:.2f} GB")
+                    print(f"   GPU memory cached: {torch.cuda.memory_reserved()/1024**3:.2f} GB")
+                    
+                # Check if gradients are on GPU
+                first_param = next(latent_conditioner.parameters())
+                if first_param.grad is not None:
+                    print(f"   First parameter gradient device: {first_param.grad.device}")
+                else:
+                    print(f"   ❌ No gradients found after backward pass!")
             
             # Gradient clipping for training stability - prevents exploding gradients
             torch.nn.utils.clip_grad_norm_(latent_conditioner.parameters(), max_norm=1.0)
@@ -513,11 +532,18 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
         current_lr = latent_conditioner_optimized.param_groups[0]['lr']
         scheduler_info = f"Warmup" if epoch < warmup_epochs else f"Cosine"
         
-        print('[%d/%d]\tTrain: %.4E (y1:%.4E, y2:%.4E), Val: %.4E (y1:%.4E, y2:%.4E), LR: %.2E (%s), ETA: %.2f h, Patience: %d/%d' % 
+        # Add GPU utilization info every 10 epochs
+        gpu_info = ""
+        if torch.cuda.is_available() and epoch % 10 == 0:
+            gpu_mem_used = torch.cuda.memory_allocated()/1024**3
+            gpu_mem_cached = torch.cuda.memory_reserved()/1024**3
+            gpu_info = f", GPU: {gpu_mem_used:.1f}GB/{gpu_mem_cached:.1f}GB"
+            
+        print('[%d/%d]\tTrain: %.4E (y1:%.4E, y2:%.4E), Val: %.4E (y1:%.4E, y2:%.4E), LR: %.2E (%s), ETA: %.2f h, Patience: %d/%d%s' % 
               (epoch, latent_conditioner_epoch, avg_train_loss, avg_train_loss_y1, avg_train_loss_y2, 
                avg_val_loss, avg_val_loss_y1, avg_val_loss_y2,
                current_lr, scheduler_info,
-               (latent_conditioner_epoch-epoch)*epoch_duration/3600, patience_counter, patience))
+               (latent_conditioner_epoch-epoch)*epoch_duration/3600, patience_counter, patience, gpu_info))
                
         # Early stopping
         if patience_counter >= patience:
