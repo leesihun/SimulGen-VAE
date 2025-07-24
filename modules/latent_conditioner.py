@@ -179,7 +179,7 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
     latent_conditioner = latent_conditioner.to(device)
     
     latent_conditioner.apply(safe_initialize_weights_He)
-    latent_conditioner.apply(add_sn)  # Re-enabled for regularization
+    # latent_conditioner.apply(add_sn)  # Temporarily disabled for testing
 
     # Data analysis for first epoch
     data_analyzed = False
@@ -202,16 +202,16 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
                 print('dataset_shape', x.shape,y1.shape,y2.shape)
             
             # Apply outline-preserving augmentations for CNN (only for image data)
-            if is_image_data and torch.rand(1) < 0.6:  # 60% chance - more conservative for outlines
+            if is_image_data and torch.rand(1) < 0.9:  # 90% chance - much more aggressive
                 # Temporarily reshape to 2D for augmentation
                 im_size = int(math.sqrt(x.shape[-1]))
                 x_2d = x.reshape(-1, im_size, im_size)
-                x_2d = apply_outline_preserving_augmentations(x_2d, prob=0.6)
+                x_2d = apply_outline_preserving_augmentations(x_2d, prob=0.9)  # Much stronger
                 x = x_2d.reshape(x.shape[0], -1)  # Flatten back
                 
             # EXTREME mixup augmentation for better generalization  
-            if torch.rand(1) < 0.2 and x.size(0) > 1:  # 20% chance
-                alpha = 0.8  # Much more aggressive mixing
+            if torch.rand(1) < 0.4 and x.size(0) > 1:  # 40% chance - doubled
+                alpha = 1.0  # Even more aggressive mixing
                 lam = np.random.beta(alpha, alpha)
                 batch_size = x.size(0)
                 index = torch.randperm(batch_size).to(x.device)
