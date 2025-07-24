@@ -257,7 +257,26 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
                 y1 = lam * y1 + (1 - lam) * y1[index, :]
                 y2 = lam * y2 + (1 - lam) * y2[index, :]
             
-            x, y1, y2 = x.to(device), y1.to(device), y2.to(device)
+            # Move data to the same device as the model with error handling
+            try:
+                x, y1, y2 = x.to(device), y1.to(device), y2.to(device)
+                
+                # Debug device placement for first batch
+                if epoch == 0 and i == 0:
+                    print(f"✓ Data successfully moved to {device}")
+                    print(f"  x device: {x.device}, y1 device: {y1.device}, y2 device: {y2.device}")
+                    
+            except RuntimeError as e:
+                print(f"❌ Error moving data to device {device}: {e}")
+                # If GPU transfer fails, ensure model and data are both on CPU
+                if device.type == 'cuda':
+                    print("   Moving model to CPU to match data...")
+                    latent_conditioner = latent_conditioner.to('cpu')
+                    device = torch.device('cpu')
+                    x, y1, y2 = x.to(device), y1.to(device), y2.to(device)
+                    print(f"   ✓ Both model and data now on {device}")
+                else:
+                    raise  # Re-raise if it's not a CUDA issue
             
             # Add STRONG Gaussian noise for regularization (reduced since we have image augmentations)
             if torch.rand(1) < 0.1:  # Reduced from 20% to 10% chance
@@ -325,7 +344,24 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
             for i, (x_val, y1_val, y2_val) in enumerate(latent_conditioner_validation_dataloader):
                 # For image data, keep as flattened - model will handle reshaping internally
                 # For parametric data, keep as 1D vector
-                x_val, y1_val, y2_val = x_val.to(device), y1_val.to(device), y2_val.to(device)
+                try:
+                    x_val, y1_val, y2_val = x_val.to(device), y1_val.to(device), y2_val.to(device)
+                    
+                    # Debug device placement for first validation batch
+                    if epoch == 0 and i == 0:
+                        print(f"✓ Validation data moved to {device}")
+                        
+                except RuntimeError as e:
+                    print(f"❌ Error moving validation data to device {device}: {e}")
+                    # Handle device mismatch in validation
+                    if device.type == 'cuda':
+                        print("   Moving model to CPU for validation...")
+                        latent_conditioner = latent_conditioner.to('cpu')
+                        device = torch.device('cpu')
+                        x_val, y1_val, y2_val = x_val.to(device), y1_val.to(device), y2_val.to(device)
+                        print(f"   ✓ Validation now on {device}")
+                    else:
+                        raise
                 
                 y_pred1_val, y_pred2_val = latent_conditioner(x_val)
                 
