@@ -168,6 +168,27 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
     model_device = next(latent_conditioner.parameters()).device
     print(f"Latent conditioner model is currently on: {model_device}")
     
+    # CRITICAL: Check if model parameters are actually on different devices
+    all_devices = set()
+    for name, param in latent_conditioner.named_parameters():
+        all_devices.add(param.device)
+        if len(all_devices) == 1:
+            continue  # All on same device so far
+        else:
+            print(f"🚨 DEVICE MISMATCH DETECTED!")
+            print(f"   Parameter '{name}' is on {param.device}")
+            print(f"   But other parameters are on {all_devices}")
+            break
+    
+    if len(all_devices) > 1:
+        print(f"❌ Model has parameters on multiple devices: {all_devices}")
+        print("   This will cause training to run on CPU regardless of data placement!")
+        print("   Moving ALL parameters to cuda:0...")
+        latent_conditioner = latent_conditioner.to('cuda:0')
+        model_device = torch.device('cuda:0')
+    else:
+        print(f"✓ All model parameters are on: {model_device}")
+    
     # Use the same device as the model (don't override)
     device = model_device
     print(f"Using device for training: {device}")
@@ -188,7 +209,21 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
     print(f"Final training device: {device}")
     print("============================================\n")
 
+    # Create optimizer AFTER ensuring model is on correct device
     latent_conditioner_optimized = torch.optim.AdamW(latent_conditioner.parameters(), lr=latent_conditioner_lr, weight_decay=weight_decay)
+    
+    # Check if optimizer parameters are on GPU
+    optimizer_device = next(iter(latent_conditioner_optimized.param_groups[0]['params'])).device
+    print(f"🔍 Optimizer tracking parameters on: {optimizer_device}")
+    
+    if optimizer_device != device:
+        print(f"❌ Optimizer device mismatch! Optimizer: {optimizer_device}, Training: {device}")
+        print("   Recreating optimizer with correct device parameters...")
+        latent_conditioner_optimized = torch.optim.AdamW(latent_conditioner.parameters(), lr=latent_conditioner_lr, weight_decay=weight_decay)
+        optimizer_device = next(iter(latent_conditioner_optimized.param_groups[0]['params'])).device
+        print(f"✓ Optimizer now tracking parameters on: {optimizer_device}")
+    else:
+        print(f"✓ Optimizer and training devices match: {device}")
     
     # Advanced learning rate scheduling
     warmup_epochs = 10
@@ -301,7 +336,25 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
             
             latent_conditioner_optimized.zero_grad(set_to_none=True)
 
+            # Critical check: Monitor where forward pass actually executes
+            if epoch == 0 and i == 0:
+                print(f"🔍 About to run forward pass:")
+                print(f"   Input x device: {x.device}, shape: {x.shape}")
+                print(f"   Model parameters device: {next(latent_conditioner.parameters()).device}")
+                
             y_pred1, y_pred2 = latent_conditioner(x)
+            
+            # Verify output tensors are on correct device
+            if epoch == 0 and i == 0:
+                print(f"🔍 Forward pass completed:")
+                print(f"   Output y_pred1 device: {y_pred1.device}")
+                print(f"   Output y_pred2 device: {y_pred2.device}")
+                print(f"   Expected device: {device}")
+                
+                if y_pred1.device != device or y_pred2.device != device:
+                    print(f"❌ OUTPUT DEVICE MISMATCH! This confirms model is computing on wrong device!")
+                else:
+                    print(f"✅ Forward pass executed on correct device: {device}")
             
             # Analyze predictions for first few batches
             if not data_analyzed and epoch == 0 and i < 3:
