@@ -685,7 +685,7 @@ def main():
         except RuntimeError as e:
             print(f"Error initializing LatentConditioner CNN image model: {e}")
             print("Falling back to CPU-only model")
-            latent_conditioner = LatentConditionerImg(latent_conditioner_filter, latent_dim_end, input_shape, latent_dim, size2, latent_conditioner_data_shape, dropout_rate=latent_conditioner_dropout_rate, use_attention=bool(use_spatial_attention)).to("cpu")
+            latent_conditioner = LatentConditionerImg(latent_conditioner_filter, latent_dim_end, input_shape, latent_dim, size2, latent_conditioner_data_shape, dropout_rate=latent_conditioner_dropout_rate, use_attention=bool(use_spatial_attention)).to("cuda:0" if torch.cuda.is_available() else "cpu")
     elif latent_conditioner_data_type=='image_vit':
         try:
             print("Initializing LatentConditioner ViT image model...")
@@ -723,7 +723,7 @@ def main():
                 num_heads=num_heads,
                 mlp_ratio=mlp_ratio,
                 dropout=latent_conditioner_dropout_rate
-            ).to("cpu")
+            ).to("cuda:0" if torch.cuda.is_available() else "cpu")
     elif latent_conditioner_data_type=='csv':
         try:
             print("Initializing LatentConditioner MLP CSV model...")
@@ -732,7 +732,7 @@ def main():
         except RuntimeError as e:
             print(f"Error initializing LatentConditioner MLP CSV model: {e}")
             print("Falling back to CPU-only model")
-            latent_conditioner = LatentConditioner(latent_conditioner_filter, latent_dim_end, input_shape, latent_dim, size2, dropout_rate=latent_conditioner_dropout_rate).to("cpu")
+            latent_conditioner = LatentConditioner(latent_conditioner_filter, latent_dim_end, input_shape, latent_dim, size2, dropout_rate=latent_conditioner_dropout_rate).to("cuda:0" if torch.cuda.is_available() else "cpu")
     else:
         raise NotImplementedError(f'Unrecognized latent_conditioner_data_type: {latent_conditioner_data_type}. Supported options: "image" (CNN), "image_vit" (ViT), "csv" (MLP)')
 

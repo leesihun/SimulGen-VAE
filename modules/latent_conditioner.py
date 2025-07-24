@@ -209,9 +209,9 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
                 x_2d = apply_outline_preserving_augmentations(x_2d, prob=0.9)  # Much stronger
                 x = x_2d.reshape(x.shape[0], -1)  # Flatten back
                 
-            # EXTREME mixup augmentation for better generalization  
-            if torch.rand(1) < 0.4 and x.size(0) > 1:  # 40% chance - doubled
-                alpha = 1.0  # Even more aggressive mixing
+            # Gentle mixup augmentation for better generalization  
+            if torch.rand(1) < 0.15 and x.size(0) > 1:  # Reduced from 40% to 15% chance
+                alpha = 0.2  # Much gentler mixing (was 1.0)
                 lam = np.random.beta(alpha, alpha)
                 batch_size = x.size(0)
                 index = torch.randperm(batch_size).to(x.device)
