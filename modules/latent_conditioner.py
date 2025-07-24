@@ -273,8 +273,11 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
                     print("   Moving model to CPU to match data...")
                     latent_conditioner = latent_conditioner.to('cpu')
                     device = torch.device('cpu')
+                    # Update optimizer to use CPU parameters
+                    latent_conditioner_optimized = torch.optim.AdamW(latent_conditioner.parameters(), lr=latent_conditioner_lr, weight_decay=weight_decay)
                     x, y1, y2 = x.to(device), y1.to(device), y2.to(device)
                     print(f"   ✓ Both model and data now on {device}")
+                    print("   ✓ Optimizer updated for CPU parameters")
                 else:
                     raise  # Re-raise if it's not a CUDA issue
             
@@ -358,8 +361,11 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
                         print("   Moving model to CPU for validation...")
                         latent_conditioner = latent_conditioner.to('cpu')
                         device = torch.device('cpu')
+                        # Update optimizer for CPU parameters
+                        latent_conditioner_optimized = torch.optim.AdamW(latent_conditioner.parameters(), lr=latent_conditioner_lr, weight_decay=weight_decay)
                         x_val, y1_val, y2_val = x_val.to(device), y1_val.to(device), y2_val.to(device)
                         print(f"   ✓ Validation now on {device}")
+                        print("   ✓ Optimizer updated for CPU parameters")
                     else:
                         raise
                 
