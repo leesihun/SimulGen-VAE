@@ -31,7 +31,9 @@ class DropBlock2D(nn.Module):
         block_mask = -F.max_pool2d(-block_mask, kernel_size=self.block_size,
                                   stride=1, padding=self.block_size // 2)
         
-        normalize_scale = (block_mask.numel() / block_mask.sum())
+        # Fix division by zero that causes NaN
+        mask_sum = block_mask.sum()
+        normalize_scale = block_mask.numel() / torch.clamp(mask_sum, min=1e-8)
         return x * block_mask * normalize_scale
 
 
@@ -63,9 +65,12 @@ class ResidualBlock(nn.Module):
         super(ResidualBlock, self).__init__()
         
         self.conv1 = spectral_norm(nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1, bias=False))
-        self.gn1 = nn.GroupNorm(min(32, out_channels // 4), out_channels)
+        # Fix GroupNorm to prevent NaN with small channel counts
+        num_groups1 = min(32, max(1, out_channels // 4))
+        self.gn1 = nn.GroupNorm(num_groups1, out_channels, eps=1e-6)
         self.conv2 = spectral_norm(nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False))
-        self.gn2 = nn.GroupNorm(min(32, out_channels // 4), out_channels)
+        num_groups2 = min(32, max(1, out_channels // 4))
+        self.gn2 = nn.GroupNorm(num_groups2, out_channels, eps=1e-6)
         
         self.downsample = downsample
         self.silu = nn.SiLU(inplace=True)
@@ -116,7 +121,9 @@ class LatentConditionerImg(nn.Module):
         
         # Initial strided convolution (replaces conv + maxpool)
         self.conv1 = spectral_norm(nn.Conv2d(1, latent_conditioner_filter[0], kernel_size=7, stride=2, padding=3, bias=False))
-        self.gn1 = nn.GroupNorm(min(32, latent_conditioner_filter[0] // 4), latent_conditioner_filter[0])
+        # Fix GroupNorm to prevent NaN with small channel counts
+        num_groups_init = min(32, max(1, latent_conditioner_filter[0] // 4))
+        self.gn1 = nn.GroupNorm(num_groups_init, latent_conditioner_filter[0], eps=1e-6)
         self.silu = nn.SiLU(inplace=True)
         self.initial_dropblock = DropBlock2D(drop_rate=dropout_rate)
         
@@ -213,7 +220,7 @@ class LatentConditionerImg(nn.Module):
         if stride != 1 or in_channels != out_channels:
             downsample = nn.Sequential(
                 spectral_norm(nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=stride, bias=False)),
-                nn.GroupNorm(min(32, out_channels // 4), out_channels),
+                nn.GroupNorm(min(32, max(1, out_channels // 4)), out_channels, eps=1e-6),
             )
         
         layers = []
@@ -227,11 +234,21 @@ class LatentConditionerImg(nn.Module):
         # Reshape input to image format
         x = x.reshape([-1, 1, int(math.sqrt(x.shape[-1])), int(math.sqrt(x.shape[-1]))])
         
+        # Check for NaN in input
+        if torch.isnan(x).any():
+            print(f"🚨 NaN detected in input to LatentConditionerImg")
+            x = torch.nan_to_num(x, nan=0.0)
+        
         # Initial strided convolution
         x = self.conv1(x)
         x = self.gn1(x)
         x = self.silu(x)
         x = self.initial_dropblock(x)
+        
+        # Check for NaN after initial layers
+        if torch.isnan(x).any():
+            print(f"🚨 NaN detected after initial conv/norm layers")
+            x = torch.nan_to_num(x, nan=0.0)
         
         # Collect multi-scale features
         multi_scale_features = []
@@ -261,6 +278,14 @@ class LatentConditionerImg(nn.Module):
         latent_main = self.latent_head(latent_encoded)
         xs_main = self.xs_head(xs_encoded)
         xs_main = xs_main.unflatten(1, (self.size2, self.latent_dim))
+        
+        # Final NaN check and replacement
+        if torch.isnan(latent_main).any():
+            print(f"🚨 NaN detected in latent_main output - replacing with zeros")
+            latent_main = torch.nan_to_num(latent_main, nan=0.0)
+        if torch.isnan(xs_main).any():
+            print(f"🚨 NaN detected in xs_main output - replacing with zeros")
+            xs_main = torch.nan_to_num(xs_main, nan=0.0)
         
         # Generate uncertainty estimates
         latent_uncertainty = self.latent_uncertainty(latent_encoded)
