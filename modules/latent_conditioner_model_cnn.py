@@ -275,16 +275,34 @@ class LatentConditionerImg(nn.Module):
                 print(f"✅ {name}: OK (min={param.min():.6f}, max={param.max():.6f})")
     
     def _add_weight_monitoring_hooks(self):
-        """Add hooks to detect when weights become NaN during training"""
-        def check_weight_nan_hook(module, grad_input, grad_output):
+        """Add hooks to monitor gradients and detect weight corruption"""
+        def gradient_monitor_hook(module, grad_input, grad_output):
+            if hasattr(module, 'weight') and module.weight.grad is not None:
+                grad_norm = module.weight.grad.norm()
+                grad_max = module.weight.grad.abs().max()
+                
+                print(f"🔍 {module.__class__.__name__} gradient: norm={grad_norm:.6f}, max={grad_max:.6f}")
+                
+                # Check for exploding gradients
+                if grad_norm > 1000 or grad_max > 1000:
+                    print(f"🚨 EXPLODING GRADIENT in {module.__class__.__name__}!")
+                    print(f"   Gradient norm: {grad_norm:.2f}, max: {grad_max:.2f}")
+                    # Clip the exploding gradient
+                    torch.nn.utils.clip_grad_norm_([module.weight], max_norm=1.0)
+                    print(f"   Clipped gradient norm: {module.weight.grad.norm():.6f}")
+                
+                # Check for NaN gradients
+                if torch.isnan(module.weight.grad).any():
+                    print(f"🚨 NaN GRADIENT in {module.__class__.__name__}!")
+                    module.weight.grad.data.zero_()
+            
+            # Check weights after gradient update (this runs after optimizer.step())
             if hasattr(module, 'weight') and torch.isnan(module.weight).any():
-                print(f"🚨 WEIGHT CORRUPTION: {module.__class__.__name__} weights became NaN during training!")
+                print(f"🚨 WEIGHT CORRUPTION: {module.__class__.__name__} weights became NaN after gradient update!")
                 module.weight.data = torch.where(torch.isnan(module.weight), torch.zeros_like(module.weight), module.weight)
         
-        # Add hooks to critical layers
-        self.conv1.register_backward_hook(check_weight_nan_hook)
-        for layer in self.layers:
-            layer.register_backward_hook(check_weight_nan_hook)
+        # Monitor conv1 gradients closely
+        self.conv1.register_backward_hook(gradient_monitor_hook)
     
     def _make_layer(self, in_channels, out_channels, blocks, stride=1, use_attention=False, drop_rate=0.1):
         downsample = None

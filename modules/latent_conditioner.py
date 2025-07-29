@@ -210,7 +210,13 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
     print("============================================\n")
 
     # Create optimizer AFTER ensuring model is on correct device
-    latent_conditioner_optimized = torch.optim.AdamW(latent_conditioner.parameters(), lr=latent_conditioner_lr, weight_decay=weight_decay)
+    # Reduce learning rate if using small initialization to prevent gradient explosion
+    safe_lr = latent_conditioner_lr
+    if hasattr(latent_conditioner, '_initialize_weights'):
+        safe_lr = min(latent_conditioner_lr, 1e-5)  # Cap at 1e-5 for CNN with small init
+        print(f"📊 Using reduced learning rate {safe_lr:.2e} for CNN with small weight initialization")
+    
+    latent_conditioner_optimized = torch.optim.AdamW(latent_conditioner.parameters(), lr=safe_lr, weight_decay=weight_decay)
     
     # Check if optimizer parameters are on GPU
     optimizer_device = next(iter(latent_conditioner_optimized.param_groups[0]['params'])).device
@@ -219,7 +225,7 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
     if optimizer_device != device:
         print(f"❌ Optimizer device mismatch! Optimizer: {optimizer_device}, Training: {device}")
         print("   Recreating optimizer with correct device parameters...")
-        latent_conditioner_optimized = torch.optim.AdamW(latent_conditioner.parameters(), lr=latent_conditioner_lr, weight_decay=weight_decay)
+        latent_conditioner_optimized = torch.optim.AdamW(latent_conditioner.parameters(), lr=safe_lr, weight_decay=weight_decay)
         optimizer_device = next(iter(latent_conditioner_optimized.param_groups[0]['params'])).device
         print(f"✓ Optimizer now tracking parameters on: {optimizer_device}")
     else:
