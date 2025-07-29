@@ -21,10 +21,10 @@ class DropBlock2D(nn.Module):
         
         # Sample mask
         batch_size, channels, height, width = x.shape
-        w_i, h_i = torch.meshgrid(torch.arange(width), torch.arange(height), indexing='ij')
+        w_i, h_i = torch.meshgrid(torch.arange(width, device=x.device), torch.arange(height, device=x.device), indexing='ij')
         valid_block = ((w_i >= self.block_size // 2) & (w_i < width - self.block_size // 2) &
                       (h_i >= self.block_size // 2) & (h_i < height - self.block_size // 2))
-        valid_block = torch.reshape(valid_block, (1, 1, height, width)).float()
+        valid_block = torch.reshape(valid_block, (1, 1, height, width)).float().to(x.device)
         
         uniform_noise = torch.rand_like(x)
         block_mask = ((uniform_noise * valid_block) <= gamma).float()
