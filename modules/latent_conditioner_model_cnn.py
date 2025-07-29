@@ -125,7 +125,8 @@ class LatentConditionerImg(nn.Module):
         num_groups_init = min(32, max(1, latent_conditioner_filter[0] // 4))
         self.gn1 = nn.GroupNorm(num_groups_init, latent_conditioner_filter[0], eps=1e-6)
         self.silu = nn.SiLU(inplace=True)
-        self.initial_dropblock = DropBlock2D(drop_rate=dropout_rate)
+        # Reduce DropBlock rate for initial stability
+        self.initial_dropblock = DropBlock2D(drop_rate=max(0.01, dropout_rate * 0.1))
         
         # Parametric residual layers with multi-scale feature collection
         self.layers = nn.ModuleList()
@@ -214,6 +215,27 @@ class LatentConditionerImg(nn.Module):
                 nn.Tanh()
             )
             self.aux_heads.append(aux_head)
+        
+        # Custom initialization for GroupNorm compatibility
+        self._initialize_weights()
+    
+    def _initialize_weights(self):
+        """Custom weight initialization for GroupNorm networks to prevent NaN"""
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                # Xavier uniform for conv layers with GroupNorm
+                nn.init.xavier_uniform_(m.weight, gain=nn.init.calculate_gain('relu'))
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.GroupNorm):
+                # Initialize GroupNorm parameters carefully
+                nn.init.constant_(m.weight, 1.0)
+                nn.init.constant_(m.bias, 0.0)
+            elif isinstance(m, nn.Linear):
+                # Xavier uniform for linear layers
+                nn.init.xavier_uniform_(m.weight, gain=0.1)  # Smaller gain for stability
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
     
     def _make_layer(self, in_channels, out_channels, blocks, stride=1, use_attention=False, drop_rate=0.1):
         downsample = None
@@ -239,16 +261,30 @@ class LatentConditionerImg(nn.Module):
             print(f"🚨 NaN detected in input to LatentConditionerImg")
             x = torch.nan_to_num(x, nan=0.0)
         
-        # Initial strided convolution
+        # Initial strided convolution with detailed debugging
         x = self.conv1(x)
-        x = self.gn1(x)
-        x = self.silu(x)
-        x = self.initial_dropblock(x)
-        
-        # Check for NaN after initial layers
         if torch.isnan(x).any():
-            print(f"🚨 NaN detected after initial conv/norm layers")
+            print(f"🚨 NaN detected after conv1 - likely initialization issue")
             x = torch.nan_to_num(x, nan=0.0)
+        
+        x = self.gn1(x)
+        if torch.isnan(x).any():
+            print(f"🚨 NaN detected after GroupNorm1")
+            print(f"   GroupNorm stats: mean={x.mean():.6f}, std={x.std():.6f}")
+            print(f"   Channel count: {x.shape[1]}, Groups: {self.gn1.num_groups}")
+            x = torch.nan_to_num(x, nan=0.0)
+        
+        x = self.silu(x)
+        if torch.isnan(x).any():
+            print(f"🚨 NaN detected after SiLU activation")
+            x = torch.nan_to_num(x, nan=0.0)
+        
+        # Skip DropBlock during initial debugging
+        if self.training:
+            x = self.initial_dropblock(x)
+            if torch.isnan(x).any():
+                print(f"🚨 NaN detected after DropBlock")
+                x = torch.nan_to_num(x, nan=0.0)
         
         # Collect multi-scale features
         multi_scale_features = []

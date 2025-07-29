@@ -257,7 +257,11 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
 
     latent_conditioner = latent_conditioner.to(device)
     
-    latent_conditioner.apply(safe_initialize_weights_He)
+    # Skip reinitialization for CNN model as it has custom GroupNorm-compatible initialization
+    if not hasattr(latent_conditioner, '_initialize_weights'):
+        latent_conditioner.apply(safe_initialize_weights_He)
+    else:
+        print("📊 Using custom CNN initialization - skipping safe_initialize_weights_He")
     # latent_conditioner.apply(add_sn)  # Temporarily disabled for testing
 
     # Data analysis for first epoch
