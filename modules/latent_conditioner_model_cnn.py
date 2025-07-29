@@ -322,12 +322,18 @@ class LatentConditionerImg(nn.Module):
             x = torch.clamp(x, min=-10.0, max=10.0)
         
         # Initial strided convolution with detailed debugging
+        # ALWAYS print conv1 weight stats for debugging
+        print(f"🔍 Before conv1: input shape={x.shape}, input range=[{x.min():.4f}, {x.max():.4f}]")
+        print(f"🔍 Conv1 weight: min={self.conv1.weight.min():.6f}, max={self.conv1.weight.max():.6f}, has_nan={torch.isnan(self.conv1.weight).any()}")
+        
         x = self.conv1(x)
+        
+        print(f"🔍 After conv1: output range=[{x.min():.6f}, {x.max():.6f}], has_nan={torch.isnan(x).any()}")
+        
         if torch.isnan(x).any():
             print(f"🚨 NaN detected after conv1")
-            print(f"   Conv1 weight stats: min={self.conv1.weight.min():.6f}, max={self.conv1.weight.max():.6f}")
-            print(f"   Conv1 weight has NaN: {torch.isnan(self.conv1.weight).any()}")
-            print(f"   Output stats before fix: min={x.min():.6f}, max={x.max():.6f}")
+            print(f"   Output stats: min={x.min():.6f}, max={x.max():.6f}")
+            print(f"   NaN count: {torch.isnan(x).sum()}")
             x = torch.nan_to_num(x, nan=0.0)
         
         x = self.gn1(x)
