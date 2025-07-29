@@ -1,3 +1,13 @@
+"""Decoder Module
+
+Implements the hierarchical decoder network for the SimulGenVAE architecture.
+The decoder progressively reconstructs simulation data from latent representations
+using transposed convolutions and skip connections for better gradient flow.
+
+Author: SiHun Lee, Ph.D.
+Email: kevin1007kr@gmail.com
+"""
+
 import torch.nn as nn
 from modules.common import *
 from torch.nn import functional as F
@@ -5,6 +15,15 @@ from modules.losses import kl, kl_2
 import torch
 
 class UpsampleBlock(nn.Module):
+    """Upsampling block using transposed convolution.
+    
+    Basic building block for decoder that increases spatial resolution
+    while transforming channel dimensions.
+    
+    Args:
+        in_channel (int): Number of input channels
+        out_channel (int): Number of output channels
+    """
     def __init__(self, in_channel, out_channel):
         super().__init__()
 
@@ -14,9 +33,31 @@ class UpsampleBlock(nn.Module):
         )
 
     def forward(self, x):
+        """Forward pass through the upsampling block.
+        
+        Args:
+            x (torch.Tensor): Input tensor of shape [batch, in_channel, sequence_length]
+            
+        Returns:
+            torch.Tensor: Output tensor of shape [batch, out_channel, sequence_length]
+        """
         return self._seq(x)
 
 class DecoderBlock(nn.Module):
+    """Decoder block consisting of multiple UpsampleBlocks.
+    
+    Creates a sequence of upsampling blocks that progressively reconstruct
+    features from compressed representations.
+    
+    Args:
+        channels (list): List of channel dimensions for each layer transition
+        small (bool): Whether to use small variant (currently unused in UpsampleBlock)
+    
+    Example:
+        channels=[256, 128, 64] creates two UpsampleBlocks:
+        - 256 -> 128 channels
+        - 128 -> 64 channels
+    """
     def __init__(self, channels, small):
         super().__init__()
         self.channels = channels
@@ -27,12 +68,41 @@ class DecoderBlock(nn.Module):
         self.module_list = nn.ModuleList(modules)
 
     def forward(self, x):
+        """Forward pass through all UpsampleBlocks in sequence.
+        
+        Args:
+            x (torch.Tensor): Input tensor
+            
+        Returns:
+            torch.Tensor: Output tensor after passing through all UpsampleBlocks
+        """
         for module in self.module_list:
             x = module(x)
 
         return x
 
 class Decoder(nn.Module):
+    """Main hierarchical decoder network for VAE.
+    
+    Implements a multi-scale decoder that reconstructs simulation data from latent
+    representations. Uses skip connections and hierarchical latent conditioning
+    for better reconstruction quality and gradient flow.
+    
+    Args:
+        z_dim (int): Dimension of the main latent space
+        hierarchical_dim (int): Dimension of hierarchical latent spaces
+        num_filter_dec (list): Number of filters for each decoder layer
+        num_node (int): Number of nodes in output simulation data
+        num_time (int): Number of time steps in output data
+        batch_size (int): Batch size for initialization
+        small (bool): Whether to use smaller model variant
+    
+    Attributes:
+        decoder_blocks (nn.ModuleList): List of decoder blocks for feature reconstruction
+        decoder_residual_blocks (nn.ModuleList): Residual blocks for skip connections
+        recon (nn.Sequential): Final reconstruction layer
+        linear_layers (nn.ModuleList): Linear layers for latent space transformation
+    """
     def __init__(self, z_dim, hierarchical_dim, num_filter_dec, num_node, num_time, batch_size, small):
         super().__init__()
 

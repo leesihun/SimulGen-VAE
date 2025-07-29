@@ -1,3 +1,20 @@
+"""Vision Transformer Latent Conditioner Model
+
+Implements Vision Transformer-based latent conditioning for image data in SimulGenVAE.
+This model processes 2D images using modern transformer architecture with patch-based
+attention mechanisms for state-of-the-art image understanding.
+
+Features:
+- Patch-based image embedding (16x16 patches)
+- Multi-head self-attention with extreme regularization
+- Learnable position embeddings
+- Layer normalization for training stability
+- Extreme dropout rates to prevent overfitting on small datasets
+
+Author: SiHun Lee, Ph.D.
+Email: kevin1007kr@gmail.com
+"""
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -5,7 +22,24 @@ import numpy as np
 
 
 class PatchEmbedding(nn.Module):
-    """Convert image to patches and embed them"""
+    """Convert image to patches and embed them.
+    
+    Divides input images into non-overlapping patches and projects them into
+    an embedding space. Uses learnable position embeddings to retain spatial
+    information after flattening.
+    
+    Args:
+        img_size (int): Input image size (default: 128)
+        patch_size (int): Size of each patch (default: 16)
+        in_channels (int): Number of input channels (default: 1 for grayscale)
+        embed_dim (int): Embedding dimension (default: 64)
+        dropout (float): Dropout rate for regularization (default: 0.3)
+    
+    Attributes:
+        num_patches (int): Total number of patches (img_size/patch_size)^2
+        projection (nn.Sequential): Linear projection of flattened patches
+        position_embeddings (nn.Parameter): Learnable position encodings
+    """
     def __init__(self, img_size=128, patch_size=16, in_channels=1, embed_dim=64, dropout=0.3):
         super().__init__()
         self.img_size = img_size
@@ -24,6 +58,14 @@ class PatchEmbedding(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
+        """Convert image to patch embeddings.
+        
+        Args:
+            x (torch.Tensor): Input image tensor of shape [batch, channels, height, width]
+            
+        Returns:
+            torch.Tensor: Patch embeddings of shape [batch, num_patches, embed_dim]
+        """
         B, C, H, W = x.shape
         
         # Convert to patches: (B, C, H, W) -> (B, num_patches, patch_dim)
@@ -43,7 +85,21 @@ class PatchEmbedding(nn.Module):
 
 
 class MultiHeadSelfAttention(nn.Module):
-    """Self-attention with extreme regularization"""
+    """Multi-head self-attention with extreme regularization.
+    
+    Implements the core attention mechanism of Vision Transformers with
+    aggressive dropout for preventing overfitting on small datasets.
+    
+    Args:
+        embed_dim (int): Embedding dimension (default: 64)
+        num_heads (int): Number of attention heads (default: 4)
+        dropout (float): Dropout rate for output projection (default: 0.4)
+        attention_dropout (float): Dropout rate for attention weights (default: 0.3)
+    
+    Note:
+        Uses higher dropout rates than typical ViT implementations to prevent
+        overfitting when training on small image datasets.
+    """
     def __init__(self, embed_dim=64, num_heads=4, dropout=0.4, attention_dropout=0.3):
         super().__init__()
         self.embed_dim = embed_dim

@@ -1,9 +1,32 @@
+"""Common Utilities Module
+
+Provides shared utilities for the SimulGenVAE architecture including
+weight initialization, spectral normalization, and activation functions.
+
+Author: SiHun Lee, Ph.D.
+Email: kevin1007kr@gmail.com
+"""
+
 import torch.nn as nn
 import torch
 import numpy as np
 from torch.nn.utils import spectral_norm
 
 def add_sn(m):
+    """Apply spectral normalization to a module.
+    
+    Adds spectral normalization to convolutional and linear layers to
+    constrain the Lipschitz constant for training stability.
+    
+    Args:
+        m (nn.Module): Module to apply spectral normalization to
+    
+    Returns:
+        nn.Module: Module with spectral normalization applied (if applicable)
+    
+    Note:
+        Only applies to Conv1d, ConvTranspose1d, Conv2d, ConvTranspose2d, and Linear layers.
+    """
     if isinstance(m, (nn.Conv1d, nn.ConvTranspose1d, nn.Conv2d, nn.ConvTranspose2d, nn.Linear)):
         if m.weight.numel() > 0:
             return spectral_norm(m)
@@ -14,6 +37,19 @@ def add_sn(m):
         return m
 
 def initialize_weights_He(m):
+    """Initialize module weights using He (Kaiming) initialization.
+    
+    Applies Kaiming uniform initialization to convolutional and linear layers.
+    This initialization is particularly effective for ReLU-based networks.
+    
+    Args:
+        m (nn.Module): Module to initialize
+    
+    Note:
+        - Conv layers: Uses Kaiming uniform with 'relu' nonlinearity
+        - Linear layers: Uses standard Kaiming uniform
+        - Biases are initialized to zero
+    """
     if isinstance(m, (nn.Conv1d, nn.ConvTranspose1d,nn.Conv2d, nn.ConvTranspose2d)):
         nn.init.kaiming_uniform_(m.weight.data, nonlinearity='relu')
         if m.bias is not None:
@@ -25,6 +61,14 @@ def initialize_weights_He(m):
 import math
 
 class Swish(nn.Module):
+    """Swish activation function.
+    
+    Implements Swish activation: f(x) = x * sigmoid(x)
+    Provides smooth, non-monotonic activation that can outperform ReLU.
+    
+    Reference:
+        Searching for Activation Functions (Ramachandran et al., 2017)
+    """
     def __init__(self):
         super().__init__()
 

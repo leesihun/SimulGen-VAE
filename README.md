@@ -1,4 +1,4 @@
-# SimulGenVAE
+Loo# SimulGenVAE
 
 A high-performance Variational Autoencoder (VAE) designed for simulation data generation and inference, featuring Physics-Aware Neural Network (PANN) integration and advanced latent conditioning capabilities.
 
@@ -255,9 +255,8 @@ scikit-image
 
 ## Version History
 
-- **v1.5.0**: Modular architecture with multi-model support
-- **v1.4.4**: Comprehensive anti-overfitting arsenal
-- **v1.4.3**: LatentConditioner architecture simplification
+- **v1.4.3**: Streamlined arguments and modern DDP with torchrun
+- **v1.4.2**: Advanced LR scheduling and comprehensive diagnostics
 - **v1.4.0**: ResNet-style blocks with SE attention
 - **v1.3.0**: On-the-fly data augmentation
 - **v1.2.0**: GroupNorm normalization strategy

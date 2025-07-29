@@ -13,6 +13,15 @@ class DropBlock2D(nn.Module):
         self.block_size = block_size
 
     def forward(self, x):
+        """Apply DropBlock regularization during training.
+        
+        Args:
+            x (torch.Tensor): Input tensor of shape [batch, channels, height, width]
+            
+        Returns:
+            torch.Tensor: Regularized tensor with dropped blocks during training,
+                         original tensor during evaluation
+        """
         if not self.training:
             return x
         
@@ -43,13 +52,21 @@ class SqueezeExcitation(nn.Module):
         super(SqueezeExcitation, self).__init__()
         self.squeeze = nn.AdaptiveAvgPool2d(1)
         self.excitation = nn.Sequential(
-            spectral_norm(nn.Linear(channels, channels // reduction, bias=False)),
+            nn.Linear(channels, channels // reduction, bias=False),  # Temporarily removed spectral_norm
             nn.SiLU(inplace=True),
-            spectral_norm(nn.Linear(channels // reduction, channels, bias=False)),
+            nn.Linear(channels // reduction, channels, bias=False),  # Temporarily removed spectral_norm
             nn.Sigmoid()
         )
 
     def forward(self, x):
+        """Apply squeeze-and-excitation attention.
+        
+        Args:
+            x (torch.Tensor): Input tensor of shape [batch, channels, height, width]
+            
+        Returns:
+            torch.Tensor: Attention-weighted input tensor
+        """
         b, c, _, _ = x.size()
         # Squeeze: Global average pooling
         squeezed = self.squeeze(x).view(b, c)
@@ -64,13 +81,13 @@ class ResidualBlock(nn.Module):
     def __init__(self, in_channels, out_channels, stride=1, downsample=None, use_attention=False, drop_rate=0.1):
         super(ResidualBlock, self).__init__()
         
-        self.conv1 = spectral_norm(nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1, bias=False))
-        # Fix GroupNorm to prevent NaN with small channel counts
-        num_groups1 = min(32, max(1, out_channels // 4))
-        self.gn1 = nn.GroupNorm(num_groups1, out_channels, eps=1e-6)
-        self.conv2 = spectral_norm(nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False))
-        num_groups2 = min(32, max(1, out_channels // 4))
-        self.gn2 = nn.GroupNorm(num_groups2, out_channels, eps=1e-6)
+        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1, bias=False)  # Temporarily removed spectral_norm
+        # Robust GroupNorm configuration to prevent NaN with small channel counts
+        num_groups1 = min(16, max(2, out_channels // 2))  # At least 2 groups, max 16
+        self.gn1 = nn.GroupNorm(num_groups1, out_channels, eps=1e-5)  # Increased epsilon for stability
+        self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False)  # Temporarily removed spectral_norm
+        num_groups2 = min(16, max(2, out_channels // 2))  # At least 2 groups, max 16
+        self.gn2 = nn.GroupNorm(num_groups2, out_channels, eps=1e-5)  # Increased epsilon for stability
         
         self.downsample = downsample
         self.silu = nn.SiLU(inplace=True)
@@ -119,11 +136,11 @@ class LatentConditionerImg(nn.Module):
         self.num_layers = len(latent_conditioner_filter)
         self.return_dict = return_dict  # Backward compatibility flag
         
-        # Initial strided convolution (replaces conv + maxpool) - NO spectral norm on first layer
+        # Initial strided convolution (replaces conv + maxpool) - NO spectral norm on first layer for stability
         self.conv1 = nn.Conv2d(1, latent_conditioner_filter[0], kernel_size=7, stride=2, padding=3, bias=False)
-        # Fix GroupNorm to prevent NaN with small channel counts
-        num_groups_init = min(32, max(1, latent_conditioner_filter[0] // 4))
-        self.gn1 = nn.GroupNorm(num_groups_init, latent_conditioner_filter[0], eps=1e-6)
+        # Robust GroupNorm configuration to prevent NaN with small channel counts
+        num_groups_init = min(16, max(2, latent_conditioner_filter[0] // 2))  # At least 2 groups, max 16
+        self.gn1 = nn.GroupNorm(num_groups_init, latent_conditioner_filter[0], eps=1e-5)  # Increased epsilon for stability
         self.silu = nn.SiLU(inplace=True)
         # Reduce DropBlock rate for initial stability
         self.initial_dropblock = DropBlock2D(drop_rate=max(0.01, dropout_rate * 0.1))
@@ -224,43 +241,49 @@ class LatentConditionerImg(nn.Module):
         
         # Add hooks to monitor weight corruption during training
         self._add_weight_monitoring_hooks()
+        
+        # Add automatic NaN recovery mechanism
+        self.nan_recovery_count = 0
+        self.max_nan_recoveries = 5
     
     def _initialize_weights(self):
-        """Conservative weight initialization to prevent NaN with spectral norm + GroupNorm"""
+        """Proper weight initialization compatible with spectral norm + GroupNorm"""
         for name, m in self.named_modules():
             if isinstance(m, nn.Conv2d):
-                # Manual initialization to avoid potential nn.init bugs
-                std = 0.001  # Ultra-small fixed std
-                with torch.no_grad():
-                    # Manual normal distribution
-                    m.weight.data = torch.randn_like(m.weight) * std
-                    if m.bias is not None:
-                        m.bias.data.zero_()
-                    
-                    # Immediate validation
+                # Use proper He initialization for ReLU/SiLU activations
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+                
+                # Validation after proper initialization
+                if torch.isnan(m.weight).any():
+                    print(f"❌ NaN in {name} weight after He init!")
+                    # Fallback to Xavier if He fails
+                    nn.init.xavier_normal_(m.weight)
                     if torch.isnan(m.weight).any():
-                        print(f"❌ NaN in {name} weight after manual init!")
-                        m.weight.data.zero_()  # Fallback to zeros
-                    else:
-                        print(f"   ✅ Manually initialized {name}: std={std:.4f}, range=[{m.weight.min():.6f}, {m.weight.max():.6f}]")
+                        print(f"❌ NaN persists after Xavier init! Using zeros.")
+                        m.weight.data.zero_()
+                else:
+                    print(f"   ✅ He initialized {name}: range=[{m.weight.min():.6f}, {m.weight.max():.6f}], std={m.weight.std():.6f}")
+                    
             elif isinstance(m, nn.GroupNorm):
-                # Initialize GroupNorm parameters carefully
+                # Standard GroupNorm initialization
                 nn.init.constant_(m.weight, 1.0)
                 nn.init.constant_(m.bias, 0.0)
+                print(f"   ✅ GroupNorm initialized {name}: weight=1.0, bias=0.0")
+                
             elif isinstance(m, nn.Linear):
-                # Manual linear layer initialization
-                std = 0.01  # Very small for stability
-                with torch.no_grad():
-                    m.weight.data = torch.randn_like(m.weight) * std
-                    if m.bias is not None:
-                        m.bias.data.zero_()
-                    
-                    # Validation
-                    if torch.isnan(m.weight).any():
-                        print(f"❌ NaN in {name} linear weight after manual init!")
-                        m.weight.data.zero_()
-                    else:
-                        print(f"   ✅ Manually initialized {name}: std={std:.4f}, range=[{m.weight.min():.6f}, {m.weight.max():.6f}]")
+                # Use Xavier initialization for linear layers (works well with Tanh output)
+                nn.init.xavier_normal_(m.weight)
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+                
+                # Validation
+                if torch.isnan(m.weight).any():
+                    print(f"❌ NaN in {name} linear weight after Xavier init!")
+                    m.weight.data.zero_()
+                else:
+                    print(f"   ✅ Xavier initialized {name}: range=[{m.weight.min():.6f}, {m.weight.max():.6f}], std={m.weight.std():.6f}")
     
     def _validate_weights_after_init(self):
         """Check if weights contain NaN immediately after initialization"""
@@ -304,12 +327,63 @@ class LatentConditionerImg(nn.Module):
         # Monitor conv1 gradients closely
         self.conv1.register_backward_hook(gradient_monitor_hook)
     
+    def _recover_from_nan(self, layer_name="unknown"):
+        """Automatic NaN recovery mechanism"""
+        if self.nan_recovery_count >= self.max_nan_recoveries:
+            print(f"🚨 MAX NaN RECOVERIES REACHED ({self.max_nan_recoveries})! Stopping automatic recovery.")
+            return False
+            
+        self.nan_recovery_count += 1
+        print(f"🔧 AUTOMATIC NaN RECOVERY #{self.nan_recovery_count} for {layer_name}")
+        
+        # Strategy 1: Reinitialize the problematic layer
+        if layer_name == "conv1" and hasattr(self, 'conv1'):
+            print("   Reinitializing conv1 weights...")
+            nn.init.kaiming_normal_(self.conv1.weight, mode='fan_out', nonlinearity='relu')
+            print(f"   Conv1 reinitialized: range=[{self.conv1.weight.min():.6f}, {self.conv1.weight.max():.6f}]")
+            
+        # Strategy 2: Reset GroupNorm parameters
+        if hasattr(self, 'gn1'):
+            print("   Resetting GroupNorm1 parameters...")
+            nn.init.constant_(self.gn1.weight, 1.0)
+            nn.init.constant_(self.gn1.bias, 0.0)
+            
+        return True
+    
+    def _emergency_reset(self):
+        """Emergency reset of the entire model to a safe state"""
+        print("🚨 EMERGENCY MODEL RESET - Reinitializing all weights to safe values")
+        
+        # Reset conv1 with very conservative initialization
+        with torch.no_grad():
+            self.conv1.weight.data = torch.randn_like(self.conv1.weight) * 0.01
+            print(f"   Conv1 emergency reset: range=[{self.conv1.weight.min():.6f}, {self.conv1.weight.max():.6f}]")
+            
+        # Reset GroupNorm
+        if hasattr(self, 'gn1'):
+            nn.init.constant_(self.gn1.weight, 1.0)
+            nn.init.constant_(self.gn1.bias, 0.0)
+            print("   GroupNorm1 emergency reset")
+            
+        # Reset all other layers conservatively
+        for name, m in self.named_modules():
+            if isinstance(m, nn.Conv2d) and m != self.conv1:
+                with torch.no_grad():
+                    m.weight.data = torch.randn_like(m.weight) * 0.01
+            elif isinstance(m, nn.Linear):
+                with torch.no_grad():
+                    m.weight.data = torch.randn_like(m.weight) * 0.01
+                    if m.bias is not None:
+                        m.bias.data.zero_()
+                        
+        print("   ✅ Emergency reset completed")
+    
     def _make_layer(self, in_channels, out_channels, blocks, stride=1, use_attention=False, drop_rate=0.1):
         downsample = None
         if stride != 1 or in_channels != out_channels:
             downsample = nn.Sequential(
-                spectral_norm(nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=stride, bias=False)),
-                nn.GroupNorm(min(32, max(1, out_channels // 4)), out_channels, eps=1e-6),
+                nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=stride, bias=False),  # Temporarily removed spectral_norm
+                nn.GroupNorm(min(16, max(2, out_channels // 2)), out_channels, eps=1e-5),  # More stable GroupNorm
             )
         
         layers = []
@@ -339,27 +413,91 @@ class LatentConditionerImg(nn.Module):
             # Normalize extreme inputs
             x = torch.clamp(x, min=-10.0, max=10.0)
         
-        # Initial strided convolution with detailed debugging
-        # ALWAYS print conv1 weight stats for debugging
-        print(f"🔍 Before conv1: input shape={x.shape}, input range=[{x.min():.4f}, {x.max():.4f}]")
-        print(f"🔍 Conv1 weight: min={self.conv1.weight.min():.6f}, max={self.conv1.weight.max():.6f}, has_nan={torch.isnan(self.conv1.weight).any()}")
+        # Enhanced conv1 debugging with more detailed analysis
+        print(f"🔍 CONV1 DETAILED ANALYSIS:")
+        print(f"   Input: shape={x.shape}, dtype={x.dtype}, device={x.device}")
+        print(f"   Input stats: min={x.min():.6f}, max={x.max():.6f}, mean={x.mean():.6f}, std={x.std():.6f}")
+        print(f"   Input NaN/Inf: has_nan={torch.isnan(x).any()}, has_inf={torch.isinf(x).any()}")
         
-        x = self.conv1(x)
+        # Check conv1 weights in detail
+        w = self.conv1.weight
+        print(f"   Weight: shape={w.shape}, dtype={w.dtype}, device={w.device}")
+        print(f"   Weight stats: min={w.min():.6f}, max={w.max():.6f}, mean={w.mean():.6f}, std={w.std():.6f}")
+        print(f"   Weight NaN/Inf: has_nan={torch.isnan(w).any()}, has_inf={torch.isinf(w).any()}")
         
-        print(f"🔍 After conv1: output range=[{x.min():.6f}, {x.max():.6f}], has_nan={torch.isnan(x).any()}")
+        # Check for weight corruption patterns
+        if torch.isnan(w).any():
+            print(f"   🚨 WEIGHT CORRUPTION: {torch.isnan(w).sum()} NaN values in conv1 weights!")
+            nan_locations = torch.where(torch.isnan(w))
+            print(f"   NaN locations: {[(i.item(), j.item(), k.item(), l.item()) for i, j, k, l in zip(*nan_locations)][:5]}...")
         
-        if torch.isnan(x).any():
-            print(f"🚨 NaN detected after conv1")
-            print(f"   Output stats: min={x.min():.6f}, max={x.max():.6f}")
-            print(f"   NaN count: {torch.isnan(x).sum()}")
-            x = torch.nan_to_num(x, nan=0.0)
+        # Perform convolution with error handling
+        try:
+            x_before_conv = x.clone()  # Keep copy for debugging
+            x = self.conv1(x)
+            
+            print(f"   Conv1 output: shape={x.shape}, dtype={x.dtype}")
+            print(f"   Output stats: min={x.min():.6f}, max={x.max():.6f}, mean={x.mean():.6f}, std={x.std():.6f}")
+            print(f"   Output NaN/Inf: has_nan={torch.isnan(x).any()}, has_inf={torch.isinf(x).any()}")
+            
+            if torch.isnan(x).any():
+                print(f"🚨 CONV1 NaN DETECTED!")
+                print(f"   NaN count: {torch.isnan(x).sum()}/{x.numel()} ({100*torch.isnan(x).sum()/x.numel():.2f}%)")
+                nan_mask = torch.isnan(x)
+                print(f"   NaN pattern: {nan_mask.sum(dim=(2,3)).float().mean(dim=0)}")  # Average NaN per channel
+                
+                # Try automatic recovery
+                if self._recover_from_nan("conv1"):
+                    print("   Attempting recovery by re-running conv1...")
+                    try:
+                        x = self.conv1(x_before_conv)
+                        if not torch.isnan(x).any():
+                            print("   ✅ NaN recovery successful!")
+                        else:
+                            print("   ❌ NaN recovery failed, using zero replacement")
+                            x = torch.nan_to_num(x, nan=0.0)
+                    except:
+                        print("   ❌ Recovery failed, using zero replacement")
+                        x = torch.nan_to_num(x, nan=0.0)
+                else:
+                    # Replace NaN with zeros as fallback
+                    x = torch.nan_to_num(x, nan=0.0)
+                    print(f"   NaN values replaced with zeros")
+                
+        except Exception as e:
+            print(f"🚨 CONV1 OPERATION FAILED: {e}")
+            print(f"   Input was: shape={x_before_conv.shape}, range=[{x_before_conv.min():.6f}, {x_before_conv.max():.6f}]")
+            raise e
         
-        x = self.gn1(x)
-        if torch.isnan(x).any():
-            print(f"🚨 NaN detected after GroupNorm1")
-            print(f"   GroupNorm stats: mean={x.mean():.6f}, std={x.std():.6f}")
-            print(f"   Channel count: {x.shape[1]}, Groups: {self.gn1.num_groups}")
-            x = torch.nan_to_num(x, nan=0.0)
+        # Enhanced GroupNorm debugging
+        print(f"🔍 GROUPNORM1 ANALYSIS:")
+        print(f"   Input to GN1: shape={x.shape}, range=[{x.min():.6f}, {x.max():.6f}]")
+        print(f"   GN1 config: channels={self.gn1.num_channels}, groups={self.gn1.num_groups}, eps={self.gn1.eps}")
+        
+        try:
+            x_before_gn = x.clone()
+            x = self.gn1(x)
+            
+            print(f"   GN1 output: shape={x.shape}, range=[{x.min():.6f}, {x.max():.6f}]")
+            print(f"   GN1 NaN check: has_nan={torch.isnan(x).any()}")
+            
+            if torch.isnan(x).any():
+                print(f"🚨 GROUPNORM1 NaN DETECTED!")
+                print(f"   NaN count: {torch.isnan(x).sum()}/{x.numel()}")
+                print(f"   Input to GN1 was: min={x_before_gn.min():.6f}, max={x_before_gn.max():.6f}")
+                
+                # Check if input has problematic values
+                if (x_before_gn == 0).all():
+                    print(f"   Problem: All input values are zero!")
+                elif x_before_gn.std() < self.gn1.eps:
+                    print(f"   Problem: Input std ({x_before_gn.std():.2e}) < eps ({self.gn1.eps:.2e})")
+                
+                x = torch.nan_to_num(x, nan=0.0)
+                print(f"   NaN values replaced with zeros")
+                
+        except Exception as e:
+            print(f"🚨 GROUPNORM1 OPERATION FAILED: {e}")
+            raise e
         
         x = self.silu(x)
         if torch.isnan(x).any():

@@ -1,12 +1,17 @@
-# Single GPU: python SimulGen-VAE.py --preset=1 --plot=2 --lc_only=0 --size=small --load_all=1
-# Multi-GPU:  torchrun --nproc_per_node=4 SimulGen-VAE.py --use_ddp --preset=1 --plot=2 --lc_only=0 --size=small --load_all=1
+#!/usr/bin/env python3
+"""SimulGenVAE v1.4.3 - Main Training Script
 
-"""
-SimulGen-VAE v1.4.3
-====================
+A high-performance Variational Autoencoder for fast generation and inference 
+of transient/static simulation data with Physics-Aware Neural Network (PANN) integration.
 
-A high-performance VAE for fast generation and inference of transient/static simulation data 
-with Physics-Aware Neural Network (PANN) integration.
+This script provides the main entry point for training SimulGenVAE models with support
+for both single-GPU and multi-GPU distributed training. It supports three different
+latent conditioning architectures (MLP, CNN, Vision Transformer) and comprehensive
+anti-overfitting measures.
+
+Usage:
+    Single GPU: python SimulGen-VAE.py --preset=1 --plot=2 --lc_only=0 --size=small --load_all=1
+    Multi-GPU:  torchrun --nproc_per_node=4 SimulGen-VAE.py --use_ddp --preset=1 --plot=2 --lc_only=0 --size=small --load_all=1
 
 Author: SiHun Lee, Ph.D.
 Email: kevin1007kr@gmail.com
@@ -89,6 +94,31 @@ tensorboard --logdir=LatentConditionerRuns --port=6002  # LatentConditioner logs
 """
 
 def main():
+    """Main training function for SimulGenVAE.
+    
+    Orchestrates the complete training pipeline including:
+    - Configuration parsing and argument handling
+    - Distributed training setup (DDP) if requested
+    - Dataset loading and preprocessing
+    - Model initialization (VAE or LatentConditioner only)
+    - Training loop execution with monitoring
+    - Model checkpointing and result visualization
+    
+    Supports both single-GPU and multi-GPU distributed training with
+    automatic fallback if distributed setup fails.
+    
+    Command Line Arguments:
+        --preset: Dataset preset selection (1-5)
+        --plot: Visualization mode (0=interactive, 1=save, 2=off)
+        --lc_only: Train only LatentConditioner (1) or full VAE (0)
+        --size: Model size preset (small/large/big)
+        --load_all: Preload dataset to GPU memory (0/1)
+        --use_ddp: Enable distributed data parallel training
+    
+    Examples:
+        Single GPU: python SimulGen-VAE.py --preset=1 --plot=2 --lc_only=0 --size=small
+        Multi-GPU: torchrun --nproc_per_node=4 SimulGen-VAE.py --use_ddp --preset=1
+    """
     import torch
     import torch.nn as nn
     import pandas as pd
@@ -152,6 +182,11 @@ def main():
         is_distributed = False
     
     def print_gpu_mem_checkpoint(msg):
+        """Print GPU memory usage statistics for debugging.
+        
+        Args:
+            msg (str): Descriptive message for the checkpoint
+        """
         if torch.cuda.is_available():
             allocated = torch.cuda.memory_allocated() / 1024**2
             max_allocated = torch.cuda.max_memory_allocated() / 1024**2
@@ -159,6 +194,20 @@ def main():
             torch.cuda.reset_peak_memory_stats()
 
     def parse_condition_file(filepath):
+        """Parse configuration file to extract training parameters.
+        
+        Reads the condition.txt file and extracts key-value pairs for
+        training configuration, skipping comments and section markers.
+        
+        Args:
+            filepath (str): Path to the condition.txt configuration file
+            
+        Returns:
+            dict: Dictionary mapping parameter names to their values
+            
+        Note:
+            Ignores lines starting with %, ', or # (comments and sections)
+        """
         params = {}
         with open(filepath, encoding='utf-8') as f:
             for line in f:

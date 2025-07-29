@@ -1,7 +1,31 @@
+"""Encoder Module
+
+Implements the hierarchical encoder network for the SimulGenVAE architecture.
+The encoder progressively compresses simulation data into hierarchical latent representations
+using 1D convolutional blocks with GroupNorm for batch-independent normalization.
+
+Author: SiHun Lee, Ph.D.
+Email: kevin1007kr@gmail.com
+"""
+
 import torch.nn as nn
 from modules.common import *
 
 class ConvBlock(nn.Module):
+    """Basic convolutional block for encoder layers.
+    
+    Implements either a simple (small=True) or complex (small=False) convolutional
+    block with GroupNorm normalization and GELU activation for stable training.
+    
+    Args:
+        in_channel (int): Number of input channels
+        out_channel (int): Number of output channels
+        small (bool): If True, uses single conv layer; if False, uses two conv layers
+    
+    Note:
+        GroupNorm is used instead of BatchNorm for better performance with
+        varying batch sizes and distributed training.
+    """
     def __init__(self, in_channel, out_channel, small):
         super().__init__()
 
@@ -22,9 +46,31 @@ class ConvBlock(nn.Module):
             )
     
     def forward(self, x):
+        """Forward pass through the convolutional block.
+        
+        Args:
+            x (torch.Tensor): Input tensor of shape [batch, in_channel, sequence_length]
+            
+        Returns:
+            torch.Tensor: Output tensor of shape [batch, out_channel, sequence_length]
+        """
         return self._seq(x)
 
 class EncoderBlock(nn.Module):
+    """Encoder block consisting of multiple ConvBlocks.
+    
+    Creates a sequence of convolutional blocks that progressively transform
+    the input through different channel dimensions.
+    
+    Args:
+        channels (list): List of channel dimensions for each layer transition
+        small (bool): Whether to use small variant of ConvBlocks
+    
+    Example:
+        channels=[64, 128, 256] creates two ConvBlocks:
+        - 64 -> 128 channels
+        - 128 -> 256 channels
+    """
     def __init__(self, channels, small):
         super().__init__()
         self.channels = channels
@@ -35,11 +81,38 @@ class EncoderBlock(nn.Module):
         self.module_list = nn.ModuleList(modules)
 
     def forward(self, x):
+        """Forward pass through all ConvBlocks in sequence.
+        
+        Args:
+            x (torch.Tensor): Input tensor
+            
+        Returns:
+            torch.Tensor: Output tensor after passing through all ConvBlocks
+        """
         for module in self.module_list:
             x = module(x)
         return x
 
 class Encoder(nn.Module):
+    """Main hierarchical encoder network for VAE.
+    
+    Implements a multi-scale encoder that compresses simulation data into both
+    hierarchical and main latent representations. Uses 1D convolutions to process
+    temporal sequences and produces mean and log-variance for reparameterization.
+    
+    Args:
+        z_dim (int): Dimension of the main latent space
+        hierarchical_dim (int): Dimension of hierarchical latent spaces
+        num_filter_enc (list): Number of filters for each encoder layer
+        num_node (int): Number of nodes in input simulation data
+        num_time (int): Number of time steps in input data
+        small (bool): Whether to use smaller model variant
+    
+    Attributes:
+        encoder_blocks (nn.ModuleList): List of encoder blocks for feature extraction
+        mus (nn.ModuleList): Mean prediction layers for each hierarchical level
+        log_vars (nn.ModuleList): Log-variance prediction layers for each level
+    """
     def __init__(self, z_dim, hierarchical_dim, num_filter_enc, num_node, num_time, small):
         super().__init__()
 

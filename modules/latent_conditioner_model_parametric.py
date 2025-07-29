@@ -1,10 +1,48 @@
+"""Parametric Latent Conditioner Model
+
+Implements MLP-based latent conditioning for parametric/tabular data in SimulGenVAE.
+This model processes numerical features to predict latent space representations
+for both main and hierarchical latent variables.
+
+Features:
+- Multi-layer perceptron with progressive dropout
+- Extreme bottleneck compression for regularization
+- Dual output heads for latent and hierarchical predictions
+- GELU activations for smooth gradients
+
+Author: SiHun Lee, Ph.D.
+Email: kevin1007kr@gmail.com
+"""
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 
 class LatentConditioner(nn.Module):
-    """MLP-based latent conditioner for parametric data"""
+    """MLP-based latent conditioner for parametric data.
+    
+    Processes tabular/parametric input data to predict latent space representations.
+    Uses a multi-layer perceptron with progressive dropout and extreme bottleneck
+    compression to prevent overfitting on small datasets.
+    
+    Args:
+        latent_conditioner_filter (list): Number of neurons in each hidden layer
+        latent_dim_end (int): Dimension of main latent space (typically 32)
+        input_shape (int): Number of input features/parameters
+        latent_dim (int): Dimension of hierarchical latent space (typically 8)
+        size2 (int): Size multiplier for hierarchical latent output
+        dropout_rate (float): Dropout rate for regularization (default: 0.3)
+    
+    Attributes:
+        latent_conditioner (nn.Sequential): Main feature extraction backbone
+        latent_out (nn.Sequential): Output head for main latent predictions
+        xs_out (nn.Sequential): Output head for hierarchical latent predictions
+    
+    Note:
+        Uses extreme bottleneck compression (32:1 ratio) and progressive dropout
+        (20% -> 15%) to prevent overfitting on parametric data.
+    """
     def __init__(self, latent_conditioner_filter, latent_dim_end, input_shape, latent_dim, size2, dropout_rate=0.3):
         super(LatentConditioner, self).__init__()
         self.latent_dim = latent_dim

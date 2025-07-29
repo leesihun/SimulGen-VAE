@@ -6,6 +6,23 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 def kl(mu, log_var):
+    """Compute KL divergence loss for VAE latent variables.
+    
+    Calculates KL divergence between learned latent distribution q(z|x) and
+    standard Gaussian prior p(z) = N(0, I). Includes numerical stability
+    measures to prevent overflow/underflow.
+    
+    Args:
+        mu (torch.Tensor): Mean of latent distribution, shape [batch, latent_dim]
+        log_var (torch.Tensor): Log variance of latent distribution, same shape as mu
+    
+    Returns:
+        torch.Tensor: Scalar KL divergence loss
+    
+    Note:
+        Uses clamping on log_var to range [-30, 30] for numerical stability.
+        This corresponds to standard deviations from ~6e-14 to ~2.6e13.
+    """
     # Clamp log_var to prevent numerical instability
     # Start with wider range [-30, 30], narrow to [-20, 20] only if needed
     # This covers std from 6e-14 to 2.6e13 - should be sufficient for most cases

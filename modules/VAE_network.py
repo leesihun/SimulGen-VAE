@@ -1,3 +1,13 @@
+"""VAE Network Module
+
+This module implements the main Variational Autoencoder (VAE) architecture for SimulGenVAE.
+It combines hierarchical encoder-decoder networks with multiple loss functions and advanced
+optimization features for simulation data processing.
+
+Author: SiHun Lee, Ph.D.
+Email: kevin1007kr@gmail.com
+"""
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -9,6 +19,32 @@ import matplotlib.pyplot as plt
 from torchinfo import summary
 
 class VAE(nn.Module):
+    """Main Variational Autoencoder class for simulation data processing.
+    
+    This VAE implements a hierarchical latent space architecture with encoder-decoder
+    networks optimized for transient and static simulation data. Features include
+    multiple loss functions, gradient checkpointing support, and advanced memory management.
+    
+    Args:
+        latent_dim (int): Main latent space dimension (typically 32)
+        hierarchical_dim (int): Hierarchical latent dimension for multi-scale representation (typically 8)
+        num_filter_enc (list): Number of filters for each encoder layer
+        num_filter_dec (list): Number of filters for each decoder layer  
+        num_node (int): Number of nodes in the simulation data
+        num_time (int): Number of time steps in the simulation data
+        lossfun (str): Loss function type. Options: 'MSE', 'MAE', 'smoothL1', 'Huber'
+        batch_size (int): Batch size for training (used for decoder initialization)
+        small (bool): Whether to use smaller model variant for memory efficiency
+        use_checkpointing (bool): Enable gradient checkpointing (disabled for speed)
+    
+    Attributes:
+        latent_dim (int): Dimension of the main latent space
+        encoder (Encoder): Hierarchical encoder network
+        decoder (Decoder): Hierarchical decoder network with skip connections
+        lossfun (str): Selected loss function type
+        loss_functions (dict): Pre-compiled loss functions for efficiency
+        mse_loss (nn.MSELoss): MSE loss function (always available for metrics)
+    """
     def __init__(self, latent_dim, hierarchical_dim, num_filter_enc, num_filter_dec, num_node, num_time, lossfun='MSE', batch_size=1, small=False, use_checkpointing=False):
         super().__init__()
 
@@ -29,6 +65,24 @@ class VAE(nn.Module):
         self.mse_loss = nn.MSELoss()  # Always needed for recon_loss_MSE
 
     def forward(self, x):
+        """Forward pass through the VAE.
+        
+        Performs encoding to latent space, reparameterization, and decoding back to
+        reconstruction space. Includes comprehensive error handling for CUDA operations.
+        
+        Args:
+            x (torch.Tensor): Input tensor of shape [batch, num_node, num_time]
+        
+        Returns:
+            tuple: (decoder_output, recon_loss, kl_losses, recon_loss_MSE)
+                - decoder_output (torch.Tensor): Reconstructed data
+                - recon_loss (torch.Tensor): Reconstruction loss using specified loss function
+                - kl_losses (list): KL divergence losses [main_kl, hierarchical_kl_losses...]
+                - recon_loss_MSE (torch.Tensor): MSE reconstruction loss for monitoring
+        
+        Raises:
+            RuntimeError: If CUDA out of memory or other CUDA errors occur
+        """
         try:
             # Always use regular forward pass - no speed trade-offs
             mu, log_var, xs = self.encoder(x)
@@ -68,16 +122,22 @@ class VAE(nn.Module):
                 raise
     
     def compile_model(self, mode='default'):
-        """
-        Compile the model for better performance on consistent input sizes.
-        Call this after moving to GPU and before training.
+        """Compile the model for better performance using torch.compile.
+        
+        Should be called after moving to GPU and before training. Compiles both
+        encoder and decoder separately for optimal performance on consistent input sizes.
+        Includes fallback handling if compilation fails.
         
         Args:
-            mode: Compilation mode. Can be:
+            mode (str or bool): Compilation mode. Options:
                 - 'default': Conservative compilation (recommended)
                 - 'reduce-overhead': Faster compilation time
-                - 'max-autotune': Most aggressive (may fail on some models)
-                - False: Skip compilation entirely
+                - 'max-autotune': Most aggressive optimization (may fail)
+                - False or 'none': Skip compilation entirely
+        
+        Note:
+            If compilation fails, the model falls back to uncompiled mode without
+            raising an exception to ensure training can continue.
         """
         if mode is False or mode == 'none':
             print("Model compilation disabled")
@@ -100,7 +160,18 @@ class VAE(nn.Module):
             # Don't re-raise the exception, just continue with uncompiled model
     
     def to(self, *args, **kwargs):
-        """Override to method to convert to channels_last memory format"""
+        """Override to method to optimize memory format for better performance.
+        
+        Automatically converts the model to channels_last memory format when moving
+        to GPU, which can provide significant performance improvements on modern GPUs.
+        
+        Args:
+            *args: Positional arguments passed to parent to() method
+            **kwargs: Keyword arguments passed to parent to() method
+            
+        Returns:
+            VAE: The model moved to the specified device with optimized memory format
+        """
         device = args[0] if args else kwargs.get('device', None)
         if device:
             # Convert to channels_last memory format for better performance

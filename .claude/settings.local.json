@@ -2,7 +2,16 @@
   "permissions": {
     "allow": [
       "Bash(mv:*)",
-      "WebFetch(domain:docs.anthropic.com)"
+      "WebFetch(domain:docs.anthropic.com)",
+      "Bash(npm:*)",
+      "WebFetch(domain:github.com)",
+      "Bash(uv:*)",
+      "Bash(python3:*)",
+      "Bash(ls:*)",
+      "Bash(mkdir:*)",
+      "Bash(cp:*)",
+      "Bash(7z:*)",
+      "Bash(powershell:*)"
     ],
     "deny": []
   }
