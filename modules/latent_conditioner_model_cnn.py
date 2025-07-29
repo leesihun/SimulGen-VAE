@@ -119,8 +119,8 @@ class LatentConditionerImg(nn.Module):
         self.num_layers = len(latent_conditioner_filter)
         self.return_dict = return_dict  # Backward compatibility flag
         
-        # Initial strided convolution (replaces conv + maxpool)
-        self.conv1 = spectral_norm(nn.Conv2d(1, latent_conditioner_filter[0], kernel_size=7, stride=2, padding=3, bias=False))
+        # Initial strided convolution (replaces conv + maxpool) - NO spectral norm on first layer
+        self.conv1 = nn.Conv2d(1, latent_conditioner_filter[0], kernel_size=7, stride=2, padding=3, bias=False)
         # Fix GroupNorm to prevent NaN with small channel counts
         num_groups_init = min(32, max(1, latent_conditioner_filter[0] // 4))
         self.gn1 = nn.GroupNorm(num_groups_init, latent_conditioner_filter[0], eps=1e-6)
@@ -220,22 +220,28 @@ class LatentConditionerImg(nn.Module):
         self._initialize_weights()
     
     def _initialize_weights(self):
-        """Custom weight initialization for GroupNorm networks to prevent NaN"""
-        for m in self.modules():
+        """Conservative weight initialization to prevent NaN with spectral norm + GroupNorm"""
+        for name, m in self.named_modules():
             if isinstance(m, nn.Conv2d):
-                # Xavier uniform for conv layers with GroupNorm
-                nn.init.xavier_uniform_(m.weight, gain=nn.init.calculate_gain('relu'))
+                # Ultra-conservative initialization for conv layers
+                fan_in = m.kernel_size[0] * m.kernel_size[1] * m.in_channels
+                # Use extremely small std to prevent NaN
+                std = 0.001  # Ultra-small fixed std
+                nn.init.normal_(m.weight, mean=0.0, std=std)
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
+                print(f"   Initialized {name}: std={std:.4f}")
             elif isinstance(m, nn.GroupNorm):
                 # Initialize GroupNorm parameters carefully
                 nn.init.constant_(m.weight, 1.0)
                 nn.init.constant_(m.bias, 0.0)
             elif isinstance(m, nn.Linear):
-                # Xavier uniform for linear layers
-                nn.init.xavier_uniform_(m.weight, gain=0.1)  # Smaller gain for stability
+                # Conservative linear layer initialization
+                std = 0.01  # Very small for stability
+                nn.init.normal_(m.weight, mean=0.0, std=std)
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
+                print(f"   Initialized {name}: std={std:.4f}")
     
     def _make_layer(self, in_channels, out_channels, blocks, stride=1, use_attention=False, drop_rate=0.1):
         downsample = None
@@ -256,15 +262,29 @@ class LatentConditionerImg(nn.Module):
         # Reshape input to image format
         x = x.reshape([-1, 1, int(math.sqrt(x.shape[-1])), int(math.sqrt(x.shape[-1]))])
         
-        # Check for NaN in input
+        # Comprehensive input validation
         if torch.isnan(x).any():
             print(f"🚨 NaN detected in input to LatentConditionerImg")
             x = torch.nan_to_num(x, nan=0.0)
         
+        # Check for extreme values that could cause NaN after conv
+        if torch.isinf(x).any():
+            print(f"🚨 Inf detected in input - clamping")
+            x = torch.clamp(x, min=-1e6, max=1e6)
+        
+        if x.abs().max() > 1e3:
+            print(f"🚨 Extreme input values detected: max={x.abs().max():.2f}")
+            print(f"   Input stats: min={x.min():.4f}, max={x.max():.4f}, mean={x.mean():.4f}, std={x.std():.4f}")
+            # Normalize extreme inputs
+            x = torch.clamp(x, min=-10.0, max=10.0)
+        
         # Initial strided convolution with detailed debugging
         x = self.conv1(x)
         if torch.isnan(x).any():
-            print(f"🚨 NaN detected after conv1 - likely initialization issue")
+            print(f"🚨 NaN detected after conv1")
+            print(f"   Conv1 weight stats: min={self.conv1.weight.min():.6f}, max={self.conv1.weight.max():.6f}")
+            print(f"   Conv1 weight has NaN: {torch.isnan(self.conv1.weight).any()}")
+            print(f"   Output stats before fix: min={x.min():.6f}, max={x.max():.6f}")
             x = torch.nan_to_num(x, nan=0.0)
         
         x = self.gn1(x)
