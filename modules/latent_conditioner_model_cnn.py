@@ -218,30 +218,73 @@ class LatentConditionerImg(nn.Module):
         
         # Custom initialization for GroupNorm compatibility
         self._initialize_weights()
+        
+        # Validate initialization worked
+        self._validate_weights_after_init()
+        
+        # Add hooks to monitor weight corruption during training
+        self._add_weight_monitoring_hooks()
     
     def _initialize_weights(self):
         """Conservative weight initialization to prevent NaN with spectral norm + GroupNorm"""
         for name, m in self.named_modules():
             if isinstance(m, nn.Conv2d):
-                # Ultra-conservative initialization for conv layers
-                fan_in = m.kernel_size[0] * m.kernel_size[1] * m.in_channels
-                # Use extremely small std to prevent NaN
+                # Manual initialization to avoid potential nn.init bugs
                 std = 0.001  # Ultra-small fixed std
-                nn.init.normal_(m.weight, mean=0.0, std=std)
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0)
-                print(f"   Initialized {name}: std={std:.4f}")
+                with torch.no_grad():
+                    # Manual normal distribution
+                    m.weight.data = torch.randn_like(m.weight) * std
+                    if m.bias is not None:
+                        m.bias.data.zero_()
+                    
+                    # Immediate validation
+                    if torch.isnan(m.weight).any():
+                        print(f"❌ NaN in {name} weight after manual init!")
+                        m.weight.data.zero_()  # Fallback to zeros
+                    else:
+                        print(f"   ✅ Manually initialized {name}: std={std:.4f}, range=[{m.weight.min():.6f}, {m.weight.max():.6f}]")
             elif isinstance(m, nn.GroupNorm):
                 # Initialize GroupNorm parameters carefully
                 nn.init.constant_(m.weight, 1.0)
                 nn.init.constant_(m.bias, 0.0)
             elif isinstance(m, nn.Linear):
-                # Conservative linear layer initialization
+                # Manual linear layer initialization
                 std = 0.01  # Very small for stability
-                nn.init.normal_(m.weight, mean=0.0, std=std)
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0)
-                print(f"   Initialized {name}: std={std:.4f}")
+                with torch.no_grad():
+                    m.weight.data = torch.randn_like(m.weight) * std
+                    if m.bias is not None:
+                        m.bias.data.zero_()
+                    
+                    # Validation
+                    if torch.isnan(m.weight).any():
+                        print(f"❌ NaN in {name} linear weight after manual init!")
+                        m.weight.data.zero_()
+                    else:
+                        print(f"   ✅ Manually initialized {name}: std={std:.4f}, range=[{m.weight.min():.6f}, {m.weight.max():.6f}]")
+    
+    def _validate_weights_after_init(self):
+        """Check if weights contain NaN immediately after initialization"""
+        print("🔍 Validating weights after initialization:")
+        for name, param in self.named_parameters():
+            if torch.isnan(param).any():
+                print(f"❌ CRITICAL: {name} contains NaN immediately after init!")
+                print(f"   Shape: {param.shape}, NaN count: {torch.isnan(param).sum()}")
+                # Force fix the NaN weights
+                param.data = torch.where(torch.isnan(param), torch.zeros_like(param), param)
+            else:
+                print(f"✅ {name}: OK (min={param.min():.6f}, max={param.max():.6f})")
+    
+    def _add_weight_monitoring_hooks(self):
+        """Add hooks to detect when weights become NaN during training"""
+        def check_weight_nan_hook(module, grad_input, grad_output):
+            if hasattr(module, 'weight') and torch.isnan(module.weight).any():
+                print(f"🚨 WEIGHT CORRUPTION: {module.__class__.__name__} weights became NaN during training!")
+                module.weight.data = torch.where(torch.isnan(module.weight), torch.zeros_like(module.weight), module.weight)
+        
+        # Add hooks to critical layers
+        self.conv1.register_backward_hook(check_weight_nan_hook)
+        for layer in self.layers:
+            layer.register_backward_hook(check_weight_nan_hook)
     
     def _make_layer(self, in_channels, out_channels, blocks, stride=1, use_attention=False, drop_rate=0.1):
         downsample = None
