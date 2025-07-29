@@ -105,8 +105,10 @@ def main():
     from modules.common import add_sn
     from modules.input_variables import input_user_variables, input_dataset
     from modules.data_preprocess import reduce_dataset, data_augmentation, data_scaler, latent_conditioner_scaler, latent_conditioner_scaler_input
-    # Import models from the models file
-    from modules.latent_conditioner_models import LatentConditionerImg, LatentConditioner, TinyViTLatentConditioner
+    # Import models from separate model files
+    from modules.latent_conditioner_model_cnn import LatentConditionerImg
+    from modules.latent_conditioner_model_parametric import LatentConditioner
+    from modules.latent_conditioner_model_vit import TinyViTLatentConditioner
     # Import utilities and training functions from the main file  
     from modules.latent_conditioner import train_latent_conditioner, read_latent_conditioner_dataset_img, read_latent_conditioner_dataset, safe_cuda_initialization
     from modules.plotter import temporal_plotter

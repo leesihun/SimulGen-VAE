@@ -219,8 +219,10 @@ python SimulGen-VAE.py --lc_only=1  # with latent_conditioner_data_type='csv'
 #### Import Changes
 Updated import statements in `SimulGen-VAE.py`:
 ```python
-# Models from dedicated file
-from modules.latent_conditioner_models import LatentConditioner, LatentConditionerImg, TinyViTLatentConditioner
+# Models from separate dedicated files
+from modules.latent_conditioner_model_parametric import LatentConditioner
+from modules.latent_conditioner_model_cnn import LatentConditionerImg
+from modules.latent_conditioner_model_vit import TinyViTLatentConditioner
 
 # Utilities from main file
 from modules.latent_conditioner import train_latent_conditioner, read_latent_conditioner_dataset_img, ...
