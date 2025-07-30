@@ -284,6 +284,9 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
             # Calculate validation averages
             loss_val_print[epoch] = loss_save_val / val_batches_processed
             recon_loss_val_print[epoch] = recon_loss_save_val / val_batches_processed
+            
+            # CRITICAL: Switch back to training mode after validation
+            model.train()
         else:
             # For non-validation epochs, use previous validation values
             if epoch > 0:
