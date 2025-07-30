@@ -205,7 +205,7 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
     min_delta = 1e-8  # Require meaningful improvement
     
     # Track overfitting ratio
-    overfitting_threshold = 100.0  # Stop if val_loss > 10x train_loss
+    overfitting_threshold = 10.0  # Stop if val_loss > 10x train_loss
 
     from torchinfo import summary
     
@@ -213,6 +213,7 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
         summary(latent_conditioner, (64, 1, image_size*image_size))
     except Exception as e:
         print(f"Model summary failed: {e}")
+        print("Model architecture loaded successfully despite summary failure")
 
     latent_conditioner = latent_conditioner.to(device)
     

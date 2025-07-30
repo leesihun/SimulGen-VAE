@@ -170,7 +170,9 @@ class LatentConditionerImg(nn.Module):
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         self.dropout = nn.Dropout(dropout_rate)
         
-        # Multi-scale feature fusion layer
+        # Multi-scale feature fusion layer - corrected calculation
+        # final_features: latent_conditioner_filter[-1] channels
+        # multi_scale_features: len(latent_conditioner_filter) * (latent_conditioner_filter[-1] // 4) channels
         fusion_channels = latent_conditioner_filter[-1] + (latent_conditioner_filter[-1] // 4) * len(latent_conditioner_filter)
         self.feature_fusion = nn.Sequential(
             spectral_norm(nn.Linear(fusion_channels, latent_conditioner_filter[-1])),
@@ -304,12 +306,14 @@ class LatentConditionerImg(nn.Module):
             if torch.isnan(x).any():
                 x = torch.nan_to_num(x, nan=0.0)
         
-        # Collect multi-scale features
+        # Collect multi-scale features and store intermediate layer outputs
         multi_scale_features = []
+        layer_outputs = []  # Store intermediate outputs for aux heads
         
         # Pass through all parametric residual layers
         for i, layer in enumerate(self.layers):
             x = layer(x)
+            layer_outputs.append(x)  # Store intermediate output
             # Extract and project features from each scale
             projected_feat = self.feature_projections[i](x)
             multi_scale_features.append(projected_feat.flatten(1))
@@ -344,11 +348,10 @@ class LatentConditionerImg(nn.Module):
         xs_uncertainty = self.xs_uncertainty(xs_encoded)
         xs_uncertainty = xs_uncertainty.unflatten(1, (self.size2, self.latent_dim))
         
-        # Generate auxiliary outputs for intermediate supervision
+        # Generate auxiliary outputs for intermediate supervision using correct intermediate features
         aux_outputs = []
-        for i, _ in enumerate(self.layers):
-            # Use features from the main forward pass instead of recomputing
-            aux_out = self.aux_heads[i](x if i == len(self.layers)-1 else torch.zeros_like(x))
+        for i, layer_output in enumerate(layer_outputs):
+            aux_out = self.aux_heads[i](layer_output)
             aux_outputs.append(aux_out)
 
         # Return format based on compatibility mode
