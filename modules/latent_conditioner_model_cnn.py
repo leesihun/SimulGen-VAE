@@ -140,7 +140,7 @@ class LatentConditionerImg(nn.Module):
             nn.Tanh()
         )
         self.xs_head = nn.Sequential(
-            nn.Linear(encoder_dim, latent_dim * size2),
+            nn.Linear(encoder_dim//2, latent_dim * size2),
             nn.Tanh()
         )
         
