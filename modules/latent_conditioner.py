@@ -221,6 +221,8 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
     if not hasattr(latent_conditioner, '_initialize_weights'):
         latent_conditioner.apply(safe_initialize_weights_He)
 
+    # Initialize validation diagnostic logging flag
+    first_val_batch_logged = False
 
     for epoch in range(latent_conditioner_epoch):
         start_time = time.time()
