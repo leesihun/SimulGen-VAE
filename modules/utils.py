@@ -214,9 +214,9 @@ def get_optimal_workers(dataset_size, is_load_all=False, batch_size=32):
     cpu_count = min(8, torch.multiprocessing.cpu_count())
     
     # For very small datasets, fewer workers are better
-    if dataset_size < 100:
+    if dataset_size < 1000:
         return 0  # Single-threaded is best for tiny datasets
-    elif dataset_size < 1000:
+    elif dataset_size < 10000:
         return min(2, cpu_count)  # Small datasets need fewer workers
     else:
         # Larger datasets - scale workers based on batch size
