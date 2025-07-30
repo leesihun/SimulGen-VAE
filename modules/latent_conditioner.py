@@ -15,7 +15,7 @@ im_size = DEFAULT_IMAGE_SIZE  # Backward compatibility
 
 def read_latent_conditioner_dataset_img(param_dir, param_data_type):
     cur_dir = os.getcwd()
-    file_dir = os.path.join(cur_dir, param_dir)
+    file_dir = cur_dir+param_dir
 
     if param_data_type == ".jpg" or param_data_type == ".png":
         print('Reading image dataset from '+file_dir+'\n')
