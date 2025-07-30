@@ -18,7 +18,8 @@
       "Bash(node:*)",
       "Bash(npx:*)",
       "Bash(docker:*)",
-      "Bash(timeout 10 npx @playwright/mcp@latest)"
+      "Bash(timeout 10 npx @playwright/mcp@latest)",
+      "mcp__semgrep__get_supported_languages"
     ],
     "deny": []
   }

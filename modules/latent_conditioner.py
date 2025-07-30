@@ -234,8 +234,9 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
         for i, (x, y1, y2) in enumerate(latent_conditioner_dataloader):
             
             # Move data to device if needed
-            if x.device != device:
-                x, y1, y2 = x.to(device, non_blocking=True), y1.to(device, non_blocking=True), y2.to(device, non_blocking=True)
+            try:
+                if x.device != device:
+                    x, y1, y2 = x.to(device, non_blocking=True), y1.to(device, non_blocking=True), y2.to(device, non_blocking=True)
                 
                 # GPU-optimized outline-preserving augmentations (only for image data)  
                 if is_image_data and torch.rand(1, device=x.device) < 0.9:  # 90% chance
