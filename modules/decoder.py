@@ -201,13 +201,13 @@ class Decoder(nn.Module):
                 
                 if mode=="fix" and i<freeze_level:
                     if len(self.zs) < freeze_level+1:
-                        z = reparameterize(mu, std)
+                        z = reparameterize(mu, std*1e-10)
                         self.zs.append(z)
                     else:
                         z = self.zs[i+1]
 
                 elif mode== "fix":
-                    z= reparameterize(mu, std)
+                    z= reparameterize(mu, std*1e-10)
                 else:
                     z=reparameterize(mu, std)
 
