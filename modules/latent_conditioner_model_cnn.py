@@ -180,7 +180,7 @@ class LatentConditionerImg(nn.Module):
                 add_sn(nn.Linear(channels, channels // 4)),
                 nn.SiLU(inplace=True),
                 nn.Dropout(0.2),  # Add regularization to auxiliary heads
-                add_sn(nn.Linear(channels // 4, latent_dim_end))
+                add_sn(nn.Linear(channels // 4, latent_dim_end)),
                 nn.Tanh()
             )
             self.aux_heads.append(aux_head)
