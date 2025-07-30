@@ -11,7 +11,14 @@
       "Bash(mkdir:*)",
       "Bash(cp:*)",
       "Bash(7z:*)",
-      "Bash(powershell:*)"
+      "Bash(powershell:*)",
+      "Bash(claude settings show)",
+      "Bash(claude mcp:*)",
+      "WebFetch(domain:mcp.so)",
+      "Bash(node:*)",
+      "Bash(npx:*)",
+      "Bash(docker:*)",
+      "Bash(timeout 10 npx @playwright/mcp@latest)"
     ],
     "deny": []
   }

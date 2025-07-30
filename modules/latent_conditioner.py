@@ -1,12 +1,10 @@
 import torch
 import torch.nn as nn
 import numpy as np
-# from torchsummaryX import summary  # Using torchinfo instead
 import torch.nn.functional as F
 import cv2
 import os
 import pandas as pd
-import matplotlib.pyplot as plt
 import natsort
 
 im_size = 256  # High resolution for sharp outline detection
@@ -45,14 +43,8 @@ def read_latent_conditioner_dataset(param_dir, param_data_type): # For normal pa
     return latent_conditioner_data
 
 import time
-from modules.common import initialize_weights_He, add_sn
-from torchvision.transforms import v2
-from torch.utils.tensorboard import SummaryWriter
-from torchvision import transforms
-import pytorch_warmup as warmup
-import torchvision.transforms.functional as TF
-import random
 import math
+from torch.utils.tensorboard import SummaryWriter
 
 # GPU-optimized outline-preserving augmentation functions
 def apply_outline_preserving_augmentations(x, prob=0.5):
@@ -147,8 +139,49 @@ def safe_initialize_weights_He(m):
             nn.init.constant_(m.bias.data, 0)
     elif isinstance(m, nn.Linear):
         nn.init.kaiming_uniform_(m.weight.data)
-        if m.bias is not None:  # Add this check
+        if m.bias is not None:
             nn.init.constant_(m.bias.data, 0)
+
+def setup_device_and_model(latent_conditioner):
+    """Setup device and move model appropriately"""
+    model_device = next(latent_conditioner.parameters()).device
+    device = model_device
+    
+    # Move to CUDA if available and model is on CPU
+    if torch.cuda.is_available() and device.type == 'cpu':
+        try:
+            latent_conditioner = latent_conditioner.to('cuda:0')
+            device = torch.device('cuda:0')
+        except Exception as e:
+            print(f"Failed to move model to CUDA: {e}")
+            device = torch.device('cpu')
+    
+    return latent_conditioner, device
+
+def setup_optimizer_and_scheduler(latent_conditioner, latent_conditioner_lr, weight_decay, latent_conditioner_epoch):
+    """Setup optimizer and learning rate schedulers"""
+    # Create optimizer with appropriate learning rate
+    safe_lr = latent_conditioner_lr
+    if hasattr(latent_conditioner, '_initialize_weights'):
+        safe_lr = min(latent_conditioner_lr, 1e-5)
+    
+    optimizer = torch.optim.AdamW(latent_conditioner.parameters(), lr=safe_lr, weight_decay=weight_decay)
+    
+    # Advanced learning rate scheduling
+    warmup_epochs = 10
+    warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
+        optimizer, 
+        start_factor=0.01,
+        total_iters=warmup_epochs
+    )
+    
+    main_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, 
+        T_max=latent_conditioner_epoch - warmup_epochs, 
+        eta_min=1e-8
+    )
+    
+    return optimizer, warmup_scheduler, main_scheduler, warmup_epochs
 
 def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_dataloader, latent_conditioner_validation_dataloader, latent_conditioner, latent_conditioner_lr, weight_decay=1e-4, is_image_data=True, image_size=256):
 
@@ -156,95 +189,13 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
 
     loss=0
     
-    # Enhanced device detection and debugging
-    print("\n🔍 === LATENT CONDITIONER DEVICE DEBUGGING ===")
-    print(f"CUDA available: {torch.cuda.is_available()}")
-    if torch.cuda.is_available():
-        print(f"CUDA device count: {torch.cuda.device_count()}")
-        print(f"Current CUDA device: {torch.cuda.current_device()}")
-        print(f"Device name: {torch.cuda.get_device_name(0)}")
-    
-    # Get the device the model is currently on
-    model_device = next(latent_conditioner.parameters()).device
-    print(f"Latent conditioner model is currently on: {model_device}")
-    
-    # CRITICAL: Check if model parameters are actually on different devices
-    all_devices = set()
-    for name, param in latent_conditioner.named_parameters():
-        all_devices.add(param.device)
-        if len(all_devices) == 1:
-            continue  # All on same device so far
-        else:
-            print(f"🚨 DEVICE MISMATCH DETECTED!")
-            print(f"   Parameter '{name}' is on {param.device}")
-            print(f"   But other parameters are on {all_devices}")
-            break
-    
-    if len(all_devices) > 1:
-        print(f"❌ Model has parameters on multiple devices: {all_devices}")
-        print("   This will cause training to run on CPU regardless of data placement!")
-        print("   Moving ALL parameters to cuda:0...")
-        latent_conditioner = latent_conditioner.to('cuda:0')
-        model_device = torch.device('cuda:0')
-    else:
-        print(f"✓ All model parameters are on: {model_device}")
-    
-    # Use the same device as the model (don't override)
-    device = model_device
-    print(f"Using device for training: {device}")
-    
-    # Ensure model is on the correct device
-    if torch.cuda.is_available() and device.type == 'cpu':
-        print("⚠️  WARNING: Model is on CPU but CUDA is available!")
-        print("   Moving model to CUDA...")
-        try:
-            latent_conditioner = latent_conditioner.to('cuda:0')
-            device = torch.device('cuda:0')
-            print(f"✓ Successfully moved model to {device}")
-        except Exception as e:
-            print(f"❌ Failed to move model to CUDA: {e}")
-            print("   Continuing with CPU training")
-            device = torch.device('cpu')
-    
-    print(f"Final training device: {device}")
-    print("============================================\n")
+    # Setup device and model
+    latent_conditioner, device = setup_device_and_model(latent_conditioner)
+    print(f"Training on device: {device}")
 
-    # Create optimizer AFTER ensuring model is on correct device
-    # Reduce learning rate if using small initialization to prevent gradient explosion
-    safe_lr = latent_conditioner_lr
-    if hasattr(latent_conditioner, '_initialize_weights'):
-        safe_lr = min(latent_conditioner_lr, 1e-5)  # Cap at 1e-5 for CNN with small init
-        print(f"📊 Using reduced learning rate {safe_lr:.2e} for CNN with small weight initialization")
-    
-    latent_conditioner_optimized = torch.optim.AdamW(latent_conditioner.parameters(), lr=safe_lr, weight_decay=weight_decay)
-    
-    # Check if optimizer parameters are on GPU
-    optimizer_device = next(iter(latent_conditioner_optimized.param_groups[0]['params'])).device
-    print(f"🔍 Optimizer tracking parameters on: {optimizer_device}")
-    
-    if optimizer_device != device:
-        print(f"❌ Optimizer device mismatch! Optimizer: {optimizer_device}, Training: {device}")
-        print("   Recreating optimizer with correct device parameters...")
-        latent_conditioner_optimized = torch.optim.AdamW(latent_conditioner.parameters(), lr=safe_lr, weight_decay=weight_decay)
-        optimizer_device = next(iter(latent_conditioner_optimized.param_groups[0]['params'])).device
-        print(f"✓ Optimizer now tracking parameters on: {optimizer_device}")
-    else:
-        print(f"✓ Optimizer and training devices match: {device}")
-    
-    # Advanced learning rate scheduling
-    warmup_epochs = 10
-    # Linear warmup scheduler for first 10 epochs - increased initial LR
-    warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
-        latent_conditioner_optimized, 
-        start_factor=0.01,  # Increased from 0.01 to help validation learning
-        total_iters=warmup_epochs
-    )
-    
-    # Main cosine scheduler with much lower eta_min
-    main_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        latent_conditioner_optimized, 
-        T_max=latent_conditioner_epoch - warmup_epochs, 
-        eta_min=1e-8
+    # Setup optimizer and schedulers
+    latent_conditioner_optimized, warmup_scheduler, main_scheduler, warmup_epochs = setup_optimizer_and_scheduler(
+        latent_conditioner, latent_conditioner_lr, weight_decay, latent_conditioner_epoch
     )
     
     # Early stopping parameters - much more aggressive for overfitting
@@ -257,21 +208,18 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
     overfitting_threshold = 100.0  # Stop if val_loss > 10x train_loss
 
     from torchinfo import summary
-    import math
-
-    summary(latent_conditioner, (64, 1, image_size*image_size))
+    
+    try:
+        summary(latent_conditioner, (64, 1, image_size*image_size))
+    except Exception as e:
+        print(f"Model summary failed: {e}")
 
     latent_conditioner = latent_conditioner.to(device)
     
-    # Skip reinitialization for CNN model as it has custom GroupNorm-compatible initialization
+    # Initialize weights if needed
     if not hasattr(latent_conditioner, '_initialize_weights'):
         latent_conditioner.apply(safe_initialize_weights_He)
-    else:
-        print("📊 Using custom CNN initialization - skipping safe_initialize_weights_He")
-    # latent_conditioner.apply(add_sn)  # Temporarily disabled for testing
 
-    # Data analysis for first epoch
-    data_analyzed = False
 
     for epoch in range(latent_conditioner_epoch):
         start_time = time.time()
@@ -282,32 +230,20 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
         epoch_loss_y2 = 0
         num_batches = 0
         
-        # Track batch processing time for performance monitoring
-        batch_times = []
-        aug_times = []
         
         for i, (x, y1, y2) in enumerate(latent_conditioner_dataloader):
-            batch_start = time.time()
             
-            # OPTIMIZED: Only move data to GPU if not already there
-            try:
-                if x.device != device:
-                    x, y1, y2 = x.to(device, non_blocking=True), y1.to(device, non_blocking=True), y2.to(device, non_blocking=True)
-                    if epoch == 0 and i == 0:
-                        print(f"📊 Data transferred from {x.device} to {device}")
-                else:
-                    if epoch == 0 and i == 0:
-                        print(f"📊 Data already on {device} - no transfer needed!")
+            # Move data to device if needed
+            if x.device != device:
+                x, y1, y2 = x.to(device, non_blocking=True), y1.to(device, non_blocking=True), y2.to(device, non_blocking=True)
                 
                 # GPU-optimized outline-preserving augmentations (only for image data)  
                 if is_image_data and torch.rand(1, device=x.device) < 0.9:  # 90% chance
-                    aug_start = time.time()
                     # Temporarily reshape to 2D for augmentation
                     im_size = int(math.sqrt(x.shape[-1]))
                     x_2d = x.reshape(-1, im_size, im_size)
                     x_2d = apply_outline_preserving_augmentations(x_2d, prob=0.9)  # GPU-optimized
                     x = x_2d.reshape(x.shape[0], -1)  # Flatten back
-                    aug_times.append(time.time() - aug_start)
                     
                 # GPU-optimized gentle mixup augmentation
                 if torch.rand(1, device=x.device) < 0.15 and x.size(0) > 1:  # 15% chance
@@ -327,53 +263,22 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
                     noise = torch.randn_like(x) * 0.01  # Very light noise to preserve outlines
                     x = x + noise
                 
-                # Debug device placement for first batch
-                if epoch == 0 and i == 0:
-                    print(f"✓ Data successfully moved to {device}")
-                    print(f"  x device: {x.device}, y1 device: {y1.device}, y2 device: {y2.device}")
                     
             except RuntimeError as e:
-                print(f"❌ Error moving data to device {device}: {e}")
-                # If GPU transfer fails, ensure model and data are both on CPU
+                print(f"Error moving data to device {device}: {e}")
+                # Fallback to CPU if GPU transfer fails
                 if device.type == 'cuda':
-                    print("   Moving model to CPU to match data...")
                     latent_conditioner = latent_conditioner.to('cpu')
                     device = torch.device('cpu')
-                    # Update optimizer to use CPU parameters
                     latent_conditioner_optimized = torch.optim.AdamW(latent_conditioner.parameters(), lr=latent_conditioner_lr, weight_decay=weight_decay)
                     x, y1, y2 = x.to(device), y1.to(device), y2.to(device)
-                    print(f"   ✓ Both model and data now on {device}")
-                    print("   ✓ Optimizer updated for CPU parameters")
                 else:
-                    raise  # Re-raise if it's not a CUDA issue
+                    raise
             
             latent_conditioner_optimized.zero_grad(set_to_none=True)
 
-            # Critical check: Monitor where forward pass actually executes
-            if epoch == 0 and i == 0:
-                print(f"🔍 About to run forward pass:")
-                print(f"   Input x device: {x.device}, shape: {x.shape}")
-                print(f"   Model parameters device: {next(latent_conditioner.parameters()).device}")
-                
             y_pred1, y_pred2 = latent_conditioner(x)
             
-            # Verify output tensors are on correct device
-            if epoch == 0 and i == 0:
-                print(f"🔍 Forward pass completed:")
-                print(f"   Output y_pred1 device: {y_pred1.device}")
-                print(f"   Output y_pred2 device: {y_pred2.device}")
-                print(f"   Expected device: {device}")
-                
-                if y_pred1.device != device or y_pred2.device != device:
-                    print(f"❌ OUTPUT DEVICE MISMATCH! This confirms model is computing on wrong device!")
-                else:
-                    print(f"✅ Forward pass executed on correct device: {device}")
-            
-            # Analyze predictions for first few batches
-            if not data_analyzed and epoch == 0 and i < 3:
-                print(f"Prediction Statistics Batch {i}:")
-                print(f"  Y1_pred - Min: {y_pred1.min().item():.6f}, Max: {y_pred1.max().item():.6f}, Mean: {y_pred1.mean().item():.6f}, Std: {y_pred1.std().item():.6f}")
-                print(f"  Y2_pred - Min: {y_pred2.min().item():.6f}, Max: {y_pred2.max().item():.6f}, Mean: {y_pred2.mean().item():.6f}, Std: {y_pred2.std().item():.6f}")
 
             # Add label smoothing for extreme regularization
             label_smooth = 0.2  # 10% label smoothing
@@ -383,10 +288,6 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
             A = nn.MSELoss()(y_pred1, y1_smooth)
             B = nn.MSELoss()(y_pred2, y2_smooth)
             
-            # Log individual losses for first few batches
-            if not data_analyzed and epoch == 0 and i < 3:
-                print(f"  Loss A (Y1): {A.item():.6f}, Loss B (Y2): {B.item():.6f}, Ratio A/B: {A.item()/B.item():.3f}")
-                print("---")
 
             loss = A + B 
 
@@ -401,42 +302,13 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
             epoch_loss_y2 += B.item()
             num_batches += 1
             
-            # Monitor GPU utilization during backward pass
-            if epoch == 0 and i == 0:
-                print(f"🔍 About to run backward pass:")
-                print(f"   Loss tensor device: {loss.device}")
-                if torch.cuda.is_available():
-                    print(f"   GPU memory before backward: {torch.cuda.memory_allocated()/1024**3:.2f} GB")
-            
             loss.backward()
-            
-            if epoch == 0 and i == 0:
-                if torch.cuda.is_available():
-                    print(f"   GPU memory after backward: {torch.cuda.memory_allocated()/1024**3:.2f} GB")
-                    print(f"   GPU memory cached: {torch.cuda.memory_reserved()/1024**3:.2f} GB")
-                    
-                # Check if gradients are on GPU
-                first_param = next(latent_conditioner.parameters())
-                if first_param.grad is not None:
-                    print(f"   First parameter gradient device: {first_param.grad.device}")
-                else:
-                    print(f"   ❌ No gradients found after backward pass!")
             
             # Gradient clipping for training stability - prevents exploding gradients
             torch.nn.utils.clip_grad_norm_(latent_conditioner.parameters(), max_norm=1.0)
             
             latent_conditioner_optimized.step()
-            
-            batch_times.append(time.time() - batch_start)
         
-        # Performance reporting every 10 epochs
-        if epoch % 10 == 0 and batch_times:
-            avg_batch_time = np.mean(batch_times) * 1000  # Convert to ms
-            if aug_times:
-                avg_aug_time = np.mean(aug_times) * 1000  # Convert to ms
-                print(f"📊 Performance (Epoch {epoch}): Avg batch: {avg_batch_time:.1f}ms, Avg augmentation: {avg_aug_time:.1f}ms")
-            else:
-                print(f"📊 Performance (Epoch {epoch}): Avg batch: {avg_batch_time:.1f}ms")
         
         avg_train_loss = epoch_loss / num_batches
         avg_train_loss_y1 = epoch_loss_y1 / num_batches
@@ -449,34 +321,11 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
         val_loss_y2 = 0
         val_batches = 0
         
-        # Diagnostic variables for first few validation batches
-        first_val_batch_logged = False
         
         with torch.no_grad():
             for i, (x_val, y1_val, y2_val) in enumerate(latent_conditioner_validation_dataloader):
-                # For image data, keep as flattened - model will handle reshaping internally
-                # For parametric data, keep as 1D vector
-                try:
-                    x_val, y1_val, y2_val = x_val.to(device), y1_val.to(device), y2_val.to(device)
-                    
-                    # Debug device placement for first validation batch
-                    if epoch == 0 and i == 0:
-                        print(f"✓ Validation data moved to {device}")
-                        
-                except RuntimeError as e:
-                    print(f"❌ Error moving validation data to device {device}: {e}")
-                    # Handle device mismatch in validation
-                    if device.type == 'cuda':
-                        print("   Moving model to CPU for validation...")
-                        latent_conditioner = latent_conditioner.to('cpu')
-                        device = torch.device('cpu')
-                        # Update optimizer for CPU parameters
-                        latent_conditioner_optimized = torch.optim.AdamW(latent_conditioner.parameters(), lr=latent_conditioner_lr, weight_decay=weight_decay)
-                        x_val, y1_val, y2_val = x_val.to(device), y1_val.to(device), y2_val.to(device)
-                        print(f"   ✓ Validation now on {device}")
-                        print("   ✓ Optimizer updated for CPU parameters")
-                    else:
-                        raise
+                # Move validation data to device
+                x_val, y1_val, y2_val = x_val.to(device), y1_val.to(device), y2_val.to(device)
                 
                 y_pred1_val, y_pred2_val = latent_conditioner(x_val)
                 
@@ -522,7 +371,7 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
         # Check for severe overfitting and stop early
         overfitting_ratio = avg_val_loss / max(avg_train_loss, 1e-8)
         if overfitting_ratio > overfitting_threshold:
-            print(f'🚨 Severe overfitting detected! Val/Train ratio: {overfitting_ratio:.1f}')
+            print(f'Severe overfitting detected! Val/Train ratio: {overfitting_ratio:.1f}')
             print(f'Stopping early at epoch {epoch}')
             break
             
