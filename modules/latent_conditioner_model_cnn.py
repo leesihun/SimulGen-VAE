@@ -4,19 +4,6 @@ import torch.nn.functional as F
 import math
 # from torch.nn.utils import spectral_norm  # Removed for debugging
 
-
-class DropBlock2D(nn.Module):
-    """DropBlock regularization for 2D feature maps - DISABLED for debugging"""
-    def __init__(self, drop_rate=0.1, block_size=7):
-        super(DropBlock2D, self).__init__()
-        self.drop_rate = drop_rate
-        self.block_size = block_size
-
-    def forward(self, x):
-        """DropBlock disabled - return input unchanged"""
-        return x  # Disabled for debugging training issues
-
-
 class SqueezeExcitation(nn.Module):
     """Squeeze-and-Excitation block for channel attention"""
     def __init__(self, channels, reduction=16):
@@ -60,7 +47,6 @@ class ResidualBlock(nn.Module):
         
         self.downsample = downsample
         self.silu = nn.SiLU(inplace=True)
-        # self.dropblock = DropBlock2D(drop_rate=drop_rate)  # Disabled for debugging
         
         # Optional SE attention
         self.use_attention = use_attention
@@ -73,7 +59,6 @@ class ResidualBlock(nn.Module):
         out = self.conv1(x)
         out = self.gn1(out)
         out = self.silu(out)
-        # out = self.dropblock(out)  # Disabled for debugging
         
         out = self.conv2(out)
         out = self.gn2(out)
@@ -105,13 +90,11 @@ class LatentConditionerImg(nn.Module):
         self.num_layers = len(latent_conditioner_filter)
         self.return_dict = return_dict  # Backward compatibility flag
         
-        # Initial strided convolution (replaces conv + maxpool) - NO spectral norm on first layer for stability
+        # Initial strided convolution (replaces conv + maxpool)
         self.conv1 = nn.Conv2d(1, latent_conditioner_filter[0], kernel_size=7, stride=2, padding=3, bias=False)
         # Simplified GroupNorm configuration
         self.gn1 = nn.GroupNorm(8, latent_conditioner_filter[0])  # Standard 8 groups
         self.silu = nn.SiLU(inplace=True)
-        # Reduce DropBlock rate for initial stability - DISABLED
-        # self.initial_dropblock = DropBlock2D(drop_rate=max(0.01, dropout_rate * 0.1))
         
         # Parametric residual layers with multi-scale feature collection
         self.layers = nn.ModuleList()
@@ -119,34 +102,15 @@ class LatentConditionerImg(nn.Module):
         in_channels = latent_conditioner_filter[0]
         
         for i, out_channels in enumerate(latent_conditioner_filter):
-            # First layer has stride=1, others have stride=2 for downsampling
-            stride = 1 if i == 0 else 2
+            # Downsample by 2
+            stride = 2
             layer = self._make_layer(in_channels, out_channels, 2, stride, use_attention, dropout_rate)
             self.layers.append(layer)
-            
-            # Add projection layers for multi-scale feature fusion
-            self.feature_projections.append(
-                nn.Sequential(
-                    nn.AdaptiveAvgPool2d(1),
-                    nn.Conv2d(out_channels, latent_conditioner_filter[-1] // 4, 1),
-                    nn.SiLU(inplace=True)
-                )
-            )
             in_channels = out_channels
         
         # Global average pooling
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
-        self.dropout = nn.Dropout(max(0.1, dropout_rate * 0.5))  # Reduced for debugging
-        
-        # Multi-scale feature fusion layer - corrected calculation
-        # final_features: latent_conditioner_filter[-1] channels
-        # multi_scale_features: len(latent_conditioner_filter) * (latent_conditioner_filter[-1] // 4) channels
-        fusion_channels = latent_conditioner_filter[-1] + (latent_conditioner_filter[-1] // 4) * len(latent_conditioner_filter)
-        self.feature_fusion = nn.Sequential(
-            nn.Linear(fusion_channels, latent_conditioner_filter[-1]),  # Removed spectral_norm
-            nn.SiLU(inplace=True),
-            nn.Dropout(max(0.05, dropout_rate * 0.2))  # Reduced for debugging
-        )
+        self.dropout = nn.Dropout(dropout_rate)  # Reduced for debugging
         
         # Separate encoders for different outputs
         shared_dim = latent_conditioner_filter[-1]
@@ -154,39 +118,39 @@ class LatentConditionerImg(nn.Module):
         
         # Latent encoder pathway
         self.latent_encoder = nn.Sequential(
-            nn.Linear(shared_dim, encoder_dim),  # Removed spectral_norm
+            nn.Linear(shared_dim, encoder_dim),
             nn.SiLU(inplace=True),
-            nn.Dropout(max(0.03, dropout_rate * 0.1)),  # Reduced for debugging
-            nn.Linear(encoder_dim, encoder_dim // 2),  # Removed spectral_norm
+            nn.Dropout(dropout_rate),
+            nn.Linear(encoder_dim, encoder_dim // 2),
             nn.SiLU(inplace=True)
         )
         
         # XS encoder pathway  
         self.xs_encoder = nn.Sequential(
-            nn.Linear(shared_dim, encoder_dim),  # Removed spectral_norm
+            nn.Linear(shared_dim, encoder_dim),
             nn.SiLU(inplace=True),
-            nn.Dropout(max(0.03, dropout_rate * 0.1)),  # Reduced for debugging
-            nn.Linear(encoder_dim, encoder_dim),  # Removed spectral_norm
+            nn.Dropout(dropout_rate),
+            nn.Linear(encoder_dim, encoder_dim // 2),
             nn.SiLU(inplace=True)
         )
         
         # Output heads with Tanh activation for [-1, 1] scaling
         self.latent_head = nn.Sequential(
-            nn.Linear(encoder_dim // 2, latent_dim_end),  # Removed spectral_norm
+            nn.Linear(encoder_dim // 2, latent_dim_end),
             nn.Tanh()
         )
         self.xs_head = nn.Sequential(
-            nn.Linear(encoder_dim, latent_dim * size2),  # Removed spectral_norm
+            nn.Linear(encoder_dim, latent_dim * size2),
             nn.Tanh()
         )
         
         # Uncertainty estimation heads
         self.latent_uncertainty = nn.Sequential(
-            nn.Linear(encoder_dim // 2, latent_dim_end),  # Removed spectral_norm
+            nn.Linear(encoder_dim // 2, latent_dim_end),
             nn.Softplus()  # Ensures positive uncertainty values
         )
         self.xs_uncertainty = nn.Sequential(
-            nn.Linear(encoder_dim, latent_dim * size2),  # Removed spectral_norm
+            nn.Linear(encoder_dim, latent_dim * size2),
             nn.Softplus()
         )
         
@@ -246,22 +210,11 @@ class LatentConditionerImg(nn.Module):
         # Reshape input to image format
         x = x.reshape([-1, 1, int(math.sqrt(x.shape[-1])), int(math.sqrt(x.shape[-1]))])
         
-        # SIMPLIFIED: Basic input validation only
-        x = torch.clamp(x, min=-10.0, max=10.0)  # Prevent extreme values
-        
         # Perform convolution
         x = self.conv1(x)
         x = self.gn1(x)
         x = self.silu(x)
         
-        # DropBlock disabled for debugging
-        # if self.training:
-        #     x = self.initial_dropblock(x)
-        #     if torch.isnan(x).any():
-        #         x = torch.nan_to_num(x, nan=0.0)
-        
-        # SIMPLIFIED: Skip multi-scale features for debugging
-        # Pass through all parametric residual layers (simplified)
         for layer in self.layers:
             x = layer(x)
         
@@ -280,19 +233,4 @@ class LatentConditionerImg(nn.Module):
         xs_main = self.xs_head(xs_encoded)
         xs_main = xs_main.unflatten(1, (self.size2, self.latent_dim))
         
-        # SIMPLIFIED: Skip final NaN checks - use gradient clipping instead
-        
-        # SIMPLIFIED: Skip uncertainty estimation and auxiliary heads for debugging
-        # Generate uncertainty estimates - DISABLED
-        # latent_uncertainty = self.latent_uncertainty(latent_encoded)
-        # xs_uncertainty = self.xs_uncertainty(xs_encoded)
-        # xs_uncertainty = xs_uncertainty.unflatten(1, (self.size2, self.latent_dim))
-        
-        # Generate auxiliary outputs for intermediate supervision - DISABLED
-        # aux_outputs = []
-        # for i, layer_output in enumerate(layer_outputs):
-        #     aux_out = self.aux_heads[i](layer_output)
-        #     aux_outputs.append(aux_out)
-
-        # Simplified return - always return tuple format
         return latent_main, xs_main
