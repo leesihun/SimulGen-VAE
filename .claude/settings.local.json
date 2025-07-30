@@ -13,13 +13,15 @@
       "Bash(7z:*)",
       "Bash(powershell:*)",
       "Bash(claude settings show)",
-      "Bash(claude mcp:*)",
-      "WebFetch(domain:mcp.so)",
       "Bash(node:*)",
       "Bash(npx:*)",
       "Bash(docker:*)",
       "Bash(timeout 10 npx @playwright/mcp@latest)",
-      "mcp__semgrep__get_supported_languages"
+      "mcp__semgrep__get_supported_languages",
+      "Bash(EXA_API_KEY=853b3add-0edc-4e69-9141-16096f712b10 exa-mcp-server --help)",
+      "Bash(EXA_API_KEY=853b3add-0edc-4e69-9141-16096f712b10 npx -y exa-mcp-server --list-tools)",
+      "Bash(set EXA_API_KEY=853b3add-0edc-4e69-9141-16096f712b10)",
+      "Bash(where:*)"
     ],
     "deny": []
   }

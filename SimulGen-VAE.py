@@ -700,7 +700,7 @@ def main():
     
     latent_conditioner_train_dataset, latent_conditioner_validation_dataset = random_split(latent_conditioner_dataset, [train_size, val_size])
     # Optimize LatentConditioner DataLoaders with intelligent worker detection
-    latent_conditioner_optimal_workers = 0#get_optimal_workers(latent_conditioner_dataset_size, False, latent_conditioner_batch_size)  # LatentConditioner data is not load_all
+    latent_conditioner_optimal_workers = get_optimal_workers(latent_conditioner_dataset_size, False, latent_conditioner_batch_size)  # LatentConditioner data is not load_all
     
     # Optimize DataLoader settings based on whether data is GPU-preloaded
     is_gpu_preloaded = hasattr(latent_conditioner_dataset, 'on_gpu') and latent_conditioner_dataset.on_gpu

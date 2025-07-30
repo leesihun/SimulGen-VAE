@@ -8,41 +8,26 @@ import torch
 import multiprocessing
 import gc
 
-def get_optimal_workers(dataset_size, load_all, batch_size):
-    """
-    Intelligently determine optimal number of DataLoader workers based on:
-    - Dataset size
-    - Whether data is preloaded (load_all)
-    - System capabilities
-    - Batch size
-    """
-    if load_all:
-        # Data already on GPU, no need for workers
-        return 0
-    
-    # Get CPU count, but cap it reasonably
-    cpu_count = multiprocessing.cpu_count()
-    
-    # For small datasets, use fewer workers to avoid overhead
-    if dataset_size < 100:
-        return 0
-    elif dataset_size < 1000:
-        return min(2, cpu_count)
-    elif dataset_size < 10000:
-        return min(6, cpu_count // 2)
-    else:
-        # For very large datasets, use more workers but not too many
-        # Rule of thumb: 1 worker per 2-4 CPU cores, capped at 8
-        optimal = min(max(cpu_count // 2, 2), 8)
-        return optimal
 
-def get_latest_file(directory):
+def get_latest_file(directory, pattern='*'):
+    """Get the most recently modified file in directory matching pattern.
+    
+    Args:
+        directory (str): Directory path to search
+        pattern (str): File pattern to match (default: '*' for all files)
+    
+    Returns:
+        str: Path to the most recently modified file
+    
+    Raises:
+        FileNotFoundError: If directory doesn't exist or no matching files found
+    """
     if not os.path.exists(directory):
         raise FileNotFoundError(f"Directory {directory} does not exist")
     
-    files = glob.glob(os.path.join(directory, '*'))
+    files = glob.glob(os.path.join(directory, pattern))
     if not files:
-        raise FileNotFoundError(f"No files found in {directory}")
+        raise FileNotFoundError(f"No files matching '{pattern}' found in {directory}")
 
     latest_file = max(files, key=os.path.getmtime)
     return latest_file
@@ -208,13 +193,22 @@ class LatentConditionerDataset(Dataset):
                    torch.zeros_like(self.output_data2[0])
 
 def get_optimal_workers(dataset_size, is_load_all=False, batch_size=32):
-    """Determine optimal number of DataLoader workers based on system and dataset."""
+    """Intelligently determine optimal number of DataLoader workers.
+    
+    Args:
+        dataset_size (int): Number of samples in the dataset
+        is_load_all (bool): Whether data is preloaded to GPU
+        batch_size (int): Batch size for training
+    
+    Returns:
+        int: Optimal number of DataLoader workers
+    
+    Note:
+        Returns 0 workers if data is preloaded to GPU for maximum efficiency.
+    """
     if is_load_all:
         # When data is preloaded to GPU, best to use 0 workers
         return 0
-    
-    # Check if CUDA is available
-    cuda_available = torch.cuda.is_available()
     
     # Get CPU count but cap at 8 for reasonable performance
     cpu_count = min(8, torch.multiprocessing.cpu_count())
@@ -231,12 +225,3 @@ def get_optimal_workers(dataset_size, is_load_all=False, batch_size=32):
         else:
             return min(cpu_count, 6)  # Cap at 6 workers
 
-def get_latest_file(path, pattern):
-    """Get the most recently modified file matching pattern in path"""
-    import glob
-    import os
-    
-    files = glob.glob(os.path.join(path, pattern))
-    if not files:
-        return None
-    return max(files, key=os.path.getctime)

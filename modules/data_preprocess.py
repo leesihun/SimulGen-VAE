@@ -1,11 +1,10 @@
 import numpy as np
 import warnings
+import time
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from pickle import dump
-from audiomentations import *
 
 def reduce_dataset(data_save, num_time_to, num_node_red, num_param, num_time, num_node_red_start, num_node_red_end):
-    import time
 
     start = time.time()
 
@@ -60,7 +59,6 @@ def data_augmentation(stretch, FOM_data, num_param, num_node):
     return FOM_data_aug
 
 def data_scaler(FOM_data_aug, FOM_data, num_time, num_node, directory):
-    import time
 
     start= time.time()
 

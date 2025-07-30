@@ -7,11 +7,15 @@ import os
 import pandas as pd
 import natsort
 
-im_size = 256  # High resolution for sharp outline detection
+# Image processing constants
+DEFAULT_IMAGE_SIZE = 256  # High resolution for sharp outline detection
+INTERPOLATION_METHOD = cv2.INTER_CUBIC  # High-quality interpolation for image resizing
+
+im_size = DEFAULT_IMAGE_SIZE  # Backward compatibility
 
 def read_latent_conditioner_dataset_img(param_dir, param_data_type):
     cur_dir = os.getcwd()
-    file_dir = cur_dir+param_dir
+    file_dir = os.path.join(cur_dir, param_dir)
 
     if param_data_type == ".jpg" or param_data_type == ".png":
         print('Reading image dataset from '+file_dir+'\n')
@@ -24,10 +28,10 @@ def read_latent_conditioner_dataset_img(param_dir, param_data_type):
 
         for file in files:
             print(file)
-            file_path = file_dir+'/'+file
+            file_path = os.path.join(file_dir, file)
             im = cv2.imread(file_path, 0)
 
-            resized_im = cv2.resize(im, (im_size, im_size), interpolation=cv2.INTER_CUBIC)
+            resized_im = cv2.resize(im, (im_size, im_size), interpolation=INTERPOLATION_METHOD)
             latent_conditioner_data[i, :] = resized_im.reshape(-1)[:]
             latent_conditioner_data_shape = resized_im.shape
             i=i+1

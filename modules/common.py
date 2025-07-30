@@ -31,7 +31,7 @@ def add_sn(m):
         if m.weight.numel() > 0:
             return spectral_norm(m)
         else:
-            print('Warning w.r.t. add_sn')
+            print(f'Warning: Cannot apply spectral normalization to {type(m).__name__} - weight tensor is empty')
             return m
     else:
         return m
@@ -127,7 +127,8 @@ class EncoderResidualBlock(nn.Module):
 class DecoderResidualBlock(nn.Module):
     def __init__(self, input, small):
         super().__init__()
-        multiple=5
+        EXPANSION_MULTIPLE = 5  # Channel expansion factor for decoder residual blocks
+        multiple = EXPANSION_MULTIPLE
 
         if small:
             self.seq = nn.Sequential(
