@@ -944,8 +944,5 @@ def main():
         plt.savefig(f'output/reconstruction_plot_{i}.png', dpi=300, bbox_inches='tight')
         plt.close()
 
-        plt.show()
-
-
 if __name__ == "__main__":
     main()
