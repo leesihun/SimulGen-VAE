@@ -935,7 +935,7 @@ def main():
         plt.figure()
         plt.title('Reconstruction')
         plt.plot(target_output_np[0,:,0], '.', label = 'Recon')
-        plt.plot(new_x_train[0, :, int(num_time/2)], '.', label = 'True')
+        plt.plot(new_x_train[i, :, int(num_time/2)], '.', label = 'True')
         plt.legend()
 
         plt.show()
