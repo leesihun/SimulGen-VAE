@@ -82,8 +82,8 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
 
     model.to(device)
     
-    # Re-enable model compilation for significant speedup (15-30%)
-    model.compile_model(mode='reduce-overhead')
+    # Use default compile mode to avoid CUDA graphs issues
+    model.compile_model(mode='default')
 
     # Fix learning rate initialization
     current_lr = LR

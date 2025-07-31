@@ -148,28 +148,17 @@ class Encoder(nn.Module):
         B, _, _ = x.shape
         i=0
 
-        # Ensure input tensor is contiguous for CUDA graphs compatibility
-        x = x.contiguous()
-
         for encoder_block, residual_block in zip(self.encoder_blocks, self.encoder_residual_blocks):
             x=encoder_block(x)
             x=residual_block(x)
             last_x = x
 
-            # Ensure tensor is contiguous before reshaping for CUDA graphs
-            last_x = last_x.contiguous()
             xs_reshaped = last_x.view(B, -1)
-            # Add tensor size validation to prevent CUDA graphs error
-            expected_size = self.xs_linear[i].in_features
-            actual_size = xs_reshaped.size(1)
-            if actual_size != expected_size:
-                raise RuntimeError(f"Tensor size mismatch at layer {i}: expected {expected_size}, got {actual_size}")
             xs_reshaped = self.xs_linear[i](xs_reshaped)
             xs.append(xs_reshaped)
             i=i+1
 
-        # Ensure final tensor operations are CUDA graphs compatible
-        last_x = last_x.contiguous().view(B, -1)
+        last_x = last_x.view(B, -1)
         last_x = self.last_x_linear(last_x)
         
         mu = last_x[:, :self.z_dim]
