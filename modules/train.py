@@ -83,9 +83,8 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
 
     model.to(device)
     
-    # Compile model for better performance on consistent input sizes
-    # Use 'reduce-overhead' mode for maximum speed with stable input sizes
-    model.compile_model(mode='reduce-overhead')
+    # Disable model compilation to avoid CUDA graph conflicts
+    # model.compile_model(mode='reduce-overhead')  # Disabled due to CUDA graph conflicts
 
     # Fix learning rate initialization
     current_lr = LR
