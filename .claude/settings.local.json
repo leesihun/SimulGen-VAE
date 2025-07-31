@@ -22,7 +22,8 @@
       "Bash(EXA_API_KEY=853b3add-0edc-4e69-9141-16096f712b10 npx -y exa-mcp-server --list-tools)",
       "Bash(set EXA_API_KEY=853b3add-0edc-4e69-9141-16096f712b10)",
       "Bash(where:*)",
-      "Bash(env)"
+      "Bash(env)",
+      "Bash(find:*)"
     ],
     "deny": []
   }
