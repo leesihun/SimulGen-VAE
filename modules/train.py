@@ -100,7 +100,7 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
     
     # Verify mixed precision is working
     if torch.cuda.is_available():
-        print(f"Mixed precision enabled: autocast available = {torch.cuda.amp.autocast_mode._enter_autocast}")
+        print(f"Mixed precision enabled: CUDA available = {torch.cuda.is_available()}")
         print(f"GradScaler initialized with scale = {scaler.get_scale()}")
     
     loss_print = np.zeros(epochs)
