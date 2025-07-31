@@ -88,7 +88,7 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
     # Fix learning rate initialization
     current_lr = LR
     # Add weight decay for better generalization and reduced overfitting
-    optimizer = torch.optim.AdamW(model.parameters(), lr=current_lr, weight_decay=1e-4)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=current_lr)
     # Use a more sophisticated scheduler
     scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
         optimizer, T_0=epoch//4, T_mult=2, eta_min=LR*0.0001
@@ -124,13 +124,10 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
         kl_loss_save = 0.0
         recon_loss_MSE_save = 0.0
         
-        # Clear cache every epoch for simplicity
-        torch.cuda.empty_cache()
-
         for i, image in enumerate(train_dataloader):
             if load_all == False:
                 # Use non_blocking=True for async GPU transfer when using pinned memory
-                image = image.to(device, non_blocking=True)
+                image = image.to(device)
 
             # Zero gradients for each batch
             optimizer.zero_grad(set_to_none=True)
@@ -146,11 +143,7 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
             recon_loss_MSE = recon_loss_MSE*alpha
             loss = recon_loss + kl_loss
 
-            # Vanilla backward pass
             loss.backward()
-            
-            # Gradient clipping
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=10.0)
             
             # Vanilla optimizer step
             optimizer.step()
@@ -165,12 +158,8 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
             del loss, recon_loss_MSE, kl_loss, recon_loss, kl_losses, image
         num = i
 
-        # Loss values already accumulated above
-
-        
-        
         # Run validation every 10 epochs or on the last epoch
-        if epoch % 10 == 0 or epoch == epochs - 1:
+        if epoch % 20 == 0 or epoch == epochs - 1:
 
             # Validation loop
             model.eval()
@@ -182,7 +171,7 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
                 with torch.no_grad():
                     if load_all ==False:
                         # Use non_blocking=True for async GPU transfer when using pinned memory
-                        image = image.to(device, non_blocking=True)
+                        image = image.to(device)
 
                     # Vanilla validation forward pass
                     _, recon_loss, kl_losses, recon_loss_MSE = model(image)
@@ -229,13 +218,6 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
 
         end_time = time.time()
         epoch_duration = end_time - start_time
-
-        # if epoch % 100 == 0:
-        #     # writer.add_scalar('Loss/train', loss_print[epoch], epoch)
-        #     # Only log validation loss when it's actually computed
-        #     if val_batches_processed > 0:
-        #         # writer.add_scalar('Loss/val', loss_val_print[epoch], epoch)
-        #         pass # Commented out as per edit hint
 
         log_str = "\r[Epoch {}/{}] Loss: {:.4E}   val_loss: {:.2E}   Recon:{:.4E}   Recon_val:{:.4E}   KL:{:.4E}   Beta:{:.4E}   Time: {:.2f}s   ETA: {:.2f}h    LR: {:.2E}".format(
             epoch+1, epochs, loss_print[epoch], loss_val_print[epoch], recon_print[epoch], recon_loss_val_print[epoch], kl_print[epoch], beta, epoch_duration, (epochs-epoch)*epoch_duration/3600, current_lr

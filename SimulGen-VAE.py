@@ -364,7 +364,7 @@ def main():
     new_x_train = new_x_train.transpose((0,2,1))
     new_x_train = np.float32(new_x_train)
 
-    print('Dataset reange: ', np.min(new_x_train), np.max(new_x_train))
+    print('Dataset range: ', np.min(new_x_train), np.max(new_x_train))
     
     # Configure augmentation parameters
     augmentation_config = {
