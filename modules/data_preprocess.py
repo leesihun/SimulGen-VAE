@@ -172,6 +172,13 @@ def latent_conditioner_scaler(data, name):
 
     # Handle 3D arrays by reshaping to 2D for scaling
     original_shape = data.shape
+    
+    # Check for empty data
+    if original_shape[0] == 0:
+        raise ValueError(f"Empty data array detected with shape {original_shape}. "
+                        "Please check your data loading configuration. "
+                        "If using 'input_type image', ensure PNG files exist in the specified directory.")
+    
     if len(original_shape) == 3:
         # Reshape to 2D for scaler
         data_reshaped = data.reshape(original_shape[0], -1)

@@ -23,7 +23,10 @@
       "Bash(set EXA_API_KEY=853b3add-0edc-4e69-9141-16096f712b10)",
       "Bash(where:*)",
       "Bash(env)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(claude config list)",
+      "Bash(claude mcp:*)",
+      "Bash(echo $PATH)"
     ],
     "deny": []
   }
