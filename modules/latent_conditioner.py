@@ -25,6 +25,7 @@ def read_latent_conditioner_dataset_img(param_dir, param_data_type, debug_mode=0
         files = natsort.natsorted(files)
 
         latent_conditioner_data = np.zeros((len(files), im_size*im_size))
+        latent_conditioner_data_shape = (im_size, im_size)  # Initialize with default shape
         i=0
 
         for file in files:
