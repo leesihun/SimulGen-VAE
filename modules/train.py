@@ -95,13 +95,7 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
         optimizer, T_0=epoch//4, T_mult=2, eta_min=LR*0.0001
     )
     
-    # Re-enable mixed precision training for 40-50% speedup + memory savings
-    scaler = torch.cuda.amp.GradScaler()
-    
-    # Verify mixed precision is working
-    if torch.cuda.is_available():
-        print(f"Mixed precision enabled: CUDA available = {torch.cuda.is_available()}")
-        print(f"GradScaler initialized with scale = {scaler.get_scale()}")
+    # Removed mixed precision - no significant performance benefit observed
     
     loss_print = np.zeros(epochs)
     loss_val_print = np.zeros(epochs)
@@ -131,9 +125,6 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
         kl_loss_save = 0.0
         recon_loss_MSE_save = 0.0
         
-        # Debug: Check mixed precision on first epoch
-        if epoch == 0:
-            print(f"Epoch {epoch}: GradScaler scale = {scaler.get_scale()}")
         
         for i, image in enumerate(train_dataloader):
             if load_all == False:
@@ -143,24 +134,22 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
             # Zero gradients for each batch
             optimizer.zero_grad(set_to_none=True)
 
-            # Mixed precision forward pass with loss calculations
-            with torch.cuda.amp.autocast():
-                _, recon_loss, kl_losses, recon_loss_MSE = model(image)
+            # Forward pass
+            _, recon_loss, kl_losses, recon_loss_MSE = model(image)
 
-                beta, kl_loss = warmup_kl.get_loss(epoch, kl_losses)
+            beta, kl_loss = warmup_kl.get_loss(epoch, kl_losses)
 
-                # Loss calculation in FP16 for speed and memory efficiency
-                kl_loss = kl_loss*beta
-                recon_loss = recon_loss*alpha
-                recon_loss_MSE = recon_loss_MSE*alpha
-                loss = recon_loss + kl_loss
+            # Loss calculation
+            kl_loss = kl_loss*beta
+            recon_loss = recon_loss*alpha
+            recon_loss_MSE = recon_loss_MSE*alpha
+            loss = recon_loss + kl_loss
 
-            # Mixed precision backward pass
-            scaler.scale(loss).backward()
+            # Backward pass
+            loss.backward()
             
-            # Mixed precision optimizer step with gradient clipping
-            scaler.step(optimizer)
-            scaler.update()
+            # Optimizer step
+            optimizer.step()
 
             # Accumulate losses simply
             loss_save += loss.item()
@@ -187,17 +176,16 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
                         # Use non_blocking=True for async GPU transfer when using pinned memory
                         image = image.to(device, non_blocking=True)
 
-                    # Mixed precision validation forward pass with loss calculations
-                    with torch.cuda.amp.autocast():
-                        _, recon_loss, kl_losses, recon_loss_MSE = model(image)
+                    # Validation forward pass
+                    _, recon_loss, kl_losses, recon_loss_MSE = model(image)
 
-                        beta, kl_loss = warmup_kl.get_loss(epoch, kl_losses)
+                    beta, kl_loss = warmup_kl.get_loss(epoch, kl_losses)
 
-                        # All loss calculations in FP16 for memory efficiency
-                        kl_loss = kl_loss*beta
-                        recon_loss = recon_loss*alpha
-                        recon_loss_MSE = recon_loss_MSE*alpha
-                        loss = recon_loss + kl_loss
+                    # Loss calculations
+                    kl_loss = kl_loss*beta
+                    recon_loss = recon_loss*alpha
+                    recon_loss_MSE = recon_loss_MSE*alpha
+                    loss = recon_loss + kl_loss
 
                     # Accumulate validation metrics
                     recon_loss_save_val += recon_loss.detach().item()
