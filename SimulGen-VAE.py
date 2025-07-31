@@ -499,7 +499,7 @@ def main():
                 std = torch.exp(0.5*log_var)
                 latent_vector = reparameterize(mu, std)
 
-                gen_x, _ = VAE.decoder(latent_vector, xs, mode='random')
+                gen_x, _ = VAE.decoder(latent_vector, xs, mode='fix')
                 gen_x_np = gen_x.cpu().detach().numpy()
 
                 loss = nn.MSELoss()(gen_x, x)
