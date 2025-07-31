@@ -1,6 +1,8 @@
 import numpy as np
 import warnings
 import time
+import psutil
+import gc
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from pickle import dump
 
@@ -58,30 +60,110 @@ def data_augmentation(stretch, FOM_data, num_param, num_node):
 
     return FOM_data_aug
 
-def data_scaler(FOM_data_aug, FOM_data, num_time, num_node, directory):
+def get_memory_usage():
+    """Get current memory usage in GB"""
+    process = psutil.Process()
+    return process.memory_info().rss / 1024**3
 
-    start= time.time()
-
+def data_scaler(FOM_data_aug, FOM_data, num_time, num_node, directory, chunk_size=None):
+    """
+    Optimized data scaler with chunked processing and memory optimization.
+    
+    Args:
+        chunk_size: Number of samples to process at once (auto-calculated if None)
+    """
+    start = time.time()
+    initial_memory = get_memory_usage()
+    print(f"Initial memory usage: {initial_memory:.2f} GB")
+    
+    # Auto-calculate chunk size based on available memory if not specified
+    if chunk_size is None:
+        available_memory_gb = psutil.virtual_memory().available / 1024**3
+        # Use ~10% of available memory for chunk processing
+        chunk_memory_gb = available_memory_gb * 0.1
+        # Estimate memory per sample (float32 * num_node * safety_factor)
+        memory_per_sample = num_node * 4 * 2  # bytes, with safety factor
+        chunk_size = max(1000, int(chunk_memory_gb * 1024**3 / memory_per_sample))
+        print(f"Auto-calculated chunk_size: {chunk_size} (based on {available_memory_gb:.1f}GB available)")
+    
+    # Force float32 to halve memory usage
+    if FOM_data_aug.dtype != np.float32:
+        print("Converting to float32...")
+        FOM_data_aug = FOM_data_aug.astype(np.float32)
+        gc.collect()  # Force garbage collection
+    if FOM_data.dtype != np.float32:
+        FOM_data = FOM_data.astype(np.float32)
+        gc.collect()
+    
+    after_conversion_memory = get_memory_usage()
+    print(f"Memory after float32 conversion: {after_conversion_memory:.2f} GB (saved: {initial_memory - after_conversion_memory:.2f} GB)")
+    
     # Wider range for better VAE training - VAEs work better with [-1, 1] or [-0.9, 0.9]
     scaler = MinMaxScaler(feature_range=(-0.9, 0.9))
-
-    x_train_temp = FOM_data_aug.reshape([-1, num_node])
-    FOM_temp = FOM_data.reshape([-1, num_node])
-
-    scaler.fit(x_train_temp)
-    x_train_temp = scaler.transform(x_train_temp)
-    scaled_FOM = scaler.transform(FOM_temp)
-    x_train_temp = x_train_temp.reshape([-1, num_time, num_node])
-
-    x_train = x_train_temp
-    x_train.shape
-    new_x_train = x_train
+    
+    # For MinMaxScaler, we need to fit on a representative sample since it doesn't support partial_fit
+    print("Fitting scaler on representative sample...")
+    total_samples = FOM_data_aug.shape[0] * FOM_data_aug.shape[1]
+    
+    # Use every nth sample to create a representative subset for fitting
+    sample_stride = max(1, total_samples // (chunk_size * 2))  # Ensure we don't exceed memory
+    sample_indices = np.arange(0, total_samples, sample_stride)
+    
+    # Convert indices to param/time coordinates
+    param_indices = sample_indices // num_time
+    time_indices = sample_indices % num_time
+    
+    # Extract representative samples efficiently
+    representative_data = []
+    for i in range(0, len(param_indices), chunk_size):
+        end_i = min(i + chunk_size, len(param_indices))
+        batch_params = param_indices[i:end_i]
+        batch_times = time_indices[i:end_i]
+        
+        # Extract samples
+        samples = FOM_data_aug[batch_params, batch_times, :]
+        representative_data.append(samples)
+    
+    # Concatenate and fit
+    representative_samples = np.vstack(representative_data)
+    scaler.fit(representative_samples)
+    del representative_data, representative_samples
+    gc.collect()
+    
+    print(f"Scaler fitted on {len(sample_indices)} representative samples")
+    
+    # Transform data in-place to save memory
+    print("Transforming training data in chunks...")
+    FOM_data_aug_flat = FOM_data_aug.reshape(-1, num_node)
+    
+    # Process in chunks to avoid memory issues
+    for start_idx in range(0, FOM_data_aug_flat.shape[0], chunk_size):
+        end_idx = min(start_idx + chunk_size, FOM_data_aug_flat.shape[0])
+        FOM_data_aug_flat[start_idx:end_idx] = scaler.transform(FOM_data_aug_flat[start_idx:end_idx])
+        
+        # Progress indicator for large datasets
+        if start_idx % (chunk_size * 10) == 0:
+            progress = (start_idx / FOM_data_aug_flat.shape[0]) * 100
+            current_memory = get_memory_usage()
+            print(f"Progress: {progress:.1f}% | Memory: {current_memory:.2f} GB")
+    
+    # Reshape back in-place
+    new_x_train = FOM_data_aug_flat.reshape(FOM_data_aug.shape)
     DATA_shape = new_x_train.shape[1:]
-
+    
+    # Clean up intermediate variables
+    del FOM_data_aug_flat
+    gc.collect()
+    
+    final_memory = get_memory_usage()
+    print(f"Peak memory usage: {final_memory:.2f} GB")
+    
     dump(scaler, open('./model_save/scaler.pkl', 'wb'))
-    end= time.time()
-    print(f"Scaling time: {end - start} seconds")
-
+    end = time.time()
+    print(f"Optimized scaling time: {end - start:.2f} seconds")
+    print(f"Final data shape: {new_x_train.shape}, dtype: {new_x_train.dtype}")
+    print(f"Memory efficiency: {((initial_memory - final_memory) / initial_memory * 100):.1f}% reduction")
+    
     return new_x_train, DATA_shape, scaler
 
 def latent_conditioner_scaler(data, name):
