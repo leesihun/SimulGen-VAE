@@ -153,7 +153,7 @@ class Encoder(nn.Module):
             x=residual_block(x)
             last_x = x
 
-            xs_reshaped = last_x.view(B, -1).clone()  # Clone to avoid CUDA graph conflicts
+            xs_reshaped = last_x.view(B, -1)
             xs_reshaped = self.xs_linear[i](xs_reshaped)
             xs.append(xs_reshaped)
             i=i+1

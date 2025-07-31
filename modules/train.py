@@ -13,8 +13,7 @@ from torchinfo import summary
 import torch.nn as nn
 from torch.utils.tensorboard import SummaryWriter
 
-# Re-enabled mixed precision for 25-40% speed improvement
-from torch.cuda.amp import autocast, GradScaler
+# Removed mixed precision - reverting to vanilla training
 
 class WarmupKLLoss:
     def __init__(self, epoch, init_beta, start_warmup, end_warmup, beta_target):
@@ -48,7 +47,7 @@ def print_gpu_mem_checkpoint(msg, debug_mode=0):
         print(f"[GPU MEM] {msg}: Allocated={allocated:.2f}MB, Max Allocated={max_allocated:.2f}MB")
         torch.cuda.reset_peak_memory_stats()
 
-def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_enc, num_filter_dec, num_node, latent_dim, hierarchical_dim, num_time, alpha, lossfun, small, load_all, debug_mode=0, accumulation_steps=1):
+def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_enc, num_filter_dec, num_node, latent_dim, hierarchical_dim, num_time, alpha, lossfun, small, load_all, debug_mode=0):
     writer = SummaryWriter(log_dir = './runs', comment = 'VAE')
 
     LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
@@ -95,8 +94,7 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
         optimizer, T_0=epoch//4, T_mult=2, eta_min=LR*0.0001
     )
     
-    # Re-enabled mixed precision training for better performance
-    scaler = GradScaler()
+    # Removed GradScaler - using vanilla training
     
     loss_print = np.zeros(epochs)
     loss_val_print = np.zeros(epochs)
@@ -109,29 +107,9 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
     model.train(True)
     import time
     
-    # Enable memory efficient attention and convolutions
-    torch.backends.cudnn.benchmark = True  # Optimize for consistent input sizes
-    torch.backends.cuda.matmul.allow_tf32 = True  # Faster on Ampere GPUs (H100)
-    torch.backends.cudnn.allow_tf32 = True
-    
-    # Additional optimizations for small variety datasets
-    if torch.cuda.is_available():
-        # Enable persistent RNN for consistent sequence lengths
-        torch.backends.cudnn.deterministic = False  # Allow non-deterministic ops for speed
-        torch.backends.cudnn.enabled = True
-        
-        # Set memory allocation strategy for better performance
-        torch.cuda.set_per_process_memory_fraction(0.95)  # Use most GPU memory
-    
-    # Set CUDA device for optimal performance
+    # Basic CUDA setup
     if torch.cuda.is_available():
         torch.cuda.set_device(device)
-        
-    # Pre-allocate tensors for loss accumulation (memory efficiency)
-    loss_accumulator = torch.zeros(1, device=device)
-    recon_accumulator = torch.zeros(1, device=device)
-    kl_accumulator = torch.zeros(1, device=device)
-    mse_accumulator = torch.zeros(1, device=device)
     
     # CUDA Graphs disabled - conflicts with mixed precision training
     # Removed all CUDA graph variables for cleaner code
@@ -140,28 +118,25 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
         start_time = time.time()
         model.train(True)
         
-        # Reset accumulators
-        loss_accumulator.zero_()
-        recon_accumulator.zero_()
-        kl_accumulator.zero_()
-        mse_accumulator.zero_()
+        # Initialize simple loss tracking
+        loss_save = 0.0
+        recon_loss_save = 0.0
+        kl_loss_save = 0.0
+        recon_loss_MSE_save = 0.0
         
-        # Clear cache less frequently for better performance (every 100 epochs)
-        if epoch % 100 == 0:
-            torch.cuda.empty_cache()
+        # Clear cache every epoch for simplicity
+        torch.cuda.empty_cache()
 
         for i, image in enumerate(train_dataloader):
             if load_all == False:
                 # Use non_blocking=True for async GPU transfer when using pinned memory
                 image = image.to(device, non_blocking=True)
 
-            # Zero gradients only at the start of accumulation
-            if i % accumulation_steps == 0:
-                optimizer.zero_grad(set_to_none=True)
+            # Zero gradients for each batch
+            optimizer.zero_grad(set_to_none=True)
 
-            # Mixed precision forward pass
-            with autocast():
-                _, recon_loss, kl_losses, recon_loss_MSE = model(image)
+            # Vanilla forward pass
+            _, recon_loss, kl_losses, recon_loss_MSE = model(image)
 
             beta, kl_loss = warmup_kl.get_loss(epoch, kl_losses)
 
@@ -171,44 +146,33 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
             recon_loss_MSE = recon_loss_MSE*alpha
             loss = recon_loss + kl_loss
 
-            # Scale loss by accumulation steps for proper averaging
-            loss = loss / accumulation_steps
-
-            # Mixed precision backward pass
-            scaler.scale(loss).backward()
+            # Vanilla backward pass
+            loss.backward()
             
-            # Only update weights after accumulating enough gradients
-            if (i + 1) % accumulation_steps == 0 or (i + 1) == len(train_dataloader):
-                # Gradient clipping with scaler - unscale first
-                scaler.unscale_(optimizer)
-                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=10.0)
-                
-                # Mixed precision optimizer step
-                scaler.step(optimizer)
-                scaler.update()
+            # Gradient clipping
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=10.0)
+            
+            # Vanilla optimizer step
+            optimizer.step()
 
-            # Accumulate losses efficiently (unscaled for proper averaging)
-            loss_accumulator += loss.detach() * accumulation_steps
-            recon_accumulator += recon_loss.detach()
-            kl_accumulator += kl_loss.detach()
-            mse_accumulator += recon_loss_MSE.detach()
+            # Accumulate losses simply
+            loss_save += loss.item()
+            recon_loss_save += recon_loss.item()
+            kl_loss_save += kl_loss.item()
+            recon_loss_MSE_save += recon_loss_MSE.item()
 
             # More efficient memory cleanup - delete in reverse order of creation
             del loss, recon_loss_MSE, kl_loss, recon_loss, kl_losses, image
         num = i
 
-        # Convert accumulated losses to final values
-        loss_save = loss_accumulator.item()
-        recon_loss_save = recon_accumulator.item()
-        kl_loss_save = kl_accumulator.item()
-        recon_loss_MSE_save = mse_accumulator.item()
+        # Loss values already accumulated above
 
         
         
-        # Run validation every 50 epochs or on the last epoch for better performance
-        if epoch % 50 == 0 or epoch == epochs - 1:
+        # Run validation every 10 epochs or on the last epoch
+        if epoch % 10 == 0 or epoch == epochs - 1:
 
-            # Validation loop - run only every 50 epochs
+            # Validation loop
             model.eval()
             val_batches_processed = 0
             recon_loss_save_val = 0.0
@@ -220,9 +184,8 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
                         # Use non_blocking=True for async GPU transfer when using pinned memory
                         image = image.to(device, non_blocking=True)
 
-                    # Mixed precision validation forward pass
-                    with autocast():
-                        _, recon_loss, kl_losses, recon_loss_MSE = model(image)
+                    # Vanilla validation forward pass
+                    _, recon_loss, kl_losses, recon_loss_MSE = model(image)
 
                     beta, kl_loss = warmup_kl.get_loss(epoch, kl_losses)
 
