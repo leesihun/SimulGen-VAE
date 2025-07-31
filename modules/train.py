@@ -124,13 +124,9 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
         # Set memory allocation strategy for better performance
         torch.cuda.set_per_process_memory_fraction(0.95)  # Use most GPU memory
     
-    # Pre-allocate CUDA streams for better async execution
+    # Set CUDA device for optimal performance
     if torch.cuda.is_available():
         torch.cuda.set_device(device)
-        # Create a stream for async data transfers
-        transfer_stream = torch.cuda.Stream()
-    else:
-        transfer_stream = None
         
     # Pre-allocate tensors for loss accumulation (memory efficiency)
     loss_accumulator = torch.zeros(1, device=device)
@@ -138,20 +134,8 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
     kl_accumulator = torch.zeros(1, device=device)
     mse_accumulator = torch.zeros(1, device=device)
     
-    # CUDA Graphs setup for 15-25% additional speed improvement
-    # Re-enabled with improved error handling for consistent batch sizes
-    use_cuda_graphs = True  # Re-enabled for better performance
-    cuda_graph_batch = None
-    cuda_graph = None
-    static_input = None
-    static_output = None
-    static_recon_loss = None
-    static_kl_losses = None
-    static_recon_loss_MSE = None
-
-    # Initialize CUDA graph after a few warm-up iterations
-    cuda_graph_warmup = 10
-    cuda_graph_initialized = False
+    # CUDA Graphs disabled - conflicts with mixed precision training
+    # Removed all CUDA graph variables for cleaner code
 
     for epoch in range(epochs):
         start_time = time.time()
@@ -176,47 +160,9 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
             if i % accumulation_steps == 0:
                 optimizer.zero_grad(set_to_none=True)
 
-            # Initialize CUDA graph after warm-up iterations
-            if use_cuda_graphs and not cuda_graph_initialized and i >= cuda_graph_warmup:
-                if debug_mode == 1:
-                    print("Initializing CUDA graph for faster training...")
-                # Capture a static input with the same shape
-                static_input = image.detach().clone()
-                cuda_graph_batch = image.shape[0]  # Remember the batch size
-                cuda_graph = torch.cuda.CUDAGraph()
-                
-                # Prepare for graph capture (gradients already zeroed above)
-                
-                with torch.cuda.graph(cuda_graph):
-                    # Mixed precision forward pass
-                    with autocast():
-                        static_output, static_recon_loss, static_kl_losses, static_recon_loss_MSE = model(static_input)
-                
-                cuda_graph_initialized = True
-                if debug_mode == 1:
-                    print("CUDA graph initialized successfully")
-
-            # Use CUDA graph if initialized and batch size matches
-            if use_cuda_graphs and cuda_graph_initialized and image.shape[0] == cuda_graph_batch:
-                # Create a detached copy instead of modifying in-place
-                static_input_copy = image.detach().clone()
-                # Copy input data to static tensor - FIXED: Use copy() instead of copy_()
-                static_input.copy_(static_input_copy)
-                
-                # Execute the captured graph
-                cuda_graph.replay()
-                
-                # Get results from static outputs
-                recon_loss = static_recon_loss
-                kl_losses = static_kl_losses
-                recon_loss_MSE = static_recon_loss_MSE
-            else:
-                # Regular forward pass for variable batch sizes or before graph initialization
-                pass  # Gradients already zeroed at accumulation boundary
-                
-                # Mixed precision forward pass
-                with autocast():
-                    _, recon_loss, kl_losses, recon_loss_MSE = model(image)
+            # Mixed precision forward pass
+            with autocast():
+                _, recon_loss, kl_losses, recon_loss_MSE = model(image)
 
             beta, kl_loss = warmup_kl.get_loss(epoch, kl_losses)
 
@@ -335,12 +281,7 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
 
         logging.info(log_str)
 
-    # Clean up CUDA graph resources
-    if use_cuda_graphs and cuda_graph_initialized:
-        del static_input, static_output, static_recon_loss, static_kl_losses, static_recon_loss_MSE
-        del cuda_graph
-        torch.cuda.empty_cache()
-
+    # Save model and cleanup
     torch.save(model.state_dict(), 'checkpoints/SimulGen-VAE.pth')
     torch.save(model, 'model_save/SimulGen-VAE')
     torch.cuda.empty_cache()
