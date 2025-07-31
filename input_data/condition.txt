@@ -36,5 +36,6 @@ latent_conditioner_batch	16
 latent_conditioner_weight_decay	1e-5
 latent_conditioner_dropout_rate	0.3
 use_spatial_attention	1	# 0=off, 1=on - spatial attention in CNN
+debug_mode	0	# 0=off, 1=on - debug output and diagnostics
 input_type	image	#image, csvs, image_vit
 param_data_type .png

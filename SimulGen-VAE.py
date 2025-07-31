@@ -156,6 +156,7 @@ def main():
     parser.add_argument("--lc_only", dest = "train_latent_conditioner", action = "store", help="1 = train only LatentConditioner, 0 = train full VAE")
     parser.add_argument("--size", dest = "size", action="store")
     parser.add_argument("--load_all", dest = "load_all", action = "store")
+    parser.add_argument("--debug", dest = "debug", action = "store", default="0", help="Enable debug output (0 = off, 1 = on)")
     # Add DDP arguments
     parser.add_argument("--use_ddp", action="store_true", help="Enable distributed data parallel training")
     args = parser.parse_args()
@@ -187,7 +188,7 @@ def main():
         Args:
             msg (str): Descriptive message for the checkpoint
         """
-        if torch.cuda.is_available():
+        if debug_mode == 1 and torch.cuda.is_available():
             allocated = torch.cuda.memory_allocated() / 1024**2
             max_allocated = torch.cuda.max_memory_allocated() / 1024**2
             print(f"[GPU MEM] {msg}: Allocated={allocated:.2f}MB, Max Allocated={max_allocated:.2f}MB")
@@ -255,6 +256,10 @@ def main():
     latent_conditioner_weight_decay = float(params.get('latent_conditioner_weight_decay', 1e-4))  # Default to 1e-4 if not specified
     latent_conditioner_dropout_rate = float(params.get('latent_conditioner_dropout_rate', 0.3))  # Default to 0.3 if not specified
     use_spatial_attention = int(params.get('use_spatial_attention', 1))  # Default to 1 (enabled)
+    
+    # Parse debug mode from both config file and command line (command line takes precedence)
+    config_debug_mode = int(params.get('debug_mode', 0))  # Default to 0 (disabled)
+    debug_mode = int(args.debug) if args.debug != "0" else config_debug_mode
 
     print('latent_conditioner_data_type: ', latent_conditioner_data_type)
     print('param_data_type: ', param_data_type)
@@ -386,7 +391,8 @@ def main():
             try:
                 test_tensor = torch.zeros(1).cuda()
                 del test_tensor
-                print("CUDA is working properly")
+                if debug_mode == 1:
+                    print("CUDA is working properly")
             except RuntimeError as e:
                 print(f"CUDA error during initialization: {e}")
                 print("Falling back to CPU for dataset handling")
@@ -407,10 +413,11 @@ def main():
         # This fixes the "dataset is not defined" error
         dataset = dataloader.dataset
         
-        print("✓ Augmented dataloaders created successfully")
-        print("  - Augmentations enabled: Noise, Scaling, Shift, Mixup, Cutout")
-        print(f"  - Training samples: {int(len(new_x_train) * 0.8)}")
-        print(f"  - Validation samples: {int(len(new_x_train) * 0.2)}")
+        if debug_mode == 1:
+            print("✓ Augmented dataloaders created successfully")
+            print("  - Augmentations enabled: Noise, Scaling, Shift, Mixup, Cutout")
+            print(f"  - Training samples: {int(len(new_x_train) * 0.8)}")
+            print(f"  - Validation samples: {int(len(new_x_train) * 0.2)}")
         
     except Exception as e:
         print(f"Error creating augmented dataloaders: {e}")
@@ -434,7 +441,8 @@ def main():
             num_workers=0, 
             pin_memory=not load_all
         )
-        print("✓ Basic dataloaders created as fallback")
+        if debug_mode == 1:
+            print("✓ Basic dataloaders created as fallback")
 
     print('Dataloader initiated...')
     print_gpu_mem_checkpoint('After dataloader creation')
@@ -448,7 +456,8 @@ def main():
             return 0
 
     # new_x_train is a numpy array
-    print(f"[INFO] new_x_train shape: {new_x_train.shape}, dtype: {new_x_train.dtype}, estimated GPU memory: {get_tensor_mem_mb(new_x_train):.2f} MB")
+    if debug_mode == 1:
+        print(f"[INFO] new_x_train shape: {new_x_train.shape}, dtype: {new_x_train.dtype}, estimated GPU memory: {get_tensor_mem_mb(new_x_train):.2f} MB")
     print_gpu_mem_checkpoint('Before training starts (after data and dataloader setup)')
 
 
@@ -458,7 +467,7 @@ def main():
     # VAE training
     if train_latent_conditioner_only ==0:
 
-        VAE_loss, reconstruction_error, KL_divergence, loss_val_print = train(n_epochs, batch_size, dataloader, val_dataloader, LR, num_filter_enc, num_filter_dec, num_node, latent_dim_end, latent_dim, num_time, alpha, loss, small, load_all)
+        VAE_loss, reconstruction_error, KL_divergence, loss_val_print = train(n_epochs, batch_size, dataloader, val_dataloader, LR, num_filter_enc, num_filter_dec, num_node, latent_dim_end, latent_dim, num_time, alpha, loss, small, load_all, debug_mode)
         del dataloader, val_dataloader
 
         device = "cuda:0" if torch.cuda.is_available() else "cpu"
@@ -607,11 +616,11 @@ def main():
     if latent_conditioner_data_type=='image':
         print('Loading image data for CNN...')
         image=True
-        latent_conditioner_data, latent_conditioner_data_shape = read_latent_conditioner_dataset_img(param_dir, param_data_type)
+        latent_conditioner_data, latent_conditioner_data_shape = read_latent_conditioner_dataset_img(param_dir, param_data_type, debug_mode)
     elif latent_conditioner_data_type=='image_vit':
         print('Loading image data for ViT...')
         image=True
-        latent_conditioner_data, latent_conditioner_data_shape = read_latent_conditioner_dataset_img(param_dir, param_data_type)
+        latent_conditioner_data, latent_conditioner_data_shape = read_latent_conditioner_dataset_img(param_dir, param_data_type, debug_mode)
     elif latent_conditioner_data_type=='csv':
         print('Loading csv data for MLP...')
         image=False
@@ -622,26 +631,29 @@ def main():
     physical_param_input = latent_conditioner_data
 
     # Debug: Print shapes before scaling
-    print(f"LatentConditioner scaling - physical_param_input shape: {physical_param_input.shape}")
-    print(f"LatentConditioner scaling - out_latent_vectors shape: {out_latent_vectors.shape}")
-    print(f"LatentConditioner scaling - xs_vectors shape: {xs_vectors.shape}")
+    if debug_mode == 1:
+        print(f"LatentConditioner scaling - physical_param_input shape: {physical_param_input.shape}")
+        print(f"LatentConditioner scaling - out_latent_vectors shape: {out_latent_vectors.shape}")
+        print(f"LatentConditioner scaling - xs_vectors shape: {xs_vectors.shape}")
 
     physical_param_input, param_input_scaler = latent_conditioner_scaler(physical_param_input, './model_save/latent_conditioner_input_scaler.pkl')
     out_latent_vectors, latent_vectors_scaler = latent_conditioner_scaler(out_latent_vectors, './model_save/latent_vectors_scaler.pkl')
     out_hierarchical_latent_vectors, xs_scaler = latent_conditioner_scaler(xs_vectors, './model_save/xs_scaler.pkl')
 
-    print('LatentConditioner data loaded...')
-    print('LatentConditioner scale: ')
-    print(f'Input: {np.max(physical_param_input)} {np.min(physical_param_input)}')
-    print(f'Main latent: {np.max(out_latent_vectors)} {np.min(out_latent_vectors)}')
-    print(f'Hierarchical latent: {np.max(out_hierarchical_latent_vectors)} {np.min(out_hierarchical_latent_vectors)}')
+    if debug_mode == 1:
+        print('LatentConditioner data loaded...')
+        print('LatentConditioner scale: ')
+        print(f'Input: {np.max(physical_param_input)} {np.min(physical_param_input)}')
+        print(f'Main latent: {np.max(out_latent_vectors)} {np.min(out_latent_vectors)}')
+        print(f'Hierarchical latent: {np.max(out_hierarchical_latent_vectors)} {np.min(out_hierarchical_latent_vectors)}')
     out_hierarchical_latent_vectors = out_hierarchical_latent_vectors.reshape([num_param, len(num_filter_enc)-1, latent_dim])
 
     # Debug: Print shapes of LatentConditioner dataset inputs
-    print(f"LatentConditioner dataset inputs:")
-    print(f"  - physical_param_input shape: {physical_param_input.shape}")
-    print(f"  - out_latent_vectors shape: {out_latent_vectors.shape}")
-    print(f"  - out_hierarchical_latent_vectors shape: {out_hierarchical_latent_vectors.shape}")
+    if debug_mode == 1:
+        print(f"LatentConditioner dataset inputs:")
+        print(f"  - physical_param_input shape: {physical_param_input.shape}")
+        print(f"  - out_latent_vectors shape: {out_latent_vectors.shape}")
+        print(f"  - out_hierarchical_latent_vectors shape: {out_hierarchical_latent_vectors.shape}")
     
     # Validate that all inputs have the same first dimension
     input_lengths = [len(physical_param_input), len(out_latent_vectors), len(out_hierarchical_latent_vectors)]
@@ -654,10 +666,11 @@ def main():
         physical_param_input = physical_param_input[:min_length]
         out_latent_vectors = out_latent_vectors[:min_length]
         out_hierarchical_latent_vectors = out_hierarchical_latent_vectors[:min_length]
-        print(f"Adjusted shapes:")
-        print(f"  - physical_param_input shape: {physical_param_input.shape}")
-        print(f"  - out_latent_vectors shape: {out_latent_vectors.shape}")
-        print(f"  - out_hierarchical_latent_vectors shape: {out_hierarchical_latent_vectors.shape}")
+        if debug_mode == 1:
+            print(f"Adjusted shapes:")
+            print(f"  - physical_param_input shape: {physical_param_input.shape}")
+            print(f"  - out_latent_vectors shape: {out_latent_vectors.shape}")
+            print(f"  - out_hierarchical_latent_vectors shape: {out_hierarchical_latent_vectors.shape}")
     
     # Create GPU-optimized dataset with preloading
     try:
@@ -678,18 +691,20 @@ def main():
         )
 
     # Debug: Print shapes of LatentConditioner dataset inputs
-    print(f"LatentConditioner dataset inputs:")
-    print(f"  - physical_param_input shape: {physical_param_input.shape}")
-    print(f"  - out_latent_vectors shape: {out_latent_vectors.shape}")
-    print(f"  - out_hierarchical_latent_vectors shape: {out_hierarchical_latent_vectors.shape}")
+    if debug_mode == 1:
+        print(f"LatentConditioner dataset inputs:")
+        print(f"  - physical_param_input shape: {physical_param_input.shape}")
+        print(f"  - out_latent_vectors shape: {out_latent_vectors.shape}")
+        print(f"  - out_hierarchical_latent_vectors shape: {out_hierarchical_latent_vectors.shape}")
     
     # Get actual dataset size and calculate split sizes
     latent_conditioner_dataset_size = len(latent_conditioner_dataset)
     train_size = int(0.8 * latent_conditioner_dataset_size)
     val_size = latent_conditioner_dataset_size - train_size
     
-    print(f"LatentConditioner dataset size: {latent_conditioner_dataset_size}")
-    print(f"Training split: {train_size}, Validation split: {val_size}")
+    if debug_mode == 1:
+        print(f"LatentConditioner dataset size: {latent_conditioner_dataset_size}")
+        print(f"Training split: {train_size}, Validation split: {val_size}")
     
     # Verify that the split sizes add up to the dataset size
     if train_size + val_size != latent_conditioner_dataset_size:
@@ -726,8 +741,9 @@ def main():
             drop_last=False,
             persistent_workers=False
         )
-        gpu_status = "GPU-preloaded" if is_gpu_preloaded else "CPU with pinned memory"
-        print(f"   ✓ LatentConditioner DataLoader: Single-threaded, {gpu_status} ({latent_conditioner_dataset_size} samples)")
+        if debug_mode == 1:
+            gpu_status = "GPU-preloaded" if is_gpu_preloaded else "CPU with pinned memory"
+            print(f"   ✓ LatentConditioner DataLoader: Single-threaded, {gpu_status} ({latent_conditioner_dataset_size} samples)")
     else:
         # Multi-threaded LatentConditioner DataLoaders
         latent_conditioner_dataloader = torch.utils.data.DataLoader(
@@ -748,31 +764,38 @@ def main():
             persistent_workers=True,
             prefetch_factor=2
         )
-        print(f"   ✓ LatentConditioner DataLoader: {latent_conditioner_optimal_workers} workers ({latent_conditioner_dataset_size} samples)")
+        if debug_mode == 1:
+            print(f"   ✓ LatentConditioner DataLoader: {latent_conditioner_optimal_workers} workers ({latent_conditioner_dataset_size} samples)")
 
     size2 = len(num_filter_enc)-1
 
 
     # Get optimal device with comprehensive debugging
-    print("\n🔍 === LATENT CONDITIONER INITIALIZATION DEBUGGING ===")
-    device = safe_cuda_initialization()  # Get safe device
-    print(f"Selected device: {device}")
-    print("===================================================\n")
+    if debug_mode == 1:
+        print("\n🔍 === LATENT CONDITIONER INITIALIZATION DEBUGGING ===")
+    device = safe_cuda_initialization(debug_mode)  # Get safe device
+    if debug_mode == 1:
+        print(f"Selected device: {device}")
+        print("===================================================\n")
     
     if latent_conditioner_data_type=='image':
         try:
-            print("Initializing LatentConditioner CNN image model...")
+            if debug_mode == 1:
+                print("Initializing LatentConditioner CNN image model...")
             latent_conditioner = LatentConditionerImg(latent_conditioner_filter, latent_dim_end, input_shape, latent_dim, size2, latent_conditioner_data_shape, dropout_rate=latent_conditioner_dropout_rate, use_attention=bool(use_spatial_attention)).to(device)
-            print(f"✓ CNN model successfully initialized on {device}")
+            if debug_mode == 1:
+                print(f"✓ CNN model successfully initialized on {device}")
         except RuntimeError as e:
             print(f"❌ Error initializing LatentConditioner CNN image model: {e}")
             print("   Falling back to CPU-only model")
             device = torch.device('cpu')
             latent_conditioner = LatentConditionerImg(latent_conditioner_filter, latent_dim_end, input_shape, latent_dim, size2, latent_conditioner_data_shape, dropout_rate=latent_conditioner_dropout_rate, use_attention=bool(use_spatial_attention)).to(device)
-            print(f"✓ CNN model fallback initialized on {device}")
+            if debug_mode == 1:
+                print(f"✓ CNN model fallback initialized on {device}")
     elif latent_conditioner_data_type=='image_vit':
         try:
-            print("Initializing LatentConditioner ViT image model...")
+            if debug_mode == 1:
+                print("Initializing LatentConditioner ViT image model...")
             # ViT-specific parameters (can be made configurable later)
             img_size = int(latent_conditioner_data_shape[0])  # Should be 128
             patch_size = 16
@@ -792,7 +815,8 @@ def main():
                 mlp_ratio=mlp_ratio,
                 dropout=latent_conditioner_dropout_rate
             ).to(device)
-            print(f"✓ ViT model successfully initialized on {device}")
+            if debug_mode == 1:
+                print(f"✓ ViT model successfully initialized on {device}")
         except RuntimeError as e:
             print(f"❌ Error initializing LatentConditioner ViT image model: {e}")
             print("   Falling back to CPU-only model")
@@ -809,25 +833,29 @@ def main():
                 mlp_ratio=mlp_ratio,
                 dropout=latent_conditioner_dropout_rate
             ).to(device)
-            print(f"✓ ViT model fallback initialized on {device}")
+            if debug_mode == 1:
+                print(f"✓ ViT model fallback initialized on {device}")
     elif latent_conditioner_data_type=='csv':
         try:
-            print("Initializing LatentConditioner MLP CSV model...")
+            if debug_mode == 1:
+                print("Initializing LatentConditioner MLP CSV model...")
             latent_conditioner = LatentConditioner(latent_conditioner_filter, latent_dim_end, input_shape, latent_dim, size2, dropout_rate=latent_conditioner_dropout_rate).to(device)
-            print(f"✓ MLP model successfully initialized on {device}")
+            if debug_mode == 1:
+                print(f"✓ MLP model successfully initialized on {device}")
         except RuntimeError as e:
             print(f"❌ Error initializing LatentConditioner MLP CSV model: {e}")
             print("   Falling back to CPU-only model")
             device = torch.device('cpu')
             latent_conditioner = LatentConditioner(latent_conditioner_filter, latent_dim_end, input_shape, latent_dim, size2, dropout_rate=latent_conditioner_dropout_rate).to(device)
-            print(f"✓ MLP model fallback initialized on {device}")
+            if debug_mode == 1:
+                print(f"✓ MLP model fallback initialized on {device}")
     else:
         raise NotImplementedError(f'Unrecognized latent_conditioner_data_type: {latent_conditioner_data_type}. Supported options: "image" (CNN), "image_vit" (ViT), "csv" (MLP)')
 
     print(latent_conditioner)
 
     # Print CUDA diagnostic information before LatentConditioner training
-    if torch.cuda.is_available():
+    if debug_mode == 1 and torch.cuda.is_available():
         try:
             print("\n=== CUDA Diagnostics ===")
             print(f"CUDA available: {torch.cuda.is_available()}")
@@ -844,7 +872,7 @@ def main():
 
     try:
         print("Starting LatentConditioner training...")
-        LatentConditioner_loss = train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_dataloader, latent_conditioner_validation_dataloader, latent_conditioner, latent_conditioner_lr, weight_decay=latent_conditioner_weight_decay, is_image_data=image, image_size=256)
+        LatentConditioner_loss = train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_dataloader, latent_conditioner_validation_dataloader, latent_conditioner, latent_conditioner_lr, weight_decay=latent_conditioner_weight_decay, is_image_data=image, image_size=256, debug_mode=debug_mode)
         print("LatentConditioner training completed successfully")
     except Exception as e:
         print(f"Error during LatentConditioner training: {e}")
@@ -860,19 +888,24 @@ def main():
     latent_hierarchical_x = np.linspace(0, latent_dim-1, latent_dim)
 
     # Ensure latent conditioner is on the correct device for evaluation
-    print(f"\n🔍 Pre-evaluation device check:")
-    print(f"  Model device before: {next(latent_conditioner.parameters()).device}")
+    if debug_mode == 1:
+        print(f"\n🔍 Pre-evaluation device check:")
+        print(f"  Model device before: {next(latent_conditioner.parameters()).device}")
     
     eval_device = "cuda:0" if torch.cuda.is_available() else "cpu"
-    print(f"  Target evaluation device: {eval_device}")
+    if debug_mode == 1:
+        print(f"  Target evaluation device: {eval_device}")
     
     try:
         latent_conditioner = latent_conditioner.to(eval_device)
-        print(f"  ✓ Model moved to: {next(latent_conditioner.parameters()).device}")
+        if debug_mode == 1:
+            print(f"  ✓ Model moved to: {next(latent_conditioner.parameters()).device}")
     except Exception as e:
-        print(f"  ❌ Failed to move model: {e}")
+        if debug_mode == 1:
+            print(f"  ❌ Failed to move model: {e}")
         eval_device = next(latent_conditioner.parameters()).device
-        print(f"  Using current device: {eval_device}")
+        if debug_mode == 1:
+            print(f"  Using current device: {eval_device}")
     
     device = eval_device  # Update device variable for consistency
 

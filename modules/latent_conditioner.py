@@ -13,12 +13,13 @@ INTERPOLATION_METHOD = cv2.INTER_CUBIC  # High-quality interpolation for image r
 
 im_size = DEFAULT_IMAGE_SIZE  # Backward compatibility
 
-def read_latent_conditioner_dataset_img(param_dir, param_data_type):
+def read_latent_conditioner_dataset_img(param_dir, param_data_type, debug_mode=0):
     cur_dir = os.getcwd()
     file_dir = cur_dir+param_dir
 
     if param_data_type == ".jpg" or param_data_type == ".png":
-        print('Reading image dataset from '+file_dir+'\n')
+        if debug_mode == 1:
+            print('Reading image dataset from '+file_dir+'\n')
 
         files = [f for f in os.listdir(file_dir) if f.endswith(param_data_type)]
         files = natsort.natsorted(files)
@@ -27,7 +28,8 @@ def read_latent_conditioner_dataset_img(param_dir, param_data_type):
         i=0
 
         for file in files:
-            print(file)
+            if debug_mode == 1:
+                print(file)
             file_path = os.path.join(file_dir, file)
             im = cv2.imread(file_path, 0)
 
@@ -98,17 +100,19 @@ def apply_outline_preserving_augmentations(x, prob=0.5):
 # Cleaned up training without problematic regularization
 
 # Add CUDA error handling
-def safe_cuda_initialization():
+def safe_cuda_initialization(debug_mode=0):
     """Safely check CUDA availability with error handling and diagnostics"""
 
     if not torch.cuda.is_available():
-        print("❌ CUDA not available, using CPU")
+        if debug_mode == 1:
+            print("❌ CUDA not available, using CPU")
         return "cpu"
         
     try:
-        print(f"   CUDA device count: {torch.cuda.device_count()}")
-        print(f"   Current device: {torch.cuda.current_device()}")
-        print(f"   Device name: {torch.cuda.get_device_name(0)}")
+        if debug_mode == 1:
+            print(f"   CUDA device count: {torch.cuda.device_count()}")
+            print(f"   Current device: {torch.cuda.current_device()}")
+            print(f"   Device name: {torch.cuda.get_device_name(0)}")
         
         # Test CUDA with a small tensor operation
         test_tensor = torch.zeros(1).cuda()
@@ -117,14 +121,17 @@ def safe_cuda_initialization():
         del test_tensor, result
         torch.cuda.empty_cache()  # Clear any cached memory
         
-        print("✓ CUDA initialized successfully")
+        if debug_mode == 1:
+            print("✓ CUDA initialized successfully")
         return "cuda"
         
     except RuntimeError as e:
-        print(f"❌ CUDA initialization error: {e}")
+        if debug_mode == 1:
+            print(f"❌ CUDA initialization error: {e}")
         return "cpu"
     except Exception as e:
-        print(f"❌ Unexpected CUDA error: {e}")
+        if debug_mode == 1:
+            print(f"❌ Unexpected CUDA error: {e}")
         return "cpu"
 
 def safe_initialize_weights_He(m):
@@ -148,6 +155,7 @@ def setup_device_and_model(latent_conditioner):
             latent_conditioner = latent_conditioner.to('cuda:0')
             device = torch.device('cuda:0')
         except Exception as e:
+            # Keep this print as it's an important fallback notification
             print(f"Failed to move model to CUDA: {e}")
             device = torch.device('cpu')
     
@@ -174,7 +182,7 @@ def setup_optimizer_and_scheduler(latent_conditioner, latent_conditioner_lr, wei
     
     return optimizer, warmup_scheduler, main_scheduler, warmup_epochs
 
-def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_dataloader, latent_conditioner_validation_dataloader, latent_conditioner, latent_conditioner_lr, weight_decay=1e-4, is_image_data=True, image_size=256):
+def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_dataloader, latent_conditioner_validation_dataloader, latent_conditioner, latent_conditioner_lr, weight_decay=1e-4, is_image_data=True, image_size=256, debug_mode=0):
 
     writer = SummaryWriter(log_dir = './LatentConditionerRuns', comment = 'LatentConditioner')
 
@@ -182,7 +190,8 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
     
     # Setup device and model
     latent_conditioner, device = setup_device_and_model(latent_conditioner)
-    print(f"Training on device: {device}")
+    if debug_mode == 1:
+        print(f"Training on device: {device}")
 
     # Setup optimizer and schedulers
     latent_conditioner_optimized, warmup_scheduler, main_scheduler, warmup_epochs = setup_optimizer_and_scheduler(

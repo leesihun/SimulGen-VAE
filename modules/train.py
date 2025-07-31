@@ -13,8 +13,8 @@ from torchinfo import summary
 import torch.nn as nn
 from torch.utils.tensorboard import SummaryWriter
 
-# Add mixed precision imports
-from torch.cuda.amp import autocast, GradScaler
+# Removed mixed precision imports - using normal precision
+# from torch.cuda.amp import autocast, GradScaler
 
 class WarmupKLLoss:
     def __init__(self, epoch, init_beta, start_warmup, end_warmup, beta_target):
@@ -41,14 +41,14 @@ class WarmupKLLoss:
 
         return [beta, loss]
 
-def print_gpu_mem_checkpoint(msg):
-    if torch.cuda.is_available():
+def print_gpu_mem_checkpoint(msg, debug_mode=0):
+    if debug_mode == 1 and torch.cuda.is_available():
         allocated = torch.cuda.memory_allocated() / 1024**2
         max_allocated = torch.cuda.max_memory_allocated() / 1024**2
         print(f"[GPU MEM] {msg}: Allocated={allocated:.2f}MB, Max Allocated={max_allocated:.2f}MB")
         torch.cuda.reset_peak_memory_stats()
 
-def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_enc, num_filter_dec, num_node, latent_dim, hierarchical_dim, num_time, alpha, lossfun, small, load_all):
+def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_enc, num_filter_dec, num_node, latent_dim, hierarchical_dim, num_time, alpha, lossfun, small, load_all, debug_mode=0):
     writer = SummaryWriter(log_dir = './runs', comment = 'VAE')
 
     LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
@@ -94,8 +94,8 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
         optimizer, T_0=epoch//4, T_mult=2, eta_min=LR*0.0001
     )
     
-    # Initialize GradScaler for mixed precision training
-    scaler = GradScaler()
+    # Removed GradScaler - using normal precision training
+    # scaler = GradScaler()
     
     loss_print = np.zeros(epochs)
     loss_val_print = np.zeros(epochs)
@@ -171,7 +171,8 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
 
             # Initialize CUDA graph after warm-up iterations
             if use_cuda_graphs and not cuda_graph_initialized and i >= cuda_graph_warmup:
-                print("Initializing CUDA graph for faster training...")
+                if debug_mode == 1:
+                    print("Initializing CUDA graph for faster training...")
                 # Capture a static input with the same shape
                 static_input = image.detach().clone()
                 cuda_graph_batch = image.shape[0]  # Remember the batch size
@@ -181,11 +182,12 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
                 optimizer.zero_grad(set_to_none=True)
                 
                 with torch.cuda.graph(cuda_graph):
-                    with autocast():
-                        static_output, static_recon_loss, static_kl_losses, static_recon_loss_MSE = model(static_input)
+                    # Removed autocast - using normal precision
+                    static_output, static_recon_loss, static_kl_losses, static_recon_loss_MSE = model(static_input)
                 
                 cuda_graph_initialized = True
-                print("CUDA graph initialized successfully")
+                if debug_mode == 1:
+                    print("CUDA graph initialized successfully")
 
             # Use CUDA graph if initialized and batch size matches
             if use_cuda_graphs and cuda_graph_initialized and image.shape[0] == cuda_graph_batch:
@@ -205,9 +207,8 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
                 # Regular forward pass for variable batch sizes or before graph initialization
                 optimizer.zero_grad(set_to_none=True)
                 
-                # Use autocast for forward pass - memory savings happen here
-                with autocast():
-                    _, recon_loss, kl_losses, recon_loss_MSE = model(image)
+                # Removed autocast - using normal precision forward pass
+                _, recon_loss, kl_losses, recon_loss_MSE = model(image)
 
             beta, kl_loss = warmup_kl.get_loss(epoch, kl_losses)
 
@@ -217,18 +218,16 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
             recon_loss_MSE = recon_loss_MSE*alpha
             loss = recon_loss + kl_loss
 
-            # Mixed precision backward pass - scales gradients to prevent underflow
-            scaler.scale(loss).backward()
+            # Normal precision backward pass
+            loss.backward()
             
             # Gradient clipping to prevent explosion
-            scaler.unscale_(optimizer)
             # Start with 5.0, reduce to 1.0 only if you still get NaN
             # For VAEs, 2.0-5.0 is often a good balance
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=10.0)
             
-            # Mixed precision optimizer step
-            scaler.step(optimizer)
-            scaler.update()
+            # Normal precision optimizer step
+            optimizer.step()
 
             # Accumulate losses efficiently
             loss_accumulator += loss.detach()
@@ -263,9 +262,8 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
                         # Use non_blocking=True for async GPU transfer when using pinned memory
                         image = image.to(device, non_blocking=True)
 
-                    # Use autocast for validation forward pass as well
-                    with autocast():
-                        _, recon_loss, kl_losses, recon_loss_MSE = model(image)
+                    # Removed autocast - using normal precision for validation
+                    _, recon_loss, kl_losses, recon_loss_MSE = model(image)
 
                     beta, kl_loss = warmup_kl.get_loss(epoch, kl_losses)
 
