@@ -17,7 +17,7 @@ Loss_type	1	# 1: MSE, 2, MAE
 Stretch	0
 RESERVED	0
 RESERVED	0
-alpha		1000
+alpha		1000000
 num_aug_f	0
 num_aug_a	0
 rec_graph	0
