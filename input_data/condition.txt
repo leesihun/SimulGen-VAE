@@ -40,5 +40,5 @@ debug_mode	0	# 0=off, 1=on - debug output and diagnostics
 input_type	image	#image, csvs, image_vit
 param_data_type .png
 use_pca	0	# 0=off, 1=on - apply PCA preprocessing to images
-pca_components	1024	# number of PCA components to keep
+pca_components	1024	# number of PCA components to keep, must be (2^n)^n
 pca_patch_size	0	# 0=full image PCA, >0=patch-based PCA with specified patch size

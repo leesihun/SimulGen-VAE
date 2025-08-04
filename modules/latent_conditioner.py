@@ -38,10 +38,9 @@ def read_latent_conditioner_dataset_img(param_dir, param_data_type, debug_mode=0
 
         if use_pca:
             # Apply PCA preprocessing
-            if debug_mode == 1:
-                print(f'Applying PCA preprocessing with {pca_components} components')
-                if pca_patch_size:
-                    print(f'Using patch-based PCA with patch size {pca_patch_size}')
+            print(f'Applying PCA preprocessing with {pca_components} components')
+            if pca_patch_size:
+                print(f'Using patch-based PCA with patch size {pca_patch_size}')
             
             pca_preprocessor = PCAPreprocessor(
                 n_components=pca_components, 
@@ -267,6 +266,9 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
         num_batches = 0
         
         for i, (x, y1, y2) in enumerate(latent_conditioner_dataloader):
+
+            if i==0 and epoch==0:
+                print('Dataset size: ', x.shape)
             
             if x.device != device:
                 x, y1, y2 = x.to(device, non_blocking=True), y1.to(device, non_blocking=True), y2.to(device, non_blocking=True)
