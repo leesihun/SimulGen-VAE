@@ -6,6 +6,7 @@ import cv2
 import os
 import pandas as pd
 import natsort
+from modules.pca_preprocessor import PCAPreprocessor
 
 # Image processing constants
 DEFAULT_IMAGE_SIZE = 256  # High resolution for sharp outline detection
@@ -13,7 +14,7 @@ INTERPOLATION_METHOD = cv2.INTER_CUBIC  # High-quality interpolation for image r
 
 im_size = DEFAULT_IMAGE_SIZE  # Backward compatibility
 
-def read_latent_conditioner_dataset_img(param_dir, param_data_type, debug_mode=0):
+def read_latent_conditioner_dataset_img(param_dir, param_data_type, debug_mode=0, use_pca=False, pca_components=1024, pca_patch_size=None):
     cur_dir = os.getcwd()
     file_dir = cur_dir+param_dir
 
@@ -24,20 +25,59 @@ def read_latent_conditioner_dataset_img(param_dir, param_data_type, debug_mode=0
         files = [f for f in os.listdir(file_dir) if f.endswith(param_data_type)]
         files = natsort.natsorted(files)
 
-        latent_conditioner_data = np.zeros((len(files), im_size*im_size))
-        latent_conditioner_data_shape = (im_size, im_size)  # Initialize with default shape
-        i=0
-
-        for file in files:
+        # Read all images first
+        raw_images = np.zeros((len(files), im_size, im_size))
+        
+        for i, file in enumerate(files):
             if debug_mode == 1:
                 print(file)
             file_path = os.path.join(file_dir, file)
             im = cv2.imread(file_path, 0)
-
             resized_im = cv2.resize(im, (im_size, im_size), interpolation=INTERPOLATION_METHOD)
-            latent_conditioner_data[i, :] = resized_im.reshape(-1)[:]
-            latent_conditioner_data_shape = resized_im.shape
-            i=i+1
+            raw_images[i] = resized_im
+
+        if use_pca:
+            # Apply PCA preprocessing
+            if debug_mode == 1:
+                print(f'Applying PCA preprocessing with {pca_components} components')
+                if pca_patch_size:
+                    print(f'Using patch-based PCA with patch size {pca_patch_size}')
+            
+            pca_preprocessor = PCAPreprocessor(
+                n_components=pca_components, 
+                patch_size=pca_patch_size
+            )
+            
+            # Try to load existing PCA model, otherwise fit new one
+            try:
+                pca_preprocessor.load()
+                if debug_mode == 1:
+                    print('Loaded existing PCA model')
+            except FileNotFoundError:
+                if debug_mode == 1:
+                    print('Fitting new PCA model on training data')
+                pca_preprocessor.fit(raw_images)
+            
+            # Transform images using PCA
+            pca_tensor = pca_preprocessor.transform(raw_images)  # Returns torch.Tensor
+            
+            # Convert back to numpy and flatten for compatibility
+            if len(pca_tensor.shape) == 4:  # (n_samples, channels, height, width)
+                latent_conditioner_data = pca_tensor.view(pca_tensor.shape[0], -1).numpy()
+                latent_conditioner_data_shape = pca_tensor.shape[2:]  # (height, width)
+            else:
+                latent_conditioner_data = pca_tensor.numpy()
+                latent_conditioner_data_shape = pca_preprocessor.get_output_shape()
+            
+            if debug_mode == 1:
+                print(f'PCA output shape: {latent_conditioner_data_shape}')
+                print(f'Data reduced from {im_size*im_size} to {latent_conditioner_data.shape[1]} dimensions')
+                
+        else:
+            # Standard processing without PCA
+            latent_conditioner_data = raw_images.reshape(len(files), -1)
+            latent_conditioner_data_shape = (im_size, im_size)
+            
     else:
         raise NotImplementedError('Data type not supported')
 
