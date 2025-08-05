@@ -256,7 +256,14 @@ def main():
     latent_conditioner_weight_decay = float(params.get('latent_conditioner_weight_decay', 1e-4))  # Default to 1e-4 if not specified
     latent_conditioner_dropout_rate = float(params.get('latent_conditioner_dropout_rate', 0.3))  # Default to 0.3 if not specified
     use_spatial_attention = int(params.get('use_spatial_attention', 1))  # Default to 1 (enabled)
-    
+    use_pca = int(params.get['use_pca'])
+    pca_components = int(params.get['pca_components'])
+
+    if use_pca ==1:
+        use_pca = True
+    else:
+        use_pca = False
+
     # Parse debug mode from both config file and command line (command line takes precedence)
     config_debug_mode = int(params.get('debug_mode', 0))  # Default to 0 (disabled)
     debug_mode = int(args.debug) if args.debug != "0" else config_debug_mode
@@ -616,11 +623,11 @@ def main():
     if latent_conditioner_data_type=='image':
         print('Loading image data for CNN...')
         image=True
-        latent_conditioner_data, latent_conditioner_data_shape = read_latent_conditioner_dataset_img(param_dir, param_data_type, debug_mode)
+        latent_conditioner_data, latent_conditioner_data_shape = read_latent_conditioner_dataset_img(param_dir, param_data_type, debug_mode, use_pca, pca_components = num_pca)
     elif latent_conditioner_data_type=='image_vit':
         print('Loading image data for ViT...')
         image=True
-        latent_conditioner_data, latent_conditioner_data_shape = read_latent_conditioner_dataset_img(param_dir, param_data_type, debug_mode)
+        latent_conditioner_data, latent_conditioner_data_shape = read_latent_conditioner_dataset_img(param_dir, param_data_type, debug_mode, use_pca, pca_components = num_pca)
     elif latent_conditioner_data_type=='csv':
         print('Loading csv data for MLP...')
         image=False
