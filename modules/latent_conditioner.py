@@ -34,7 +34,8 @@ def read_latent_conditioner_dataset_img(param_dir, param_data_type, debug_mode=0
             file_path = os.path.join(file_dir, file)
             im = cv2.imread(file_path, 0)
             resized_im = cv2.resize(im, (im_size, im_size), interpolation=INTERPOLATION_METHOD)
-            raw_images[i] = resized_im
+            # Normalize to [0, 1] range for better training stability
+            raw_images[i] = resized_im / 255.0
 
         if use_pca:
             # Apply PCA preprocessing
