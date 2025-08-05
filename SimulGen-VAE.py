@@ -925,8 +925,8 @@ def main():
     # Optimize LatentConditioner evaluation DataLoader with intelligent worker detection
     latent_conditioner_eval_optimal_workers = 0 if len(latent_conditioner_dataset) < 1000 else min(2, torch.multiprocessing.cpu_count())
     
-    latent_conditioner_dataloader_eval = torch.utils.data.DataLoader(
-        latent_conditioner_dataset, 
+    latent_conditioner_dataloader_test = torch.utils.data.DataLoader(
+        latent_conditioner_validation_dataset, 
         batch_size=1, 
         shuffle=False, 
         num_workers=latent_conditioner_eval_optimal_workers,
@@ -935,7 +935,7 @@ def main():
         prefetch_factor=2 if latent_conditioner_eval_optimal_workers > 0 else None
     )
 
-    for i, (x, y1, y2) in enumerate(latent_conditioner_dataloader_eval):
+    for i, (x, y1, y2) in enumerate(latent_conditioner_dataloader_test):
         x = x.to(device)
 
         y_pred1, y_pred2 = latent_conditioner(x)
