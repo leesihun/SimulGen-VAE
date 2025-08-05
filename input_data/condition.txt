@@ -35,10 +35,10 @@ latent_conditioner_lr	0.001
 latent_conditioner_batch	16
 latent_conditioner_weight_decay	1e-5
 latent_conditioner_dropout_rate	0.1
-use_spatial_attention	1	# 0=off, 1=on - spatial attention in CNN
+use_spatial_attention	0	# 0=off, 1=on - spatial attention in CNN
 debug_mode	0	# 0=off, 1=on - debug output and diagnostics
 input_type	image	#image, csvs, image_vit
 param_data_type .png
-use_pca	1	# 0=off, 1=on - apply PCA preprocessing to images
-pca_components	256	# number of PCA components to keep, must be < n_samples (484)
+use_pca	0	# 0=off, 1=on - apply PCA preprocessing to images
+pca_components	256	# number of PCA components to keep, must be < Dim1
 pca_patch_size	0	# 0=full image PCA, >0=patch-based PCA with specified patch size
