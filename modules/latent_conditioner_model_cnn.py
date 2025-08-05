@@ -117,7 +117,7 @@ class LatentConditionerImg(nn.Module):
             in_channels = out_channels
         
         # Global average pooling
-        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
+        # self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
 
         # Separate encoders for different outputs
         shared_dim = latent_conditioner_filter[-1]
@@ -235,8 +235,7 @@ class LatentConditionerImg(nn.Module):
         for layer in self.layers:
             x = layer(x)
         
-        # Global pooling for final features
-        final_features = self.avgpool(x).flatten(1)
+        final_features = x.flatten()
         
         # Separate encoding pathways
         latent_encoded = self.latent_encoder(final_features)
