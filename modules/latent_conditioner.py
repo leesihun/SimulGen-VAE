@@ -6,13 +6,15 @@ import cv2
 import os
 import pandas as pd
 import natsort
+import time
+import math
+from torch.utils.tensorboard import SummaryWriter
+from torchinfo import summary
 from modules.pca_preprocessor import PCAPreprocessor
 
-# Image processing constants
-DEFAULT_IMAGE_SIZE = 256  # High resolution for sharp outline detection
-INTERPOLATION_METHOD = cv2.INTER_CUBIC  # High-quality interpolation for image resizing
-
-im_size = DEFAULT_IMAGE_SIZE  # Backward compatibility
+DEFAULT_IMAGE_SIZE = 256
+INTERPOLATION_METHOD = cv2.INTER_CUBIC
+im_size = DEFAULT_IMAGE_SIZE
 
 def read_latent_conditioner_dataset_img(param_dir, param_data_type, debug_mode=0, use_pca=False, pca_components=1024, pca_patch_size=None):
     cur_dir = os.getcwd()
@@ -85,88 +87,62 @@ def read_latent_conditioner_dataset(param_dir, param_data_type): # For normal pa
 
     return latent_conditioner_data
 
-import time
-import math
-from torch.utils.tensorboard import SummaryWriter
-
 # GPU-optimized outline-preserving augmentation functions
 def apply_outline_preserving_augmentations(x, prob=0.5):
-    """
-    GPU-optimized outline-preserving augmentations - 5x faster while preserving edge integrity
-    x: tensor of shape (batch, height, width) - 2D grayscale outline images
-    
-    CRITICAL: Only safe transformations that preserve outline topology and visibility
-    - Horizontal flip: Safe for most outlines
-    - Small translation: 1-pixel shifts preserve outline structure
-    - NO rotation, scaling, or intensity changes that could destroy outlines
-    """
     if not torch.rand(1, device=x.device) < prob:
         return x  # Skip augmentation
     
     batch_size, height, width = x.shape
     
-    # 1. Horizontal flip (vectorized for entire batch) - SAFE for outlines
+    # Horizontal flip
     if torch.rand(1, device=x.device) < 0.3:
-        flip_mask = torch.rand(batch_size, device=x.device) < 0.5  # 50% of batch
+        flip_mask = torch.rand(batch_size, device=x.device) < 0.5
         if flip_mask.any():
-            x_flipped = torch.flip(x, dims=[2])  # Flip width dimension
+            x_flipped = torch.flip(x, dims=[2])
             x = torch.where(flip_mask.unsqueeze(1).unsqueeze(2), x_flipped, x)
     
-    # 2. Very small translation (±1 pixel) - SAFE, preserves outline structure
+    # Small translation
     if torch.rand(1, device=x.device) < 0.5:
-        # Generate small random shifts on GPU
-        shift_x = torch.randint(-1, 2, (batch_size,), device=x.device)  # -1, 0, or 1
-        shift_y = torch.randint(-1, 2, (batch_size,), device=x.device)  # -1, 0, or 1
-        
-        # Apply shifts using torch.roll (much faster than affine transforms)
+        shift_x = torch.randint(-1, 2, (batch_size,), device=x.device)
+        shift_y = torch.randint(-1, 2, (batch_size,), device=x.device)
         for i in range(batch_size):
             if shift_x[i] != 0:
-                x[i] = torch.roll(x[i], shifts=int(shift_x[i]), dims=1)  # Horizontal shift
+                x[i] = torch.roll(x[i], shifts=int(shift_x[i]), dims=1)
             if shift_y[i] != 0:
-                x[i] = torch.roll(x[i], shifts=int(shift_y[i]), dims=0)  # Vertical shift
+                x[i] = torch.roll(x[i], shifts=int(shift_y[i]), dims=0)
     
-    # 3. Small rotation (±5 degrees) - SAFE for outline detection
+    # Small rotation
     if torch.rand(1, device=x.device) < 0.3:
-        angles = (torch.rand(batch_size, device=x.device) - 0.5) * 10  # -5 to +5 degrees
+        angles = (torch.rand(batch_size, device=x.device) - 0.5) * 10
         angles_rad = angles * math.pi / 180
         
         # Simple rotation using affine transformation for small angles
         for i in range(batch_size):
-            if abs(angles[i]) > 0.5:  # Only rotate if angle > 0.5 degrees
+            if abs(angles[i]) > 0.5:
                 cos_a, sin_a = torch.cos(angles_rad[i]), torch.sin(angles_rad[i])
-                # Create rotation matrix
                 theta = torch.tensor([[cos_a, -sin_a, 0], [sin_a, cos_a, 0]], 
                                    device=x.device, dtype=x.dtype).unsqueeze(0)
                 grid = F.affine_grid(theta, (1, 1, height, width), align_corners=False)
                 x[i:i+1] = F.grid_sample(x[i:i+1].unsqueeze(0), grid, 
                                        mode='bilinear', padding_mode='border', align_corners=False).squeeze(0)
     
-    # 4. Slight scaling (0.95-1.05) - SAFE, preserves outline proportions
+    # Slight scaling
     if torch.rand(1, device=x.device) < 0.3:
-        scales = 0.95 + (torch.rand(batch_size, device=x.device) * 0.1)  # 0.95 to 1.05
+        scales = 0.95 + (torch.rand(batch_size, device=x.device) * 0.1)
         
         for i in range(batch_size):
-            if abs(scales[i] - 1.0) > 0.01:  # Only scale if change > 1%
+            if abs(scales[i] - 1.0) > 0.01:
                 scale = scales[i]
-                # Create scaling matrix
                 theta = torch.tensor([[scale, 0, 0], [0, scale, 0]], 
                                    device=x.device, dtype=x.dtype).unsqueeze(0)
                 grid = F.affine_grid(theta, (1, 1, height, width), align_corners=False)
                 x[i:i+1] = F.grid_sample(x[i:i+1].unsqueeze(0), grid, 
                                        mode='bilinear', padding_mode='border', align_corners=False).squeeze(0)
     
-    # EXPLICITLY AVOID:
-    # - Large rotation (>10°): Can break outline continuity
-    # - Extreme scaling (<0.9 or >1.1): Changes outline proportions drastically
-    # - Brightness/contrast: Destroys outline visibility
-    # - Noise: Corrupts clean outline edges
-    # - Elastic deformation: Breaks outline topology
     
     return x
 
-# Cleaned up training without problematic regularization
 
-# Add CUDA error handling
 def safe_cuda_initialization(debug_mode=0):
     """Safely check CUDA availability with error handling and diagnostics"""
 
@@ -229,11 +205,7 @@ def setup_device_and_model(latent_conditioner):
     return latent_conditioner, device
 
 def setup_optimizer_and_scheduler(latent_conditioner, latent_conditioner_lr, weight_decay, latent_conditioner_epoch):
-    """Setup optimizer and learning rate schedulers"""
-    # Create optimizer with appropriate learning rate
     optimizer = torch.optim.AdamW(latent_conditioner.parameters(), lr=latent_conditioner_lr, weight_decay=weight_decay)
-    
-    # Advanced learning rate scheduling
     warmup_epochs = 10
     warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
         optimizer, 
@@ -265,23 +237,17 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
         latent_conditioner, latent_conditioner_lr, weight_decay, latent_conditioner_epoch
     )
     
-    # Early stopping parameters - much more aggressive for overfitting
     best_val_loss = float('inf')
-    patience = 20000   # Much more aggressive early stopping
+    patience = 20000
     patience_counter = 0
     min_delta = 1e-8
-    
-    # Track overfitting ratio
-    overfitting_threshold = 1000.0  # Stop if val_loss > 10x train_loss
+    overfitting_threshold = 1000.0
 
-    from torchinfo import summary
     
     latent_conditioner = latent_conditioner.to(device)
     
-    # Initialize weights if needed
     latent_conditioner.apply(safe_initialize_weights_He)
     
-    # Flag to show model summary only once
     model_summary_shown = False
 
     for epoch in range(latent_conditioner_epoch):
@@ -298,37 +264,30 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
             if x.device != device:
                 x, y1, y2 = x.to(device, non_blocking=True), y1.to(device, non_blocking=True), y2.to(device, non_blocking=True)
             
-            # Show model summary once using actual batch dimensions
             if not model_summary_shown:
                 batch_size = x.shape[0]
                 input_features = x.shape[-1]
                 summary(latent_conditioner, (batch_size, 1, input_features))
                 model_summary_shown = True
             
-            # GPU-optimized outline-preserving augmentations (only for image data)  
-            if is_image_data and torch.rand(1, device=x.device) < 0.8:  # 80% chance
-                # Temporarily reshape to 2D for augmentation
+            if is_image_data and torch.rand(1, device=x.device) < 0.8:
                 im_size = int(math.sqrt(x.shape[-1]))
                 x_2d = x.reshape(-1, im_size, im_size)
-                x_2d = apply_outline_preserving_augmentations(x_2d, prob=0.8)  # GPU-optimized
-                x = x_2d.reshape(x.shape[0], -1)  # Flatten back
+                x_2d = apply_outline_preserving_augmentations(x_2d, prob=0.8)
+                x = x_2d.reshape(x.shape[0], -1)
                 
-            # GPU-optimized gentle mixup augmentation
-            if torch.rand(1, device=x.device) < 0.1 and x.size(0) > 1:  # 15% chance
-                alpha = 0.2  # Gentle mixing to preserve outline features
-                # Generate beta distribution sample on GPU
+            if torch.rand(1, device=x.device) < 0.1 and x.size(0) > 1:
+                alpha = 0.2
                 lam = torch.tensor(np.random.beta(alpha, alpha), device=x.device, dtype=x.dtype)
                 batch_size = x.size(0)
                 index = torch.randperm(batch_size, device=x.device)
                 
-                # Vectorized mixup operations (all on GPU)
                 x = lam * x + (1 - lam) * x[index, :]
                 y1 = lam * y1 + (1 - lam) * y1[index, :]
                 y2 = lam * y2 + (1 - lam) * y2[index, :]
             
-            # GPU-optimized Gaussian noise for regularization (very light for outline data)
-            if torch.rand(1, device=x.device) < 0.1:  # 10% chance
-                noise = torch.randn_like(x) * 0.01  # Very light noise to preserve outlines
+            if torch.rand(1, device=x.device) < 0.1:
+                noise = torch.randn_like(x) * 0.01
                 x = x + noise
             
             latent_conditioner_optimized.zero_grad(set_to_none=True)
@@ -336,8 +295,7 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
             y_pred1, y_pred2 = latent_conditioner(x)
             
 
-            # Add label smoothing for extreme regularization
-            label_smooth = 0.1  # 10% label smoothing
+            label_smooth = 0.1
             y1_smooth = y1 * (1 - label_smooth) + torch.randn_like(y1) * label_smooth * 0.1
             y2_smooth = y2 * (1 - label_smooth) + torch.randn_like(y2) * label_smooth * 0.1
             
@@ -347,10 +305,6 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
 
             loss = A*9 + B 
 
-            # # Add target noise injection during training for more robust learning
-            # if torch.rand(1) < 0.2:  # 20% chance
-            #     target_noise_scale = 0.01
-            #     loss += target_noise_scale * (torch.norm(y1, p=2) + torch.norm(y2, p=2))
             
             epoch_loss += loss.item()
             epoch_loss_y1 += A.item()
@@ -359,7 +313,6 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
             
             loss.backward()
             
-            # Gradient clipping for training stability - prevents exploding gradients
             torch.nn.utils.clip_grad_norm_(latent_conditioner.parameters(), max_norm=5.0)
             
             latent_conditioner_optimized.step()
@@ -369,7 +322,6 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
         avg_train_loss_y1 = epoch_loss_y1 / num_batches
         avg_train_loss_y2 = epoch_loss_y2 / num_batches
 
-        # Validation loop
         latent_conditioner.eval()
         val_loss = 0
         val_loss_y1 = 0
@@ -379,8 +331,7 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
         if epoch % 1 == 0:
             with torch.no_grad():
                 for i, (x_val, y1_val, y2_val) in enumerate(latent_conditioner_validation_dataloader):
-                    # Move validation data to device
-                    x_val, y1_val, y2_val = x_val.to(device), y1_val.to(device), y2_val.to(device)
+                        x_val, y1_val, y2_val = x_val.to(device), y1_val.to(device), y2_val.to(device)
                     
                     y_pred1_val, y_pred2_val = latent_conditioner(x_val)
                     
@@ -396,22 +347,18 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
             avg_val_loss_y1 = val_loss_y1 / val_batches
             avg_val_loss_y2 = val_loss_y2 / val_batches
 
-            # Check for severe overfitting and stop early
             overfitting_ratio = avg_val_loss / max(avg_train_loss, 1e-8)
             if overfitting_ratio > overfitting_threshold:
                 print(f'Severe overfitting detected! Val/Train ratio: {overfitting_ratio:.1f}')
                 print(f'Stopping early at epoch {epoch}')
                 break
                 
-            # Early stopping check with minimum improvement threshold
             if avg_val_loss < best_val_loss - min_delta:
                 best_val_loss = avg_val_loss
                 patience_counter = 0
-                # Save best model
             else:
                 patience_counter += 1
             
-        # Advanced learning rate scheduling
         if epoch < warmup_epochs:
             warmup_scheduler.step()
         else:
@@ -438,7 +385,6 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
                current_lr, scheduler_info,
                (latent_conditioner_epoch-epoch)*epoch_duration/3600, patience_counter, patience))
                
-        # Early stopping
         if patience_counter >= patience:
             print(f'Early stopping at epoch {epoch}. Best validation loss: {best_val_loss:.4E}')
             break
