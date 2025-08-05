@@ -314,7 +314,7 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
             B = nn.MSELoss()(y_pred2, y2_smooth)
             
 
-            loss = A + B 
+            loss = A*9 + B 
 
             # # Add target noise injection during training for more robust learning
             # if torch.rand(1) < 0.2:  # 20% chance
@@ -356,7 +356,7 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
                     A_val = nn.MSELoss()(y_pred1_val, y1_val)
                     B_val = nn.MSELoss()(y_pred2_val, y2_val)
                     
-                    val_loss += (A_val + B_val).item()
+                    val_loss += (A_val*9 + B_val).item()
                     val_loss_y1 += A_val.item()
                     val_loss_y2 += B_val.item()
                     val_batches += 1
