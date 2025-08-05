@@ -245,12 +245,13 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
 
     from torchinfo import summary
     
-    summary(latent_conditioner, (32, 1, image_size*image_size))
-
     latent_conditioner = latent_conditioner.to(device)
     
     # Initialize weights if needed
     latent_conditioner.apply(safe_initialize_weights_He)
+    
+    # Flag to show model summary only once
+    model_summary_shown = False
 
     for epoch in range(latent_conditioner_epoch):
         start_time = time.time()
@@ -262,12 +263,16 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
         num_batches = 0
         
         for i, (x, y1, y2) in enumerate(latent_conditioner_dataloader):
-
-            if i==0 and epoch==0:
-                print('Dataset size: ', x.shape)
             
             if x.device != device:
                 x, y1, y2 = x.to(device, non_blocking=True), y1.to(device, non_blocking=True), y2.to(device, non_blocking=True)
+            
+            # Show model summary once using actual batch dimensions
+            if not model_summary_shown:
+                batch_size = x.shape[0]
+                input_features = x.shape[-1]
+                summary(latent_conditioner, (batch_size, 1, input_features))
+                model_summary_shown = True
             
             # GPU-optimized outline-preserving augmentations (only for image data)  
             if is_image_data and torch.rand(1, device=x.device) < 0.5:  # 90% chance

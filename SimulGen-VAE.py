@@ -861,8 +861,6 @@ def main():
     else:
         raise NotImplementedError(f'Unrecognized latent_conditioner_data_type: {latent_conditioner_data_type}. Supported options: "image" (CNN), "image_vit" (ViT), "csv" (MLP)')
 
-    print(latent_conditioner)
-
     # Print CUDA diagnostic information before LatentConditioner training
     if debug_mode == 1 and torch.cuda.is_available():
         try:
