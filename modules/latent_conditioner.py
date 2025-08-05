@@ -333,31 +333,31 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
                 for i, (x_val, y1_val, y2_val) in enumerate(latent_conditioner_validation_dataloader):
                         x_val, y1_val, y2_val = x_val.to(device), y1_val.to(device), y2_val.to(device)
                     
-                    y_pred1_val, y_pred2_val = latent_conditioner(x_val)
-                    
-                    A_val = nn.MSELoss()(y_pred1_val, y1_val)
-                    B_val = nn.MSELoss()(y_pred2_val, y2_val)
-                    
-                    val_loss += (A_val*9 + B_val).item()
-                    val_loss_y1 += A_val.item()
-                    val_loss_y2 += B_val.item()
-                    val_batches += 1
+                        y_pred1_val, y_pred2_val = latent_conditioner(x_val)
+                        
+                        A_val = nn.MSELoss()(y_pred1_val, y1_val)
+                        B_val = nn.MSELoss()(y_pred2_val, y2_val)
+                        
+                        val_loss += (A_val*9 + B_val).item()
+                        val_loss_y1 += A_val.item()
+                        val_loss_y2 += B_val.item()
+                        val_batches += 1
 
-            avg_val_loss = val_loss / val_batches
-            avg_val_loss_y1 = val_loss_y1 / val_batches
-            avg_val_loss_y2 = val_loss_y2 / val_batches
+                avg_val_loss = val_loss / val_batches
+                avg_val_loss_y1 = val_loss_y1 / val_batches
+                avg_val_loss_y2 = val_loss_y2 / val_batches
 
-            overfitting_ratio = avg_val_loss / max(avg_train_loss, 1e-8)
-            if overfitting_ratio > overfitting_threshold:
-                print(f'Severe overfitting detected! Val/Train ratio: {overfitting_ratio:.1f}')
-                print(f'Stopping early at epoch {epoch}')
-                break
-                
-            if avg_val_loss < best_val_loss - min_delta:
-                best_val_loss = avg_val_loss
-                patience_counter = 0
-            else:
-                patience_counter += 1
+                overfitting_ratio = avg_val_loss / max(avg_train_loss, 1e-8)
+                if overfitting_ratio > overfitting_threshold:
+                    print(f'Severe overfitting detected! Val/Train ratio: {overfitting_ratio:.1f}')
+                    print(f'Stopping early at epoch {epoch}')
+                    break
+                    
+                if avg_val_loss < best_val_loss - min_delta:
+                    best_val_loss = avg_val_loss
+                    patience_counter = 0
+                else:
+                    patience_counter += 1
             
         if epoch < warmup_epochs:
             warmup_scheduler.step()
