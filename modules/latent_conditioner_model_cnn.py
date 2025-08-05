@@ -41,8 +41,8 @@ class ResidualBlock(nn.Module):
     def __init__(self, in_channels, out_channels, stride=1, downsample=None, use_attention=True, drop_rate=0.2):
         super(ResidualBlock, self).__init__()
         
-        # Apply spectral normalization to convolutions
-        self.conv1 = add_sn(nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1, bias=False))
+        # First conv without spectral norm for more learning capacity
+        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1, bias=False)
         # Adaptive GroupNorm for better regularization
         self.gn1 = nn.GroupNorm(min(32, max(1, out_channels//4)), out_channels)
         self.conv2 = add_sn(nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False))
@@ -97,8 +97,8 @@ class LatentConditionerImg(nn.Module):
         self.num_layers = len(latent_conditioner_filter)
         self.return_dict = return_dict  # Backward compatibility flag
         
-        # Initial strided convolution with spectral normalization
-        self.conv1 = add_sn(nn.Conv2d(1, latent_conditioner_filter[0], kernel_size=7, stride=2, padding=3, bias=False))
+        # Initial strided convolution without spectral normalization for more learning capacity
+        self.conv1 = nn.Conv2d(1, latent_conditioner_filter[0], kernel_size=7, stride=2, padding=3, bias=False)
         # Adaptive GroupNorm configuration
         self.gn1 = nn.GroupNorm(min(32, max(1, latent_conditioner_filter[0]//4)), latent_conditioner_filter[0])
         self.silu = nn.SiLU(inplace=True)
@@ -112,7 +112,7 @@ class LatentConditionerImg(nn.Module):
             # Downsample by 2
             stride = 2
             # Enable attention by default for better feature selection
-            layer = self._make_layer(in_channels, out_channels, 2, stride, True, dropout_rate)
+            layer = self._make_layer(in_channels, out_channels, 1, stride, True, dropout_rate)
             self.layers.append(layer)
             in_channels = out_channels
         
@@ -178,7 +178,7 @@ class LatentConditionerImg(nn.Module):
         downsample = None
         if stride != 1 or in_channels != out_channels:
             downsample = nn.Sequential(
-                add_sn(nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=stride, bias=False)),
+                nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=stride, bias=False),
                 nn.GroupNorm(min(32, max(1, out_channels//4)), out_channels),  # Adaptive GroupNorm
             )
         

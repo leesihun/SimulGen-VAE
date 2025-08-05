@@ -124,9 +124,39 @@ def apply_outline_preserving_augmentations(x, prob=0.5):
             if shift_y[i] != 0:
                 x[i] = torch.roll(x[i], shifts=int(shift_y[i]), dims=0)  # Vertical shift
     
+    # 3. Small rotation (±5 degrees) - SAFE for outline detection
+    if torch.rand(1, device=x.device) < 0.3:
+        angles = (torch.rand(batch_size, device=x.device) - 0.5) * 10  # -5 to +5 degrees
+        angles_rad = angles * math.pi / 180
+        
+        # Simple rotation using affine transformation for small angles
+        for i in range(batch_size):
+            if abs(angles[i]) > 0.5:  # Only rotate if angle > 0.5 degrees
+                cos_a, sin_a = torch.cos(angles_rad[i]), torch.sin(angles_rad[i])
+                # Create rotation matrix
+                theta = torch.tensor([[cos_a, -sin_a, 0], [sin_a, cos_a, 0]], 
+                                   device=x.device, dtype=x.dtype).unsqueeze(0)
+                grid = F.affine_grid(theta, (1, 1, height, width), align_corners=False)
+                x[i:i+1] = F.grid_sample(x[i:i+1].unsqueeze(0), grid, 
+                                       mode='bilinear', padding_mode='border', align_corners=False).squeeze(0)
+    
+    # 4. Slight scaling (0.95-1.05) - SAFE, preserves outline proportions
+    if torch.rand(1, device=x.device) < 0.3:
+        scales = 0.95 + (torch.rand(batch_size, device=x.device) * 0.1)  # 0.95 to 1.05
+        
+        for i in range(batch_size):
+            if abs(scales[i] - 1.0) > 0.01:  # Only scale if change > 1%
+                scale = scales[i]
+                # Create scaling matrix
+                theta = torch.tensor([[scale, 0, 0], [0, scale, 0]], 
+                                   device=x.device, dtype=x.dtype).unsqueeze(0)
+                grid = F.affine_grid(theta, (1, 1, height, width), align_corners=False)
+                x[i:i+1] = F.grid_sample(x[i:i+1].unsqueeze(0), grid, 
+                                       mode='bilinear', padding_mode='border', align_corners=False).squeeze(0)
+    
     # EXPLICITLY AVOID:
-    # - Rotation: Can break outline continuity
-    # - Scaling: Changes outline proportions and can cause aliasing
+    # - Large rotation (>10°): Can break outline continuity
+    # - Extreme scaling (<0.9 or >1.1): Changes outline proportions drastically
     # - Brightness/contrast: Destroys outline visibility
     # - Noise: Corrupts clean outline edges
     # - Elastic deformation: Breaks outline topology
@@ -275,11 +305,11 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
                 model_summary_shown = True
             
             # GPU-optimized outline-preserving augmentations (only for image data)  
-            if is_image_data and torch.rand(1, device=x.device) < 0.5:  # 90% chance
+            if is_image_data and torch.rand(1, device=x.device) < 0.8:  # 80% chance
                 # Temporarily reshape to 2D for augmentation
                 im_size = int(math.sqrt(x.shape[-1]))
                 x_2d = x.reshape(-1, im_size, im_size)
-                x_2d = apply_outline_preserving_augmentations(x_2d, prob=0.5)  # GPU-optimized
+                x_2d = apply_outline_preserving_augmentations(x_2d, prob=0.8)  # GPU-optimized
                 x = x_2d.reshape(x.shape[0], -1)  # Flatten back
                 
             # GPU-optimized gentle mixup augmentation
