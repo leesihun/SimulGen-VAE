@@ -235,7 +235,7 @@ class LatentConditionerImg(nn.Module):
         for layer in self.layers:
             x = layer(x)
         
-        final_features = x.flatten()
+        final_features = x#.flatten()
         
         # Separate encoding pathways
         latent_encoded = self.latent_encoder(final_features)
