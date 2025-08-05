@@ -121,15 +121,13 @@ class LatentConditionerImg(nn.Module):
 
         # Separate encoders for different outputs
         shared_dim = latent_conditioner_filter[-1]
-        encoder_dim = latent_dim_end*4
+        encoder_dim = latent_dim_end
         
         # Latent encoder pathway with spectral normalization
         self.latent_encoder = nn.Sequential(
             add_sn(nn.Linear(shared_dim, encoder_dim)),
             nn.SiLU(inplace=True),
             nn.Dropout(dropout_rate),  # Increased dropout
-            add_sn(nn.Linear(encoder_dim, encoder_dim // 2)),
-            nn.SiLU(inplace=True),
         )
         
         # XS encoder pathway with spectral normalization
@@ -137,43 +135,17 @@ class LatentConditionerImg(nn.Module):
             add_sn(nn.Linear(shared_dim, encoder_dim)),
             nn.SiLU(inplace=True),
             nn.Dropout(dropout_rate),  # Increased dropout
-            add_sn(nn.Linear(encoder_dim, encoder_dim // 2)),
-            nn.SiLU(inplace=True),
         )
         
         # Output heads with spectral normalization and regularization
         self.latent_head = nn.Sequential(
-            add_sn(nn.Linear(encoder_dim // 2, latent_dim_end)),
+            add_sn(nn.Linear(encoder_dim, latent_dim_end)),
             nn.Tanh()
         )
         self.xs_head = nn.Sequential(
-            add_sn(nn.Linear(encoder_dim//2, latent_dim * size2)),
+            add_sn(nn.Linear(encoder_dim, latent_dim * size2)),
             nn.Tanh()
         )
-        
-        # Uncertainty estimation heads
-        self.latent_uncertainty = nn.Sequential(
-            nn.Linear(encoder_dim // 2, latent_dim_end),
-            nn.Softplus()  # Ensures positive uncertainty values
-        )
-        self.xs_uncertainty = nn.Sequential(
-            nn.Linear(encoder_dim, latent_dim * size2),
-            nn.Softplus()
-        )
-        
-        # Auxiliary classification heads for intermediate supervision
-        self.aux_heads = nn.ModuleList()
-        for i, channels in enumerate(latent_conditioner_filter):
-            aux_head = nn.Sequential(
-                nn.AdaptiveAvgPool2d(1),
-                nn.Flatten(),
-                add_sn(nn.Linear(channels, channels // 4)),
-                nn.SiLU(inplace=True),
-                nn.Dropout(dropout_rate),  # Add regularization to auxiliary heads
-                add_sn(nn.Linear(channels // 4, latent_dim_end)),
-                nn.Tanh()
-            )
-            self.aux_heads.append(aux_head)
         
         # Custom initialization for GroupNorm compatibility
         self._initialize_weights()
