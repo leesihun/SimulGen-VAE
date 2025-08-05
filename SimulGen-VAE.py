@@ -261,8 +261,10 @@ def main():
 
     if use_pca ==1:
         use_pca = True
+        num_pca = pca_components
     else:
         use_pca = False
+        num_pca = pca_components
 
     # Parse debug mode from both config file and command line (command line takes precedence)
     config_debug_mode = int(params.get('debug_mode', 0))  # Default to 0 (disabled)
