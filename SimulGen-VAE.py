@@ -256,8 +256,8 @@ def main():
     latent_conditioner_weight_decay = float(params.get('latent_conditioner_weight_decay', 1e-4))  # Default to 1e-4 if not specified
     latent_conditioner_dropout_rate = float(params.get('latent_conditioner_dropout_rate', 0.3))  # Default to 0.3 if not specified
     use_spatial_attention = int(params.get('use_spatial_attention', 1))  # Default to 1 (enabled)
-    use_pca = int(params.get['use_pca'])
-    pca_components = int(params.get['pca_components'])
+    use_pca = int(params['use_pca'])
+    pca_components = int(params['pca_components'])
 
     if use_pca ==1:
         use_pca = True
