@@ -117,19 +117,10 @@ class LatentConditionerImg(nn.Module):
             in_channels = out_channels
         
         # Global average pooling
-        # self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
+        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
 
         # Separate encoders for different outputs
-        # Auto-calculate shared_dim based on downsampling operations
-        # Initial conv (stride=2) + len(latent_conditioner_filter) layers (each stride=2)
-        num_downsamples = 1 + len(latent_conditioner_filter)  # 1 + 3 = 4 total
-        spatial_reduction_factor = 2 ** num_downsamples  # 2^4 = 16
-        
-        # Assume square input images, get initial size from data shape
-        initial_spatial_size = int(math.sqrt(self.latent_conditioner_data_shape[0] * self.latent_conditioner_data_shape[1]))
-        final_spatial_size = initial_spatial_size // spatial_reduction_factor
-        
-        shared_dim = latent_conditioner_filter[-1] * final_spatial_size * final_spatial_size
+        shared_dim = latent_conditioner_filter[-1]
         encoder_dim = latent_dim_end*4
         
         # Latent encoder pathway with spectral normalization
@@ -244,7 +235,8 @@ class LatentConditionerImg(nn.Module):
         for layer in self.layers:
             x = layer(x)
         
-        final_features = x.flatten(1)  # Flatten spatial dimensions for linear layers
+        # Apply global average pooling then flatten
+        final_features = self.avgpool(x).flatten(1)
         
         # Separate encoding pathways
         latent_encoded = self.latent_encoder(final_features)
