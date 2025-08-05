@@ -13,7 +13,6 @@ class SqueezeExcitation(nn.Module):
         self.excitation = nn.Sequential(
             add_sn(nn.Linear(channels, channels // reduction, bias=False)),
             nn.SiLU(inplace=True),
-            nn.Dropout(0.1),  # Add dropout for regularization
             add_sn(nn.Linear(channels // reduction, channels, bias=False)),
             nn.Sigmoid()
         )
@@ -49,9 +48,6 @@ class ResidualBlock(nn.Module):
         self.conv2 = add_sn(nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False))
         self.gn2 = nn.GroupNorm(min(32, max(1, out_channels//4)), out_channels)
         
-        # Add dropout for regularization
-        self.dropout = nn.Dropout2d(drop_rate)
-        
         self.downsample = downsample
         self.silu = nn.SiLU(inplace=True)
         
@@ -67,7 +63,6 @@ class ResidualBlock(nn.Module):
         out = self.conv1(x)
         out = self.gn1(out)
         out = self.silu(out)
-        out = self.dropout(out)  # Add dropout after first activation
         
         # Second convolution with normalization (no activation yet)
         out = self.conv2(out)
@@ -82,7 +77,7 @@ class ResidualBlock(nn.Module):
             identity = self.downsample(x)
             
         # Residual connection with scaling to prevent exploding gradients
-        out = out + 0.1 * identity  # Scale residual for stability
+        out = out + identity  # Scale residual for stability
         out = self.silu(out)
         
         return out
@@ -123,8 +118,7 @@ class LatentConditionerImg(nn.Module):
         
         # Global average pooling
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
-        self.dropout = nn.Dropout(dropout_rate * 1.5)  # Increased dropout for final features
-        
+
         # Separate encoders for different outputs
         shared_dim = latent_conditioner_filter[-1]
         encoder_dim = shared_dim // 2
@@ -133,30 +127,26 @@ class LatentConditionerImg(nn.Module):
         self.latent_encoder = nn.Sequential(
             add_sn(nn.Linear(shared_dim, encoder_dim)),
             nn.SiLU(inplace=True),
-            nn.Dropout(dropout_rate * 1.2),  # Increased dropout
+            nn.Dropout(dropout_rate),  # Increased dropout
             add_sn(nn.Linear(encoder_dim, encoder_dim // 2)),
             nn.SiLU(inplace=True),
-            nn.Dropout(dropout_rate * 0.8)  # Additional regularization
         )
         
         # XS encoder pathway with spectral normalization
         self.xs_encoder = nn.Sequential(
             add_sn(nn.Linear(shared_dim, encoder_dim)),
             nn.SiLU(inplace=True),
-            nn.Dropout(dropout_rate * 1.2),  # Increased dropout
+            nn.Dropout(dropout_rate),  # Increased dropout
             add_sn(nn.Linear(encoder_dim, encoder_dim // 2)),
             nn.SiLU(inplace=True),
-            nn.Dropout(dropout_rate * 0.8)  # Additional regularization
         )
         
         # Output heads with spectral normalization and regularization
         self.latent_head = nn.Sequential(
-            nn.Dropout(dropout_rate * 0.5),  # Pre-output dropout
             add_sn(nn.Linear(encoder_dim // 2, latent_dim_end)),
             nn.Tanh()
         )
         self.xs_head = nn.Sequential(
-            nn.Dropout(dropout_rate * 0.5),  # Pre-output dropout
             add_sn(nn.Linear(encoder_dim//2, latent_dim * size2)),
             nn.Tanh()
         )
@@ -179,7 +169,7 @@ class LatentConditionerImg(nn.Module):
                 nn.Flatten(),
                 add_sn(nn.Linear(channels, channels // 4)),
                 nn.SiLU(inplace=True),
-                nn.Dropout(0.2),  # Add regularization to auxiliary heads
+                nn.Dropout(dropout_rate),  # Add regularization to auxiliary heads
                 add_sn(nn.Linear(channels // 4, latent_dim_end)),
                 nn.Tanh()
             )
@@ -194,19 +184,17 @@ class LatentConditionerImg(nn.Module):
             if isinstance(m, nn.Conv2d):
                 # Use more conservative initialization for spectral normalized layers
                 nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-                # Scale down initial weights to prevent early overfitting
-                m.weight.data *= 0.8
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
                     
             elif isinstance(m, nn.GroupNorm):
                 # Start with slightly reduced normalization strength
-                nn.init.constant_(m.weight, 0.9)
+                nn.init.constant_(m.weight, 1)
                 nn.init.constant_(m.bias, 0.0)
                 
             elif isinstance(m, nn.Linear):
                 # Conservative initialization for linear layers
-                nn.init.xavier_normal_(m.weight, gain=0.8)
+                nn.init.xavier_normal_(m.weight, gain=1)
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
     
@@ -246,15 +234,9 @@ class LatentConditionerImg(nn.Module):
         # Progressive feature extraction through residual layers
         for layer in self.layers:
             x = layer(x)
-            # Apply stochastic depth during training for additional regularization
-            if self.training and torch.rand(1).item() < 0.1:  # 10% chance to skip
-                continue
         
         # Global pooling for final features
         final_features = self.avgpool(x).flatten(1)
-        
-        # Apply stronger dropout to final features
-        shared_features = self.dropout(final_features)
         
         # Separate encoding pathways
         latent_encoded = self.latent_encoder(shared_features)
