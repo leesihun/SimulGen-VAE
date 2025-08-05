@@ -345,7 +345,7 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
         val_loss_y2 = 0
         val_batches = 0
         
-        if epoch % 10 == 0:
+        if epoch % 1 == 0:
             with torch.no_grad():
                 for i, (x_val, y1_val, y2_val) in enumerate(latent_conditioner_validation_dataloader):
                     # Move validation data to device

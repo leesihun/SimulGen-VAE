@@ -121,7 +121,7 @@ class LatentConditionerImg(nn.Module):
 
         # Separate encoders for different outputs
         shared_dim = latent_conditioner_filter[-1]
-        encoder_dim = shared_dim // 2
+        encoder_dim = latent_dim_end*4
         
         # Latent encoder pathway with spectral normalization
         self.latent_encoder = nn.Sequential(
