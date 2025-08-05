@@ -48,15 +48,11 @@ def read_latent_conditioner_dataset_img(param_dir, param_data_type, debug_mode=0
             )
             
             # Try to load existing PCA model, otherwise fit new one
-            try:
-                pca_preprocessor.load()
-                if debug_mode == 1:
-                    print('Loaded existing PCA model')
-            except FileNotFoundError:
-                if debug_mode == 1:
-                    print('Fitting new PCA model on training data')
-                pca_preprocessor.fit(raw_images)
-            
+        
+            if debug_mode == 1:
+                print('Fitting new PCA model on training data')
+            pca_preprocessor.fit(raw_images)
+        
             # Transform images using PCA
             pca_tensor = pca_preprocessor.transform(raw_images)  # Returns torch.Tensor
             
