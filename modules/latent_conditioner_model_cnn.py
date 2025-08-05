@@ -239,8 +239,8 @@ class LatentConditionerImg(nn.Module):
         final_features = self.avgpool(x).flatten(1)
         
         # Separate encoding pathways
-        latent_encoded = self.latent_encoder(shared_features)
-        xs_encoded = self.xs_encoder(shared_features)
+        latent_encoded = self.latent_encoder(final_features)
+        xs_encoded = self.xs_encoder(final_features)
         
         # Generate main outputs
         latent_main = self.latent_head(latent_encoded)
