@@ -84,7 +84,7 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
     
     # Use default compile mode to avoid CUDA graphs issues
     # Note: torch.compile + autocast compatibility verified
-    model.compile_model(mode='default')
+    model.compile_model(mode='none') # default for better TFLOPS, none for compatibility
 
     # Fix learning rate initialization
     current_lr = LR
