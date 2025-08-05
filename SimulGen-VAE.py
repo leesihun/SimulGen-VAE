@@ -965,14 +965,14 @@ def main():
         plt.plot(y1[0,:], '*', label = 'True')
         plt.plot(y_pred1[0,:], 'o', label = 'Predicted')
         plt.legend()
-        plt.close()
+        # plt.close()
 
         plt.figure()
         plt.title('Hierarchical latent')
         plt.plot(y2[0,:], '*', label = 'True')
         plt.plot(y_pred2[0,0, :], 'o', label = 'Predicted')
         plt.legend()
-        plt.close()
+        # plt.close()
         
         plt.figure()
         true_data = new_x_train[i, :, int(num_time/2)]*1e6
@@ -982,7 +982,8 @@ def main():
         plt.plot(true_data, '.', label = 'True')
         plt.legend()
         plt.savefig(f'output/reconstruction_plot_{i}.png', dpi=300, bbox_inches='tight')
-        plt.close()
+        plt.show()
+        # plt.close()
 
 if __name__ == "__main__":
     main()
