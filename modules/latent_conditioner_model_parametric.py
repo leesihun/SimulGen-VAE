@@ -63,7 +63,7 @@ class LatentConditioner(nn.Module):
         self.latent_conditioner = nn.Sequential(*modules)
 
         # Simplified output heads
-        final_feature_size = self.latent_conditioner_filter[-1]
+        final_feature_size = self.latent_conditioner_filter[-2]
         
         hidden_size = self.latent_dim_end*2
         
