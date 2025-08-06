@@ -86,13 +86,26 @@ def data_scaler(FOM_data_aug, FOM_data, num_time, num_node, directory, chunk_siz
         chunk_size = max(1000, int(chunk_memory_gb * 1024**3 / memory_per_sample))
         print(f"Auto-calculated chunk_size: {chunk_size} (based on {available_memory_gb:.1f}GB available)")
     
-    # Force float32 to halve memory usage
+    # Force float32 to halve memory usage - use chunked conversion to avoid memory overflow
     if FOM_data_aug.dtype != np.float32:
         print("Converting to float32...")
-        FOM_data_aug = FOM_data_aug.astype(np.float32)
+        # Convert in chunks to avoid doubling memory usage
+        conversion_chunk_size = min(1000, FOM_data_aug.shape[0])
+        for i in range(0, FOM_data_aug.shape[0], conversion_chunk_size):
+            end_idx = min(i + conversion_chunk_size, FOM_data_aug.shape[0])
+            FOM_data_aug[i:end_idx] = FOM_data_aug[i:end_idx].astype(np.float32)
+            if i % (conversion_chunk_size * 10) == 0:  # Progress update every 10 chunks
+                print(f"  Converted {end_idx}/{FOM_data_aug.shape[0]} samples...")
         gc.collect()  # Force garbage collection
+        
     if FOM_data.dtype != np.float32:
-        FOM_data = FOM_data.astype(np.float32)
+        print("Converting FOM_data to float32...")
+        conversion_chunk_size = min(1000, FOM_data.shape[0])
+        for i in range(0, FOM_data.shape[0], conversion_chunk_size):
+            end_idx = min(i + conversion_chunk_size, FOM_data.shape[0])
+            FOM_data[i:end_idx] = FOM_data[i:end_idx].astype(np.float32)
+            if i % (conversion_chunk_size * 10) == 0:
+                print(f"  Converted {end_idx}/{FOM_data.shape[0]} samples...")
         gc.collect()
     
     after_conversion_memory = get_memory_usage()
