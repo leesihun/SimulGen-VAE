@@ -156,26 +156,36 @@ def data_scaler(FOM_data_aug, FOM_data, num_time, num_node, directory, chunk_siz
     print("Fitting scaler on representative sample...")
     total_samples = FOM_data_aug.shape[0] * FOM_data_aug.shape[1]
     
-    # Use every nth sample to create a representative subset for fitting
-    sample_stride = max(1, total_samples // (chunk_size * 2))  # Ensure we don't exceed memory
-    sample_indices = np.arange(0, total_samples, sample_stride)
+    # Use a much smaller sample size to prevent hanging - limit to 10k samples max
+    max_samples = min(10000, total_samples // 100)  # Use 1% of data or 10k samples, whichever is smaller
+    sample_stride = max(1, total_samples // max_samples)
+    sample_indices = np.arange(0, total_samples, sample_stride)[:max_samples]  # Cap at max_samples
+    
+    print(f"Using {len(sample_indices)} samples for fitting (stride: {sample_stride})")
     
     # Convert indices to param/time coordinates
     param_indices = sample_indices // num_time
     time_indices = sample_indices % num_time
     
-    # Extract representative samples efficiently
+    # Extract representative samples more efficiently with smaller batches
     representative_data = []
-    for i in range(0, len(param_indices), chunk_size):
-        end_i = min(i + chunk_size, len(param_indices))
+    small_batch_size = min(1000, len(param_indices))  # Smaller batches
+    
+    for i in range(0, len(param_indices), small_batch_size):
+        end_i = min(i + small_batch_size, len(param_indices))
         batch_params = param_indices[i:end_i]
         batch_times = time_indices[i:end_i]
         
         # Extract samples
         samples = FOM_data_aug[batch_params, batch_times, :]
         representative_data.append(samples)
+        
+        # Progress update
+        if i % (small_batch_size * 5) == 0:
+            print(f"  Extracted {end_i}/{len(param_indices)} sample batches...")
     
     # Concatenate and fit
+    print("Concatenating samples and fitting scaler...")
     representative_samples = np.vstack(representative_data)
     scaler.fit(representative_samples)
     del representative_data, representative_samples
