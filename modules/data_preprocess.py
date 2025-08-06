@@ -5,6 +5,7 @@ import psutil
 import gc
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from pickle import dump
+import torch
 
 def reduce_dataset(data_save, num_time_to, num_node_red, num_param, num_time, num_node_red_start, num_node_red_end):
 
@@ -86,26 +87,57 @@ def data_scaler(FOM_data_aug, FOM_data, num_time, num_node, directory, chunk_siz
         chunk_size = max(1000, int(chunk_memory_gb * 1024**3 / memory_per_sample))
         print(f"Auto-calculated chunk_size: {chunk_size} (based on {available_memory_gb:.1f}GB available)")
     
-    # Force float32 to halve memory usage - use chunked conversion to avoid memory overflow
+    # Force float32 to halve memory usage - use GPU conversion if available
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    use_gpu = torch.cuda.is_available()
+    
     if FOM_data_aug.dtype != np.float32:
-        print("Converting to float32...")
-        # Convert in chunks to avoid doubling memory usage
-        conversion_chunk_size = min(1000, FOM_data_aug.shape[0])
-        for i in range(0, FOM_data_aug.shape[0], conversion_chunk_size):
-            end_idx = min(i + conversion_chunk_size, FOM_data_aug.shape[0])
-            FOM_data_aug[i:end_idx] = FOM_data_aug[i:end_idx].astype(np.float32)
-            if i % (conversion_chunk_size * 10) == 0:  # Progress update every 10 chunks
-                print(f"  Converted {end_idx}/{FOM_data_aug.shape[0]} samples...")
+        print(f"Converting to float32{'... (using GPU)' if use_gpu else '... (using CPU)'}...")
+        
+        if use_gpu:
+            # GPU conversion - much faster for large arrays
+            conversion_chunk_size = min(5000, FOM_data_aug.shape[0])  # Larger chunks for GPU
+            for i in range(0, FOM_data_aug.shape[0], conversion_chunk_size):
+                end_idx = min(i + conversion_chunk_size, FOM_data_aug.shape[0])
+                # Convert chunk to GPU tensor, change dtype, then back to numpy
+                chunk_tensor = torch.from_numpy(FOM_data_aug[i:end_idx]).to(device)
+                chunk_tensor = chunk_tensor.float()  # Convert to float32 on GPU
+                FOM_data_aug[i:end_idx] = chunk_tensor.cpu().numpy()
+                del chunk_tensor  # Free GPU memory
+                if i % (conversion_chunk_size * 4) == 0:  # Progress update every 4 chunks
+                    print(f"  Converted {end_idx}/{FOM_data_aug.shape[0]} samples...")
+            torch.cuda.empty_cache()  # Clear GPU cache
+        else:
+            # CPU fallback - chunked conversion to avoid memory overflow
+            conversion_chunk_size = min(1000, FOM_data_aug.shape[0])
+            for i in range(0, FOM_data_aug.shape[0], conversion_chunk_size):
+                end_idx = min(i + conversion_chunk_size, FOM_data_aug.shape[0])
+                FOM_data_aug[i:end_idx] = FOM_data_aug[i:end_idx].astype(np.float32)
+                if i % (conversion_chunk_size * 10) == 0:
+                    print(f"  Converted {end_idx}/{FOM_data_aug.shape[0]} samples...")
         gc.collect()  # Force garbage collection
         
     if FOM_data.dtype != np.float32:
-        print("Converting FOM_data to float32...")
-        conversion_chunk_size = min(1000, FOM_data.shape[0])
-        for i in range(0, FOM_data.shape[0], conversion_chunk_size):
-            end_idx = min(i + conversion_chunk_size, FOM_data.shape[0])
-            FOM_data[i:end_idx] = FOM_data[i:end_idx].astype(np.float32)
-            if i % (conversion_chunk_size * 10) == 0:
-                print(f"  Converted {end_idx}/{FOM_data.shape[0]} samples...")
+        print(f"Converting FOM_data to float32{'... (using GPU)' if use_gpu else '... (using CPU)'}...")
+        
+        if use_gpu:
+            conversion_chunk_size = min(5000, FOM_data.shape[0])
+            for i in range(0, FOM_data.shape[0], conversion_chunk_size):
+                end_idx = min(i + conversion_chunk_size, FOM_data.shape[0])
+                chunk_tensor = torch.from_numpy(FOM_data[i:end_idx]).to(device)
+                chunk_tensor = chunk_tensor.float()
+                FOM_data[i:end_idx] = chunk_tensor.cpu().numpy()
+                del chunk_tensor
+                if i % (conversion_chunk_size * 4) == 0:
+                    print(f"  Converted {end_idx}/{FOM_data.shape[0]} samples...")
+            torch.cuda.empty_cache()
+        else:
+            conversion_chunk_size = min(1000, FOM_data.shape[0])
+            for i in range(0, FOM_data.shape[0], conversion_chunk_size):
+                end_idx = min(i + conversion_chunk_size, FOM_data.shape[0])
+                FOM_data[i:end_idx] = FOM_data[i:end_idx].astype(np.float32)
+                if i % (conversion_chunk_size * 10) == 0:
+                    print(f"  Converted {end_idx}/{FOM_data.shape[0]} samples...")
         gc.collect()
     
     after_conversion_memory = get_memory_usage()
