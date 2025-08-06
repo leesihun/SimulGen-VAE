@@ -1,4 +1,4 @@
-# SimulGenVAE v1.4.3
+# SimulGenVAE v1.4.4
 
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue)](https://www.python.org/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-1.9%2B-orange)](https://pytorch.org/)
@@ -301,7 +301,16 @@ This project is licensed for academic use. Please contact the author for commerc
 
 ## 🔄 Version History
 
-### v1.4.3 (Current)
+### v1.4.4 (Current)
+- **Enhanced Parametric Latent Conditioner**: Complete architecture redesign for better training convergence
+  - Added residual connections for improved gradient flow
+  - Implemented progressive dropout scheduling (lighter early, heavier later)
+  - Batch normalization for training stability
+  - Adaptive bottleneck sizing based on input complexity
+  - Proper Xavier weight initialization for faster convergence
+  - Fixed missing super() call in LatentConditioner class
+
+### v1.4.3
 - Streamlined argument system (`--lc_only` vs `--train_latent_conditioner_only`)
 - Modern DDP with torchrun support
 - Enhanced error handling and graceful fallbacks
