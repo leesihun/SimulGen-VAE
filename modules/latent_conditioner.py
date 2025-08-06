@@ -187,7 +187,7 @@ def safe_cuda_initialization(debug_mode=0):
             print(f"   Device name: {torch.cuda.get_device_name(0)}")
         
         # Test CUDA with a small tensor operation
-        test_tensor = torch.zeros(1).cuda()
+        test_tensor = torch.zeros(2).cuda()
         # Test a small operation
         result = test_tensor + 1
         del test_tensor, result
