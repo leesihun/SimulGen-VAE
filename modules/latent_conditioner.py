@@ -289,7 +289,10 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
         num_batches = 0
         
         for i, (x, y1, y2) in enumerate(latent_conditioner_dataloader):
-            
+            print(x.shape)
+            print(y1.shape)
+            print(y2.shape)
+
             if x.device != device:
                 x, y1, y2 = x.to(device, non_blocking=True), y1.to(device, non_blocking=True), y2.to(device, non_blocking=True)
             
