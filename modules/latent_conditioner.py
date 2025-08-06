@@ -180,31 +180,6 @@ def safe_cuda_initialization(debug_mode=0):
             print("❌ CUDA not available, using CPU")
         return "cpu"
         
-    try:
-        if debug_mode == 1:
-            print(f"   CUDA device count: {torch.cuda.device_count()}")
-            print(f"   Current device: {torch.cuda.current_device()}")
-            print(f"   Device name: {torch.cuda.get_device_name(0)}")
-        
-        # Test CUDA with a small tensor operation
-        test_tensor = torch.zeros(2).cuda()
-        # Test a small operation
-        result = test_tensor + 1
-        del test_tensor, result
-        torch.cuda.empty_cache()  # Clear any cached memory
-        
-        if debug_mode == 1:
-            print("✓ CUDA initialized successfully")
-        return "cuda"
-        
-    except RuntimeError as e:
-        if debug_mode == 1:
-            print(f"❌ CUDA initialization error: {e}")
-        return "cpu"
-    except Exception as e:
-        if debug_mode == 1:
-            print(f"❌ Unexpected CUDA error: {e}")
-        return "cpu"
 
 def safe_initialize_weights_He(m):
     if isinstance(m, (nn.Conv1d, nn.ConvTranspose1d, nn.Conv2d, nn.ConvTranspose2d)):
