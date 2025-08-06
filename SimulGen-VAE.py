@@ -843,6 +843,8 @@ def main():
 
     elif use_pca:
         print('Using PCA mode...')
+
+        input_shape = num_pca #number of PCA coefficients
         try:
             if debug_mode == 1:
                 print("Initializing LatentConditioner MLP model for PCA...")
