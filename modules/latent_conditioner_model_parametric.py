@@ -58,15 +58,14 @@ class LatentConditioner(nn.Module):
         modules.append(nn.Linear(self.input_shape, self.latent_conditioner_filter[0]))
         for i in range(1, self.num_latent_conditioner_filter-1):
             modules.append(nn.Linear(self.latent_conditioner_filter[i-1], self.latent_conditioner_filter[i]))
-            modules.append(nn.LeakyReLU(0.2))
+            modules.append(nn.GELU())
             modules.append(nn.Dropout(0.1))
         self.latent_conditioner = nn.Sequential(*modules)
 
         # Simplified output heads
-        final_feature_size = self.latent_conditioner_filter[-2]
+        final_feature_size = self.latent_conditioner_filter[-1]
         
-        # ULTRA-EXTREME bottleneck with single output heads
-        hidden_size = max(8, final_feature_size // 32)
+        hidden_size = self.latent_dim_end*2
         
         # Single prediction head for latent output
         self.latent_out = nn.Sequential(
