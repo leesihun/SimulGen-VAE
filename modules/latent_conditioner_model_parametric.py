@@ -53,16 +53,16 @@ class LatentConditioner(nn.Module):
         self.num_latent_conditioner_filter = len(self.latent_conditioner_filter)
         self.dropout_rate = dropout_rate
 
-        # Backbone feature extractor with aggressive anti-overfitting and batch normalization
+        # Backbone feature extractor with aggressive anti-overfitting and layer normalization
         modules = []
         modules.append(nn.Linear(self.input_shape, self.latent_conditioner_filter[0]))
-        modules.append(nn.BatchNorm1d(self.latent_conditioner_filter[0]))
+        modules.append(nn.LayerNorm(self.latent_conditioner_filter[0]))
         modules.append(nn.GELU())
         modules.append(nn.Dropout(0.3))  # Increased dropout
         
         for i in range(1, self.num_latent_conditioner_filter):
             modules.append(nn.Linear(self.latent_conditioner_filter[i-1], self.latent_conditioner_filter[i]))
-            modules.append(nn.BatchNorm1d(self.latent_conditioner_filter[i]))
+            modules.append(nn.LayerNorm(self.latent_conditioner_filter[i]))
             modules.append(nn.GELU())
             modules.append(nn.Dropout(0.3))  # Increased dropout
         
