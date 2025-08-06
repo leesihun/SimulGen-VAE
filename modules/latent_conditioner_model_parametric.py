@@ -56,33 +56,40 @@ class LatentConditioner(nn.Module):
         # Backbone feature extractor
         modules = []
         modules.append(nn.Linear(self.input_shape, self.latent_conditioner_filter[0]))
+        modules.append(nn.GELU())
+        modules.append(nn.Dropout(0.05))  # Reduced dropout
+        
         for i in range(1, self.num_latent_conditioner_filter):
             modules.append(nn.Linear(self.latent_conditioner_filter[i-1], self.latent_conditioner_filter[i]))
             modules.append(nn.GELU())
-            modules.append(nn.Dropout(0.1))
+            modules.append(nn.Dropout(0.05))  # Reduced dropout
+        
+        # Add final activation after backbone
+        modules.append(nn.GELU())
         self.latent_conditioner = nn.Sequential(*modules)
 
         # Simplified output heads
         final_feature_size = self.latent_conditioner_filter[-1]
         
-        hidden_size = self.latent_dim_end*2
+        # Less severe bottleneck - use quarter of backbone output instead of tiny bottleneck
+        hidden_size = max(64, final_feature_size // 4)  # 512 // 4 = 128, much better than 64
         
         # Single prediction head for latent output
         self.latent_out = nn.Sequential(
-            nn.Dropout(0.2),
+            nn.Dropout(0.1),  # Reduced dropout
             nn.Linear(final_feature_size, hidden_size),
             nn.GELU(),
-            nn.Dropout(0.15), 
+            nn.Dropout(0.05),  # Reduced dropout
             nn.Linear(hidden_size, self.latent_dim_end),
             nn.Tanh()
         )
         
         # Single prediction head for xs output
         self.xs_out = nn.Sequential(
-            nn.Dropout(0.2),
+            nn.Dropout(0.1),  # Reduced dropout
             nn.Linear(final_feature_size, hidden_size),
             nn.GELU(),
-            nn.Dropout(0.15),
+            nn.Dropout(0.05),  # Reduced dropout
             nn.Linear(hidden_size, self.latent_dim * self.size2),
             nn.Tanh()
         )
