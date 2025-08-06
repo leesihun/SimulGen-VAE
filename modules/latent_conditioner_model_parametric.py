@@ -6,7 +6,7 @@ for both main and hierarchical latent variables.
 
 Enhanced Features:
 - Multi-layer perceptron with progressive dropout and residual connections
-- Batch normalization for training stability
+- Layer normalization for training stability (batch-independent)
 - Adaptive bottleneck sizing based on input complexity
 - Dual output heads with shared feature extraction
 - GELU activations with proper gradient flow
@@ -32,9 +32,9 @@ class ResidualBlock(nn.Module):
         
         # Main path
         self.linear1 = nn.Linear(input_dim, output_dim)
-        self.bn1 = nn.BatchNorm1d(output_dim)
+        self.ln1 = nn.LayerNorm(output_dim)
         self.linear2 = nn.Linear(output_dim, output_dim)
-        self.bn2 = nn.BatchNorm1d(output_dim)
+        self.ln2 = nn.LayerNorm(output_dim)
         self.dropout = nn.Dropout(dropout_rate)
         
         # Skip connection (if dimensions don't match)
@@ -42,7 +42,7 @@ class ResidualBlock(nn.Module):
         if input_dim != output_dim:
             self.skip_connection = nn.Sequential(
                 nn.Linear(input_dim, output_dim),
-                nn.BatchNorm1d(output_dim)
+                nn.LayerNorm(output_dim)
             )
     
     def forward(self, x):
@@ -50,12 +50,12 @@ class ResidualBlock(nn.Module):
         
         # Main path
         out = self.linear1(x)
-        out = self.bn1(out)
+        out = self.ln1(out)
         out = F.gelu(out)
         out = self.dropout(out)
         
         out = self.linear2(out)
-        out = self.bn2(out)
+        out = self.ln2(out)
         
         # Skip connection
         if self.skip_connection is not None:
@@ -83,7 +83,7 @@ class LatentConditioner(nn.Module):
         dropout_rate (float): Base dropout rate for regularization (default: 0.3)
     
     Attributes:
-        input_norm (nn.BatchNorm1d): Input normalization layer
+        input_norm (nn.LayerNorm): Input normalization layer
         backbone (nn.ModuleList): Residual blocks for feature extraction
         feature_projection (nn.Sequential): Final feature projection layer
         latent_out (nn.Sequential): Output head for main latent predictions
@@ -91,7 +91,7 @@ class LatentConditioner(nn.Module):
     
     Enhancements:
         - Residual connections for better gradient flow
-        - Batch normalization for training stability
+        - Layer normalization for training stability (batch-independent)
         - Progressive dropout (lighter early, heavier late)
         - Adaptive bottleneck sizing based on input complexity
         - Proper weight initialization for faster convergence
@@ -108,7 +108,7 @@ class LatentConditioner(nn.Module):
         self.dropout_rate = dropout_rate
 
         # Input normalization for numerical stability
-        self.input_norm = nn.BatchNorm1d(input_shape)
+        self.input_norm = nn.LayerNorm(input_shape)
         
         # Progressive dropout rates (lighter early layers, heavier later)
         dropout_schedule = [
@@ -128,10 +128,10 @@ class LatentConditioner(nn.Module):
             current_dropout = dropout_schedule[dropout_idx]
             
             if i == 0:
-                # First layer: simple linear + batch norm
+                # First layer: simple linear + layer norm
                 self.backbone.append(nn.Sequential(
                     nn.Linear(current_dim, next_dim),
-                    nn.BatchNorm1d(next_dim),
+                    nn.LayerNorm(next_dim),
                     nn.GELU(),
                     nn.Dropout(current_dropout)
                 ))
@@ -150,18 +150,18 @@ class LatentConditioner(nn.Module):
         hidden_size = max(self.latent_dim_end * 2, final_feature_size // complexity_ratio)
         
         self.feature_projection = nn.Sequential(
-            nn.BatchNorm1d(final_feature_size),
+            nn.LayerNorm(final_feature_size),
             nn.Dropout(dropout_rate * 0.8),  # Moderate dropout before output heads
         )
         
         # Improved output heads with better capacity
         self.latent_out = nn.Sequential(
             nn.Linear(final_feature_size, hidden_size),
-            nn.BatchNorm1d(hidden_size),
+            nn.LayerNorm(hidden_size),
             nn.GELU(),
             nn.Dropout(dropout_rate * 0.6),  # Reduced dropout in output heads
             nn.Linear(hidden_size, hidden_size // 2),
-            nn.BatchNorm1d(hidden_size // 2),
+            nn.LayerNorm(hidden_size // 2),
             nn.GELU(),
             nn.Dropout(dropout_rate * 0.4),
             nn.Linear(hidden_size // 2, self.latent_dim_end),
@@ -170,11 +170,11 @@ class LatentConditioner(nn.Module):
         
         self.xs_out = nn.Sequential(
             nn.Linear(final_feature_size, hidden_size),
-            nn.BatchNorm1d(hidden_size),
+            nn.LayerNorm(hidden_size),
             nn.GELU(),
             nn.Dropout(dropout_rate * 0.6),
             nn.Linear(hidden_size, hidden_size // 2),
-            nn.BatchNorm1d(hidden_size // 2),
+            nn.LayerNorm(hidden_size // 2),
             nn.GELU(),
             nn.Dropout(dropout_rate * 0.4),
             nn.Linear(hidden_size // 2, self.latent_dim * self.size2),
@@ -191,7 +191,7 @@ class LatentConditioner(nn.Module):
             nn.init.xavier_uniform_(module.weight, gain=1.0)
             if module.bias is not None:
                 nn.init.constant_(module.bias, 0)
-        elif isinstance(module, (nn.BatchNorm1d, nn.LayerNorm)):
+        elif isinstance(module, nn.LayerNorm):
             nn.init.constant_(module.weight, 1)
             nn.init.constant_(module.bias, 0)
 
