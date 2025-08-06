@@ -53,43 +53,46 @@ class LatentConditioner(nn.Module):
         self.num_latent_conditioner_filter = len(self.latent_conditioner_filter)
         self.dropout_rate = dropout_rate
 
-        # Backbone feature extractor
+        # Backbone feature extractor with aggressive anti-overfitting and batch normalization
         modules = []
         modules.append(nn.Linear(self.input_shape, self.latent_conditioner_filter[0]))
+        modules.append(nn.BatchNorm1d(self.latent_conditioner_filter[0]))
         modules.append(nn.GELU())
-        modules.append(nn.Dropout(0.05))  # Reduced dropout
+        modules.append(nn.Dropout(0.3))  # Increased dropout
         
         for i in range(1, self.num_latent_conditioner_filter):
             modules.append(nn.Linear(self.latent_conditioner_filter[i-1], self.latent_conditioner_filter[i]))
+            modules.append(nn.BatchNorm1d(self.latent_conditioner_filter[i]))
             modules.append(nn.GELU())
-            modules.append(nn.Dropout(0.05))  # Reduced dropout
+            modules.append(nn.Dropout(0.3))  # Increased dropout
         
         # Add final activation after backbone
         modules.append(nn.GELU())
+        modules.append(nn.Dropout(0.4))  # Extra dropout at end
         self.latent_conditioner = nn.Sequential(*modules)
 
         # Simplified output heads
         final_feature_size = self.latent_conditioner_filter[-1]
         
-        # Less severe bottleneck - use quarter of backbone output instead of tiny bottleneck
-        hidden_size = max(64, final_feature_size // 4)  # 512 // 4 = 128, much better than 64
+        # Reduce model capacity to prevent overfitting - use smaller bottleneck
+        hidden_size = max(32, final_feature_size // 8)  # 512 // 8 = 64, reduced capacity
         
-        # Single prediction head for latent output
+        # Single prediction head for latent output with heavy regularization
         self.latent_out = nn.Sequential(
-            nn.Dropout(0.1),  # Reduced dropout
+            nn.Dropout(0.5),  # Heavy dropout
             nn.Linear(final_feature_size, hidden_size),
             nn.GELU(),
-            nn.Dropout(0.05),  # Reduced dropout
+            nn.Dropout(0.3),  # Increased dropout
             nn.Linear(hidden_size, self.latent_dim_end),
             nn.Tanh()
         )
         
-        # Single prediction head for xs output
+        # Single prediction head for xs output with heavy regularization
         self.xs_out = nn.Sequential(
-            nn.Dropout(0.1),  # Reduced dropout
+            nn.Dropout(0.5),  # Heavy dropout
             nn.Linear(final_feature_size, hidden_size),
             nn.GELU(),
-            nn.Dropout(0.05),  # Reduced dropout
+            nn.Dropout(0.3),  # Increased dropout
             nn.Linear(hidden_size, self.latent_dim * self.size2),
             nn.Tanh()
         )
