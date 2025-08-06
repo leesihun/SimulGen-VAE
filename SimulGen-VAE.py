@@ -478,7 +478,6 @@ def main():
     if train_latent_conditioner_only ==0:
 
         VAE_loss, reconstruction_error, KL_divergence, loss_val_print = train(n_epochs, batch_size, dataloader, val_dataloader, LR, num_filter_enc, num_filter_dec, num_node, latent_dim_end, latent_dim, num_time, alpha, loss, small, load_all, debug_mode)
-        del dataloader, val_dataloader
 
         device = "cuda:0" if torch.cuda.is_available() else "cpu"
         VAE_trained = torch.load('./model_save/SimulGen-VAE', map_location= device, weights_only=False)
@@ -496,19 +495,8 @@ def main():
         # Optimize reconstruction DataLoader with intelligent worker detection  
         recon_optimal_workers = 0 if len(dataset) < 1000 else min(2, torch.multiprocessing.cpu_count())
         
-        # For the whole dataset
-        dataloader2 = DataLoader(
-            new_x_train, 
-            batch_size=1, 
-            shuffle=False, 
-            num_workers=recon_optimal_workers,
-            pin_memory=True if not load_all and recon_optimal_workers > 0 else False, 
-            drop_last=False,
-            persistent_workers=True if recon_optimal_workers > 0 else False,
-            prefetch_factor=2 if recon_optimal_workers > 0 else None
-        )
-
-        for j, image in enumerate(dataloader2):
+        # Reconstruction loss
+        for j, image in enumerate(dataloader):
             loss_save[:]=100
             x = image.to(device)
             del image
@@ -545,7 +533,52 @@ def main():
 
         print('')
 
-        print('Total MSE loss: {:.3e}'.format(loss_total/num_param))
+        print('Total Reconstruction MSE loss: {:.3e}'.format(loss_total/j))
+        print('')
+        print('--------------------------------')
+        print('')
+        print('')
+
+        
+        # Validation loss
+        for j, image in enumerate(val_dataloader):
+            loss_save[:]=100
+            x = image.to(device)
+            del image
+
+            mu, log_var, xs = VAE.encoder(x)
+            for i in range(recon_iter):
+                std = torch.exp(0.5*log_var)
+                latent_vector = reparameterize(mu, std)
+
+                gen_x, _ = VAE.decoder(latent_vector, xs, mode='fix')
+                gen_x_np = gen_x.cpu().detach().numpy()
+
+                loss = nn.MSELoss()(gen_x, x)
+
+                if loss<loss_save[0]:
+                    loss_save[0] = loss
+                    latent_vector_save = latent_vector
+                    latent_vectors[j,:] = latent_vector_save[0,:].cpu().detach().numpy()
+
+                    for k in range(len(xs)):
+                        hierarchical_latent_vectors[j,k,:] = xs[k].cpu().detach().numpy()[0]
+
+                    reconstruction_loss[j] = loss
+
+                    reconstructed[j,:,:] = gen_x_np[0,:,:]
+
+                    del latent_vector, x, mu, log_var, xs, std, gen_x, gen_x_np, latent_vector_save
+
+            print('parameter {} is finished''-''MSE: {:.4E}'.format(j+1, loss))
+            print('')
+            loss_total = loss_total+loss.cpu().detach().numpy()
+
+            del loss
+
+        print('')
+
+        print('Total Validation MSE loss: {:.3e}'.format(loss_total/j))
 
         np.save('model_save/latent_vectors', latent_vectors)
         np.save('model_save/xs', hierarchical_latent_vectors)

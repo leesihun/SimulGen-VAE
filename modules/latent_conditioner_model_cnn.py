@@ -5,6 +5,14 @@ import math
 from torch.nn.utils import spectral_norm
 from modules.common import add_sn
 
+def get_valid_groups(channels, max_groups=32):
+    """Find the largest valid group count for GroupNorm that divides channels evenly"""
+    max_groups = min(max_groups, channels)
+    for groups in range(max_groups, 0, -1):
+        if channels % groups == 0:
+            return groups
+    return 1
+
 class SqueezeExcitation(nn.Module):
     def __init__(self, channels, reduction=16):
         super(SqueezeExcitation, self).__init__()
@@ -29,9 +37,9 @@ class ResidualBlock(nn.Module):
         super(ResidualBlock, self).__init__()
         
         self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1, bias=False)
-        self.gn1 = nn.GroupNorm(min(32, max(1, out_channels//4)), out_channels)
+        self.gn1 = nn.GroupNorm(get_valid_groups(out_channels), out_channels)
         self.conv2 = add_sn(nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False))
-        self.gn2 = nn.GroupNorm(min(32, max(1, out_channels//4)), out_channels)
+        self.gn2 = nn.GroupNorm(get_valid_groups(out_channels), out_channels)
         
         self.downsample = downsample
         self.silu = nn.SiLU(inplace=True)
@@ -76,7 +84,7 @@ class LatentConditionerImg(nn.Module):
         self.return_dict = return_dict
         
         self.conv1 = nn.Conv2d(1, latent_conditioner_filter[0], kernel_size=7, stride=2, padding=3, bias=False)
-        self.gn1 = nn.GroupNorm(min(32, max(1, latent_conditioner_filter[0]//4)), latent_conditioner_filter[0])
+        self.gn1 = nn.GroupNorm(get_valid_groups(latent_conditioner_filter[0]), latent_conditioner_filter[0])
         self.silu = nn.SiLU(inplace=True)
         
         self.layers = nn.ModuleList()
@@ -138,7 +146,7 @@ class LatentConditionerImg(nn.Module):
         if stride != 1 or in_channels != out_channels:
             downsample = nn.Sequential(
                 nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=stride, bias=False),
-                nn.GroupNorm(min(32, max(1, out_channels//4)), out_channels),
+                nn.GroupNorm(get_valid_groups(out_channels), out_channels),
             )
         
         layers = []
