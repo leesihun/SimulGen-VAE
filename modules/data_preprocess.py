@@ -79,7 +79,7 @@ def data_scaler(FOM_data_aug, FOM_data, num_time, num_node, directory, chunk_siz
     
     # Force float32 to halve memory usage - use GPU conversion if available
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    use_gpu = torch.cuda.is_available()
+    use_gpu = False#torch.cuda.is_available()
     
     # Auto-calculate chunk size based on available memory if not specified
     if chunk_size is None:
