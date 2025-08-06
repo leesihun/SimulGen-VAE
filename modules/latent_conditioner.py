@@ -16,7 +16,7 @@ DEFAULT_IMAGE_SIZE = 256
 INTERPOLATION_METHOD = cv2.INTER_CUBIC
 im_size = DEFAULT_IMAGE_SIZE
 
-def read_latent_conditioner_dataset_img(param_dir, param_data_type, debug_mode=0, use_pca=False, pca_components=1024, pca_patch_size=None):
+def read_latent_conditioner_dataset_img(param_dir, param_data_type, debug_mode=0):
     cur_dir = os.getcwd()
     file_dir = cur_dir+param_dir
 
@@ -39,45 +39,74 @@ def read_latent_conditioner_dataset_img(param_dir, param_data_type, debug_mode=0
             # Normalize to [0, 1] range for better training stability
             raw_images[i] = resized_im / 255.0
 
-        if use_pca:
-            # Apply PCA preprocessing
-            print(f'Applying PCA preprocessing with {pca_components} components')
-            if pca_patch_size:
-                print(f'Using patch-based PCA with patch size {pca_patch_size}')
-            
-            pca_preprocessor = PCAPreprocessor(
-                n_components=pca_components, 
-                patch_size=pca_patch_size
-            )
-            
-            # Try to load existing PCA model, otherwise fit new one
-        
-            if debug_mode == 1:
-                print('Fitting new PCA model on training data')
-            pca_preprocessor.fit(raw_images)
-        
-            # Transform images using PCA
-            pca_tensor = pca_preprocessor.transform(raw_images)  # Returns torch.Tensor
-            
-            # Convert back to numpy and flatten for compatibility
-            if len(pca_tensor.shape) == 4:  # (n_samples, channels, height, width)
-                latent_conditioner_data = pca_tensor.view(pca_tensor.shape[0], -1).numpy()
-                latent_conditioner_data_shape = pca_tensor.shape[2:]  # (height, width)
-            else:
-                latent_conditioner_data = pca_tensor.numpy()
-                latent_conditioner_data_shape = pca_preprocessor.get_output_shape()
-            
-            if debug_mode == 1:
-                print(f'PCA output shape: {latent_conditioner_data_shape}')
-                print(f'Data reduced from {im_size*im_size} to {latent_conditioner_data.shape[1]} dimensions')
-                
-        else:
-            # Standard processing without PCA
-            latent_conditioner_data = raw_images.reshape(len(files), -1)
-            latent_conditioner_data_shape = (im_size, im_size)
+        # Standard processing for CNN/ViT (no PCA here - use read_latent_conditioner_dataset_img_pca for PCA_MLP mode)
+        latent_conditioner_data = raw_images.reshape(len(files), -1)
+        latent_conditioner_data_shape = (im_size, im_size)
             
     else:
         raise NotImplementedError('Data type not supported')
+
+    return latent_conditioner_data, latent_conditioner_data_shape
+
+def read_latent_conditioner_dataset_img_pca(param_dir, param_data_type, debug_mode=0, pca_components=256, pca_patch_size=0):
+    """
+    PCA_MLP mode: Read images and convert them to PCA coefficients for MLP-based latent conditioner.
+    This function forces PCA preprocessing and returns flattened PCA coefficients suitable for MLP input.
+    """
+    cur_dir = os.getcwd()
+    file_dir = cur_dir + param_dir
+
+    if param_data_type == ".jpg" or param_data_type == ".png":
+        if debug_mode == 1:
+            print('PCA_MLP mode: Reading image dataset from ' + file_dir + '\n')
+
+        files = [f for f in os.listdir(file_dir) if f.endswith(param_data_type)]
+        files = natsort.natsorted(files)
+
+        # Read all images first
+        raw_images = np.zeros((len(files), im_size, im_size))
+        
+        for i, file in enumerate(files):
+            if debug_mode == 1:
+                print(file)
+            file_path = os.path.join(file_dir, file)
+            im = cv2.imread(file_path, 0)
+            resized_im = cv2.resize(im, (im_size, im_size), interpolation=INTERPOLATION_METHOD)
+            # Normalize to [0, 1] range for better training stability
+            raw_images[i] = resized_im / 255.0
+
+        # Apply PCA preprocessing (forced for PCA_MLP mode)
+        print(f'PCA_MLP mode: Applying PCA preprocessing with {pca_components} components')
+        if pca_patch_size > 0:
+            print(f'Using patch-based PCA with patch size {pca_patch_size}')
+        
+        pca_preprocessor = PCAPreprocessor(
+            n_components=pca_components, 
+            patch_size=pca_patch_size if pca_patch_size > 0 else None
+        )
+        
+        if debug_mode == 1:
+            print('Fitting new PCA model on training data')
+        pca_preprocessor.fit(raw_images)
+    
+        # Transform images using PCA
+        pca_tensor = pca_preprocessor.transform(raw_images)  # Returns torch.Tensor
+        
+        # Convert to numpy and flatten for MLP compatibility
+        if len(pca_tensor.shape) == 4:  # (n_samples, channels, height, width)
+            latent_conditioner_data = pca_tensor.view(pca_tensor.shape[0], -1).numpy()
+        else:
+            latent_conditioner_data = pca_tensor.numpy()
+        
+        # For MLP mode, we return flattened shape
+        latent_conditioner_data_shape = (latent_conditioner_data.shape[1],)
+        
+        if debug_mode == 1:
+            print(f'PCA_MLP output shape: {latent_conditioner_data_shape}')
+            print(f'Data reduced from {im_size*im_size} to {latent_conditioner_data.shape[1]} dimensions')
+            
+    else:
+        raise NotImplementedError('PCA_MLP mode only supports .jpg/.png files')
 
     return latent_conditioner_data, latent_conditioner_data_shape
 

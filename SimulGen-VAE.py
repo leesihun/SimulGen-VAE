@@ -140,7 +140,7 @@ def main():
     from modules.latent_conditioner_model_parametric import LatentConditioner
     from modules.latent_conditioner_model_vit import TinyViTLatentConditioner
     # Import utilities and training functions from the main file  
-    from modules.latent_conditioner import train_latent_conditioner, read_latent_conditioner_dataset_img, read_latent_conditioner_dataset, safe_cuda_initialization
+    from modules.latent_conditioner import train_latent_conditioner, read_latent_conditioner_dataset_img, read_latent_conditioner_dataset, read_latent_conditioner_dataset_img_pca, safe_cuda_initialization
     from modules.plotter import temporal_plotter
     from modules.VAE_network import VAE
     from modules.train import train, print_gpu_mem_checkpoint
@@ -258,6 +258,7 @@ def main():
     use_spatial_attention = int(params.get('use_spatial_attention', 1))  # Default to 1 (enabled)
     use_pca = int(params['use_pca'])
     pca_components = int(params['pca_components'])
+    pca_patch_size = int(params['pca_patch_size'])
 
     if use_pca ==1:
         use_pca = True
@@ -622,14 +623,19 @@ def main():
     xs_vectors = hierarchical_latent_vectors.reshape([num_param, -1])
 
 
-    if latent_conditioner_data_type=='image':
+    # Check for PCA_MLP mode
+    if latent_conditioner_data_type == 'image' and use_pca:
+        print('Loading image data for PCA_MLP mode...')
+        image = False  # Use MLP architecture for PCA coefficients
+        latent_conditioner_data, latent_conditioner_data_shape = read_latent_conditioner_dataset_img_pca(param_dir, param_data_type, debug_mode, num_pca, pca_patch_size)
+    elif latent_conditioner_data_type=='image':
         print('Loading image data for CNN...')
         image=True
-        latent_conditioner_data, latent_conditioner_data_shape = read_latent_conditioner_dataset_img(param_dir, param_data_type, debug_mode, use_pca, pca_components = num_pca)
+        latent_conditioner_data, latent_conditioner_data_shape = read_latent_conditioner_dataset_img(param_dir, param_data_type, debug_mode)
     elif latent_conditioner_data_type=='image_vit':
         print('Loading image data for ViT...')
         image=True
-        latent_conditioner_data, latent_conditioner_data_shape = read_latent_conditioner_dataset_img(param_dir, param_data_type, debug_mode, use_pca, pca_components = num_pca)
+        latent_conditioner_data, latent_conditioner_data_shape = read_latent_conditioner_dataset_img(param_dir, param_data_type, debug_mode)
     elif latent_conditioner_data_type=='csv':
         print('Loading csv data for MLP...')
         image=False
@@ -787,7 +793,7 @@ def main():
         print(f"Selected device: {device}")
         print("===================================================\n")
     
-    if latent_conditioner_data_type=='image':
+    if latent_conditioner_data_type=='image' and use_pca==False:
         try:
             if debug_mode == 1:
                 print("Initializing LatentConditioner CNN image model...")
@@ -801,6 +807,23 @@ def main():
             latent_conditioner = LatentConditionerImg(latent_conditioner_filter, latent_dim_end, input_shape, latent_dim, size2, latent_conditioner_data_shape, dropout_rate=latent_conditioner_dropout_rate, use_attention=bool(use_spatial_attention)).to(device)
             if debug_mode == 1:
                 print(f"✓ CNN model fallback initialized on {device}")
+
+    elif use_pca:
+        print('Using PCA mode...')
+        try:
+            if debug_mode == 1:
+                print("Initializing LatentConditioner MLP model for PCA...")
+            latent_conditioner = LatentConditioner(latent_conditioner_filter, latent_dim_end, input_shape, latent_dim, size2, dropout_rate=latent_conditioner_dropout_rate).to(device)
+            if debug_mode == 1:
+                print(f"✓ CNN model successfully initialized on {device}")
+        except RuntimeError as e:
+            print(f"❌ Error initializing LatentConditioner MLP model for PCA: {e}")
+            print("   Falling back to CPU-only model")
+            device = torch.device('cpu')
+            latent_conditioner = LatentConditioner(latent_conditioner_filter, latent_dim_end, input_shape, latent_dim, size2, dropout_rate=latent_conditioner_dropout_rate).to(device)
+            if debug_mode == 1:
+                print(f"✓ MLP model fallback initialized on {device}")
+
     elif latent_conditioner_data_type=='image_vit':
         try:
             if debug_mode == 1:
@@ -936,6 +959,7 @@ def main():
     )
 
     for i, (x, y1, y2) in enumerate(latent_conditioner_dataloader_test):
+        # x already contains preprocessed data (PCA coefficients if use_pca=True, raw images if use_pca=False)
         x = x.to(device)
 
         y_pred1, y_pred2 = latent_conditioner(x)
