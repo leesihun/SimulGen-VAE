@@ -78,31 +78,21 @@ class LatentConditioner(nn.Module):
         )
         
         # Single prediction head for xs output
-        xs_output_size = self.latent_dim * self.size2
-        print(f"Model init - latent_dim: {self.latent_dim}, size2: {self.size2}, xs_output_size: {xs_output_size}")
-        print(f"Model init - final_feature_size: {final_feature_size}, hidden_size: {hidden_size}")
-        
         self.xs_out = nn.Sequential(
             nn.Dropout(0.2),
             nn.Linear(final_feature_size, hidden_size),
             nn.GELU(),
             nn.Dropout(0.15),
-            nn.Linear(hidden_size, xs_output_size),
+            nn.Linear(hidden_size, self.latent_dim * self.size2),
             nn.Tanh()
         )
 
     def forward(self, x):
-        print(f"Input shape: {x.shape}")
         features = self.latent_conditioner(x)
-        print(f"Features shape: {features.shape}")
         
         # Direct prediction from single heads
         latent_out = self.latent_out(features)
-        print(f"Latent out shape: {latent_out.shape}")
         xs_out = self.xs_out(features)
-        print(f"XS out before unflatten: {xs_out.shape}")
-        print(f"Expected unflatten dimensions: ({self.size2}, {self.latent_dim}) = {self.size2 * self.latent_dim}")
-        xs_out = xs_out.unflatten(1, (self.size2, self.latent_dim))
-        print(f"XS out after unflatten: {xs_out.shape}")
+        xs_out = xs_out.view(xs_out.size(0), self.size2, self.latent_dim)
 
         return latent_out, xs_out
