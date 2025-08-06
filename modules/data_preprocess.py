@@ -77,6 +77,10 @@ def data_scaler(FOM_data_aug, FOM_data, num_time, num_node, directory, chunk_siz
     initial_memory = get_memory_usage()
     print(f"Initial memory usage: {initial_memory:.2f} GB")
     
+    # Force float32 to halve memory usage - use GPU conversion if available
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    use_gpu = torch.cuda.is_available()
+    
     # Auto-calculate chunk size based on available memory if not specified
     if chunk_size is None:
         if use_gpu:
@@ -92,10 +96,6 @@ def data_scaler(FOM_data_aug, FOM_data, num_time, num_node, directory, chunk_siz
         memory_per_sample = num_node * 4 * 2  # bytes, with safety factor
         chunk_size = max(1000, int(chunk_memory_gb * 1024**3 / memory_per_sample))
         print(f"Auto-calculated chunk_size: {chunk_size} (based on {available_memory_gb:.1f}GB {'GPU' if use_gpu else 'CPU'} available)")
-    
-    # Force float32 to halve memory usage - use GPU conversion if available
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    use_gpu = torch.cuda.is_available()
     
     if FOM_data_aug.dtype != np.float32:
         print(f"Converting to float32{'... (using GPU)' if use_gpu else '... (using CPU)'}...")
