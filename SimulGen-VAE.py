@@ -1005,8 +1005,8 @@ def main():
         A = y2
 
         y2 = y2.reshape([1, -1])
-        latent_predict = latent_vectors_scaler.inverse_transform(y1)
-        xs_predict = xs_scaler.inverse_transform(y2)
+        latent_predict = latent_vectors_scaler.inverse_transform(y_pred1)
+        xs_predict = xs_scaler.inverse_transform(y_pred2)
         xs_predict = xs_predict.reshape([-1, 1, A.shape[-1]])
         latent_predict = torch.from_numpy(latent_predict)
         xs_predict = torch.from_numpy(xs_predict)
@@ -1036,7 +1036,7 @@ def main():
         plt.figure()
         true_data = new_x_train[i, :, int(num_time/2)]*1e6
         recon_data = target_output_np[0,:,0]*1e6
-        plt.title(f'Reconstruction - True: [{true_data.min():.3f}, {true_data.max():.3f}], Recon: [{recon_data.min():.3f}, {recon_data.max():.3f}]')
+        plt.title(f'Reconstruction - True: [{true_data.min():.1f}, {true_data.max():.1f}], SimulGEN: [{recon_data.min():.1f}, {recon_data.max():.1f}]')
         plt.plot(recon_data, '.', label = 'Recon')
         plt.plot(true_data, '.', label = 'True')
         plt.legend()
