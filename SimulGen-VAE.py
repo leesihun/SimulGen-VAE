@@ -569,6 +569,14 @@ def main():
             print('parameter {} is finished''-''MSE: {:.4E}'.format(j+1, loss))
             print('')
             loss_total = loss_total+loss.cpu().detach().numpy()
+
+            
+        # Only the last parameter
+            plt.figure(figsize=(10, 5))
+            plt.plot(true_data[j,:,:], label='True')
+            plt.plot(recon_data[j,:,:], label='SimulGen')
+            plt.legend()
+            plt.show()
             del loss
 
         print('')
@@ -587,12 +595,6 @@ def main():
             true_data = true_data.cpu().numpy()
         recon_data = gen_x_np
 
-        # Only the last parameter
-        plt.figure(figsize=(10, 5))
-        plt.plot(true_data[j,:,:], label='True')
-        plt.plot(recon_data[j,:,:], label='SimulGen')
-        plt.legend()
-        plt.close()
 
     # LatentConditioner training (runs for both train_latent_conditioner_only == 0 and train_latent_conditioner_only == 1)
     out_latent_vectors = latent_vectors.reshape([num_param, latent_dim_end])
