@@ -574,8 +574,11 @@ def main():
 
 
             plt.figure()
-            plt.plot(image_np[j,:,0], '.', label='True')
-            plt.plot(gen_x_np[j,:,0], '.', label='SimulGen')
+            true_data = image_np[0, :, int(image_np.shape[2]/2)] * 1e6
+            recon_data = gen_x_np[0, :, 0] * 1e6
+            plt.title(f'Reconstruction - True: [{true_data.min():.1f}, {true_data.max():.1f}], SimulGEN: [{recon_data.min():.1f}, {recon_data.max():.1f}]')
+            plt.plot(recon_data, '.', label='SimulGen')
+            plt.plot(true_data, '.', label='True')
             plt.legend()
             plt.show()
 
@@ -927,7 +930,7 @@ def main():
     latent_conditioner_eval_optimal_workers = 0 if len(latent_conditioner_dataset) < 1000 else min(2, torch.multiprocessing.cpu_count())
     
     latent_conditioner_dataloader_test = torch.utils.data.DataLoader(
-        latent_conditioner_validation_dataset, 
+        latent_conditioner_dataset, 
         batch_size=1, 
         shuffle=False, 
         num_workers=latent_conditioner_eval_optimal_workers,
@@ -978,7 +981,7 @@ def main():
         
         plt.figure()
         true_data = new_x_train[i, :, int(num_time/2)]*1e6
-        recon_data = target_output_np[0,:,0]*1e6
+        recon_data = target_output_np[0,:,int(num_time/2)]*1e6
         plt.title(f'Reconstruction - True: [{true_data.min():.1f}, {true_data.max():.1f}], SimulGEN: [{recon_data.min():.1f}, {recon_data.max():.1f}]')
         plt.plot(recon_data, '.', label = 'Recon')
         plt.plot(true_data, '.', label = 'True')
