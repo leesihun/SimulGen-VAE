@@ -570,13 +570,17 @@ def main():
             loss_total = loss_total+loss.cpu().detach().numpy()
             image_np = image.cpu().detach().numpy()
 
+
+
+
             plt.figure()
             plt.plot(image_np[j,:,0], '.', label='True')
             plt.plot(gen_x_np[j,:,0], '.', label='SimulGen')
             plt.legend()
             plt.show()
-            del loss
-            del image
+
+
+            del loss, image, image_np
 
         print('')
 
@@ -945,7 +949,7 @@ def main():
 
         y2 = y2.reshape([1, -1])
         latent_predict = latent_vectors_scaler.inverse_transform(y_pred1)
-        xs_predict = xs_scaler.inverse_transform(y_pred2)
+        xs_predict = xs_scaler.inverse_transform(y_pred2.reshape([1, -1]))
         xs_predict = xs_predict.reshape([-1, 1, A.shape[-1]])
         latent_predict = torch.from_numpy(latent_predict)
         xs_predict = torch.from_numpy(xs_predict)
