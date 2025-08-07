@@ -434,7 +434,7 @@ def main():
 
 
 
-
+    from modules.decoder import reparameterize
 
     # VAE training
     if train_latent_conditioner_only ==0:
@@ -444,9 +444,7 @@ def main():
         device = "cuda:0" if torch.cuda.is_available() else "cpu"
         VAE_trained = torch.load('./model_save/SimulGen-VAE', map_location= device, weights_only=False)
         VAE = VAE_trained.eval()
-
-        from modules.decoder import reparameterize
-
+        
         latent_vectors = np.zeros([num_param, latent_dim_end])
         gen_x_node = np.zeros([1, num_node, num_time])
         loss_total = 0
