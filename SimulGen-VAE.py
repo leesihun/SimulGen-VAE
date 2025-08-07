@@ -578,8 +578,8 @@ def main():
                 true_data = true_data.cpu().numpy()
             recon_data = gen_x_np
             plt.figure()
-            plt.plot(true_data[j,:,:], label='True')
-            plt.plot(recon_data[j,:,:], label='SimulGen')
+            plt.plot(true_data[j,:,0], label='True')
+            plt.plot(recon_data[j,:,0], label='SimulGen')
             plt.legend()
             plt.show()
             del loss
