@@ -981,7 +981,7 @@ def main():
         
         plt.figure()
         true_data = new_x_train[i, :, int(num_time/2)]*1e6
-        recon_data = target_output_np[0,:,int(num_time/2)]*1e6
+        recon_data = target_output_np[int(num_time/2),:,0]*1e6
         plt.title(f'Reconstruction - True: [{true_data.min():.1f}, {true_data.max():.1f}], SimulGEN: [{recon_data.min():.1f}, {recon_data.max():.1f}]')
         plt.plot(recon_data, '.', label = 'Recon')
         plt.plot(true_data, '.', label = 'True')
