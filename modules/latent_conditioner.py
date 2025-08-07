@@ -242,7 +242,7 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
     )
     
     best_val_loss = float('inf')
-    patience = 20000
+    patience = 100000
     patience_counter = 0
     min_delta = 1e-8
     overfitting_threshold = 1000.0
