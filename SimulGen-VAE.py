@@ -559,7 +559,6 @@ def main():
         # Compare reconstructed validation dataset vs. true validation dataset
         for j, image in enumerate(val_dataloader):
             x = image.to(device)
-            del image
             mu, log_var, xs = VAE.encoder(x)
             std = torch.exp(0.5*log_var)
             latent_vector = reparameterize(mu, std)
@@ -570,19 +569,13 @@ def main():
             print('')
             loss_total = loss_total+loss.cpu().detach().numpy()
 
-            
-            # Only the last parameter # Now, plot both the reconstructed and true validation dataset
-            # Make true and recon_data
-            true_data = val_dataloader.dataset.dataset.x_data
-            if torch.is_tensor(true_data):
-                true_data = true_data.cpu().numpy()
-            recon_data = gen_x_np
             plt.figure()
-            plt.plot(true_data[j,:,0], '.', label='True')
-            plt.plot(recon_data[j,:,0], '.', label='SimulGen')
+            plt.plot(image[j,:,0], '.', label='True')
+            plt.plot(gen_x_np[j,:,0], '.', label='SimulGen')
             plt.legend()
             plt.show()
             del loss
+            del image
 
         print('')
 
