@@ -31,7 +31,7 @@ num_param	1
 n_sample	484
 param_dir	/images
 n_epoch	50000
-latent_conditioner_lr	0.002
+latent_conditioner_lr	0.005
 latent_conditioner_batch	8
 latent_conditioner_weight_decay	1e-5
 latent_conditioner_dropout_rate	0.2
