@@ -573,14 +573,14 @@ def main():
 
 
 
-            plt.figure()
-            true_data = image_np[0, :, int(image_np.shape[2]/2)] * 1e6
-            recon_data = gen_x_np[0, :, 0] * 1e6
-            plt.title(f'Reconstruction - True: [{true_data.min():.1f}, {true_data.max():.1f}], SimulGEN: [{recon_data.min():.1f}, {recon_data.max():.1f}]')
-            plt.plot(recon_data, '.', label='SimulGen')
-            plt.plot(true_data, '.', label='True')
-            plt.legend()
-            plt.show()
+            # plt.figure()
+            # true_data = image_np[0, :, int(image_np.shape[2]/2)] * 1e6
+            # recon_data = gen_x_np[0, :, 0] * 1e6
+            # plt.title(f'Reconstruction - True: [{true_data.min():.1f}, {true_data.max():.1f}], SimulGEN: [{recon_data.min():.1f}, {recon_data.max():.1f}]')
+            # plt.plot(recon_data, '.', label='SimulGen')
+            # plt.plot(true_data, '.', label='True')
+            # plt.legend()
+            # plt.show()
 
 
             del loss, image, image_np
