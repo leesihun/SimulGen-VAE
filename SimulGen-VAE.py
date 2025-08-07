@@ -568,9 +568,10 @@ def main():
             print('parameter {} is finished''-''MSE: {:.4E}'.format(j+1, loss))
             print('')
             loss_total = loss_total+loss.cpu().detach().numpy()
+            image_np = image.cpu().detach().numpy()
 
             plt.figure()
-            plt.plot(image[j,:,0], '.', label='True')
+            plt.plot(image_np[j,:,0], '.', label='True')
             plt.plot(gen_x_np[j,:,0], '.', label='SimulGen')
             plt.legend()
             plt.show()
@@ -583,7 +584,7 @@ def main():
 
         print('--------------------------------')
         print('')
-        print('')   
+        print('')
         
 
        
