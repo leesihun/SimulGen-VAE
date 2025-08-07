@@ -394,65 +394,27 @@ def main():
     # Use the augmented dataset and dataloaders
     print("Creating augmented dataset with on-the-fly data augmentation...")
     
-    # Add CUDA error handling for dataset creation
-    try:
-        # Test CUDA if available
-        if torch.cuda.is_available():
-            try:
-                test_tensor = torch.zeros(1).cuda()
-                del test_tensor
-                if debug_mode == 1:
-                    print("CUDA is working properly")
-            except RuntimeError as e:
-                print(f"CUDA error during initialization: {e}")
-                print("Falling back to CPU for dataset handling")
-                # Force CPU mode if CUDA is not working
-                device = torch.device('cpu')
         
-        # Create dataloaders with error handling
-        dataloader, val_dataloader = create_augmented_dataloaders(
-            new_x_train, 
-            batch_size=batch_size, 
-            load_all=load_all,
-            augmentation_config=augmentation_config,
-            val_split=0.2,  # 80% train, 20% validation
-            num_workers=None  # Auto-determine optimal workers
-        )
+    # Create dataloaders with error handling
+    dataloader, val_dataloader = create_augmented_dataloaders(
+        new_x_train, 
+        batch_size=batch_size, 
+        load_all=load_all,
+        augmentation_config=augmentation_config,
+        val_split=0.2,  # 80% train, 20% validation
+        num_workers=None  # Auto-determine optimal workers
+    )
+    
+    # Create a reference to the dataset for later use
+    # This fixes the "dataset is not defined" error
+    dataset = dataloader.dataset
+    
+    if debug_mode == 1:
+        print("✓ Augmented dataloaders created successfully")
+        print("  - Augmentations enabled: Noise, Scaling, Shift, Mixup, Cutout")
+        print(f"  - Training samples: {int(len(new_x_train) * 0.8)}")
+        print(f"  - Validation samples: {int(len(new_x_train) * 0.2)}")
         
-        # Create a reference to the dataset for later use
-        # This fixes the "dataset is not defined" error
-        dataset = dataloader.dataset
-        
-        if debug_mode == 1:
-            print("✓ Augmented dataloaders created successfully")
-            print("  - Augmentations enabled: Noise, Scaling, Shift, Mixup, Cutout")
-            print(f"  - Training samples: {int(len(new_x_train) * 0.8)}")
-            print(f"  - Validation samples: {int(len(new_x_train) * 0.2)}")
-        
-    except Exception as e:
-        print(f"Error creating augmented dataloaders: {e}")
-        print("Falling back to basic dataset creation...")
-        
-        # Fallback to basic dataset without augmentation
-        dataset = MyBaseDataset(new_x_train, load_all)
-        train_dataset, validation_dataset = random_split(dataset, [int(0.8*num_param), num_param - int(0.8*num_param)])
-        
-        dataloader = DataLoader(
-            train_dataset, 
-            batch_size=batch_size, 
-            shuffle=True, 
-            num_workers=0, 
-            pin_memory=not load_all
-        )
-        val_dataloader = DataLoader(
-            validation_dataset, 
-            batch_size=batch_size, 
-            shuffle=True, 
-            num_workers=0, 
-            pin_memory=not load_all
-        )
-        if debug_mode == 1:
-            print("✓ Basic dataloaders created as fallback")
 
     print('Dataloader initiated...')
     print_gpu_mem_checkpoint('After dataloader creation')
@@ -586,63 +548,7 @@ def main():
         temp5 = './SimulGen-VAE_L2_loss.txt'
         np.savetxt(temp5, reconstruction_loss, fmt = '%e')
 
-        if print_graph_recon == 1:
-            print('Printing graph...')
-            plt.semilogy(VAE_loss, label = 'VAE')
-            plt.semilogy(loss_val_print, label = 'Validation')
-            plt.legend()
-            plt.show()
 
-            plt.figure()
-            plt.plot(reconstruction_loss, label = 'Reconstruction')
-            plt.legend()
-            plt.show()
-
-            plt.figure()
-            param_No = 0
-            plt.title('Nodal data')
-            plt.plot(dataset[param_No,:,0].cpu().detach().numpy(), marker = 'o', label = 'Original')
-            plt.plot(reconstructed[param_No,:,0], marker = 'o', label = 'Reconstructed')
-            plt.legend()
-            plt.show()
-
-            plt.figure()
-            param_No = 10
-            plt.title('Nodal data')
-            plt.plot(dataset[param_No,:,0].cpu().detach().numpy(), marker = 'o', label = 'Original')
-            plt.plot(reconstructed[param_No,:,0], marker = 'o', label = 'Reconstructed')
-            plt.legend()
-            plt.show()
-
-            plt.figure()
-            param_No = 0
-            node_No = 900
-            plt.title('Temporal data')
-            plt.plot(dataset[param_No,node_No,:].cpu().detach().numpy(), marker = 'o', label = 'Original')
-            plt.plot(reconstructed[param_No,node_No,:], marker = 'o', label = 'Reconstructed')
-            plt.legend()
-            plt.show()
-
-            plt.figure()
-            param_No = 0
-            node_No = 800
-            plt.title('Temporal data')
-            plt.plot(dataset[param_No,node_No,:].cpu().detach().numpy(), marker = 'o', label = 'Original')
-            plt.plot(reconstructed[param_No,node_No,:], marker = 'o', label = 'Reconstructed')
-            plt.legend()
-            plt.show()
-
-            plt.figure()
-            param_No = 0
-            node_No = 700
-            plt.title('Parametric data')
-            plt.plot(dataset[param_No, node_No, :].cpu().detach().numpy(), marker = 'o', label = 'Original')
-            plt.plot(reconstructed[param_No, node_No, :], marker = 'o', label = 'Reconstructed')
-            plt.plot(reconstructed[param_No+1, node_No, :], marker = 'o', label = 'Reconstructed')
-            plt.plot(reconstructed[param_No+2, node_No, :], marker = 'o', label = 'Reconstructed')
-            plt.plot(reconstructed[param_No+3, node_No, :], marker = 'o', label = 'Reconstructed')
-            plt.legend()
-            plt.show()
     elif train_latent_conditioner_only == 1:
         print('Training LatentConditioner only...')
         latent_vectors = np.load('model_save/latent_vectors.npy')
@@ -650,6 +556,42 @@ def main():
         device = "cuda:0" if torch.cuda.is_available() else "cpu"
         VAE_trained = torch.load('model_save/SimulGen-VAE', map_location= device, weights_only=False)
         VAE = VAE_trained.eval()
+
+        # Compare reconstructed validation dataset vs. true validation dataset
+        for j, image in enumerate(val_dataloader):
+            x = image.to(device)
+            del image
+            mu, log_var, xs = VAE.encoder(x)
+            std = torch.exp(0.5*log_var)
+            latent_vector = reparameterize(mu, std)
+            gen_x, _ = VAE.decoder(latent_vector, xs, mode='fix')
+            gen_x_np = gen_x.cpu().detach().numpy()
+            loss = nn.MSELoss()(gen_x, x)
+            print('parameter {} is finished''-''MSE: {:.4E}'.format(j+1, loss))
+            print('')
+            loss_total = loss_total+loss.cpu().detach().numpy()
+            del loss
+
+        print('')
+
+        print('Total Validation MSE loss: {:.3e}'.format(loss_total/j))
+
+        print('--------------------------------')
+        print('')
+        print('')   
+        
+
+        # Now, plot both the reconstructed and true validation dataset
+        # Make true and recon_data
+        true_data = val_dataloader.dataset.data
+        recon_data = gen_x_np
+
+        # Only the last parameter
+        plt.figure(figsize=(10, 5))
+        plt.plot(true_data[j,:,:], label='True')
+        plt.plot(recon_data[j,:,:], label='SimulGen')
+        plt.legend()
+        plt.close()
 
     # LatentConditioner training (runs for both train_latent_conditioner_only == 0 and train_latent_conditioner_only == 1)
     out_latent_vectors = latent_vectors.reshape([num_param, latent_dim_end])
