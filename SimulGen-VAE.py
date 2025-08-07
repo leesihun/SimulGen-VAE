@@ -577,7 +577,7 @@ def main():
             if torch.is_tensor(true_data):
                 true_data = true_data.cpu().numpy()
             recon_data = gen_x_np
-            plt.figure(figsize=(10, 5))
+            plt.figure()
             plt.plot(true_data[j,:,:], label='True')
             plt.plot(recon_data[j,:,:], label='SimulGen')
             plt.legend()
