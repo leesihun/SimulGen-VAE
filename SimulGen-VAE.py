@@ -571,7 +571,12 @@ def main():
             loss_total = loss_total+loss.cpu().detach().numpy()
 
             
-        # Only the last parameter
+            # Only the last parameter # Now, plot both the reconstructed and true validation dataset
+            # Make true and recon_data
+            true_data = val_dataloader.dataset.dataset.x_data
+            if torch.is_tensor(true_data):
+                true_data = true_data.cpu().numpy()
+            recon_data = gen_x_np
             plt.figure(figsize=(10, 5))
             plt.plot(true_data[j,:,:], label='True')
             plt.plot(recon_data[j,:,:], label='SimulGen')
@@ -588,12 +593,7 @@ def main():
         print('')   
         
 
-        # Now, plot both the reconstructed and true validation dataset
-        # Make true and recon_data
-        true_data = val_dataloader.dataset.dataset.x_data
-        if torch.is_tensor(true_data):
-            true_data = true_data.cpu().numpy()
-        recon_data = gen_x_np
+       
 
 
     # LatentConditioner training (runs for both train_latent_conditioner_only == 0 and train_latent_conditioner_only == 1)
