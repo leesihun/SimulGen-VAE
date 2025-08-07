@@ -582,7 +582,7 @@ def main():
 
         # Now, plot both the reconstructed and true validation dataset
         # Make true and recon_data
-        true_data = val_dataloader.dataset.data
+        true_data = val_dataloader.dataset.dataset.x_data
         recon_data = gen_x_np
 
         # Only the last parameter
