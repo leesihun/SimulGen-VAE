@@ -944,27 +944,46 @@ def main():
         x = x.to(device)
 
         y_pred1, y_pred2 = latent_conditioner(x)
-        y_pred1 = y_pred1.cpu().detach().numpy()
-        y1 = y1.cpu().detach().numpy()
-        y_pred2 = y_pred2.cpu().detach().numpy()
-        y2 = y2.cpu().detach().numpy()
-        A = y2
+        y_pred1 = y_pred1.cpu().detach().numpy() # predicted by latent conditioner
+        y1 = y1.cpu().detach().numpy() # true main latent
+        y_pred2 = y_pred2.cpu().detach().numpy() # predicted by latent conditioner
+        y2 = y2.cpu().detach().numpy() # true hierarchical latent
+        
 
-        y2 = y2.reshape([1, -1])
+        # Now reconstruct the data using the predicted main latent and hierarchical latent
         latent_predict = latent_vectors_scaler.inverse_transform(y_pred1)
         xs_predict = xs_scaler.inverse_transform(y_pred2.reshape([1, -1]))
-        xs_predict = xs_predict.reshape([-1, 1, A.shape[-1]])
+        xs_predict = xs_predict.reshape([-1, 1, y2.shape[-1]])
+
         latent_predict = torch.from_numpy(latent_predict)
         xs_predict = torch.from_numpy(xs_predict)
-        xs_predict = xs_predict.to(device)
-        xs_predict = list(xs_predict)
+
         latent_predict = latent_predict.to(device)
+        xs_predict = xs_predict.to(device)
+
+        xs_predict = list(xs_predict)
+
         target_output, _ = VAE.decoder(latent_predict, xs_predict, mode='fix')
         target_output_np = target_output.cpu().detach().numpy()
         target_output_np = target_output_np.swapaxes(1,2)
-        target_output_np = target_output_np.reshape((-1, num_node))
-        target_output_np = np.reshape(target_output_np, [num_time, num_node, 1])
 
+        y1_recon = latent_vectors_scaler.inverse_transform(y1)
+        y2_recon = xs_scaler.inverse_transform(y2.reshape([1, -1]))
+        y2_recon = y2_recon.reshape([-1, 1, y2.shape[-1]])
+
+        y1_recon = torch.from_numpy(y1_recon)
+        y2_recon = torch.from_numpy(y2_recon)
+
+        y1_recon = y1_recon.to(device)
+        y2_recon = y2_recon.to(device)
+
+        y2_recon = list(y2_recon)
+
+        target_output_recon, _ = VAE.decoder(y1_recon, y2_recon, mode='fix')
+        target_output_recon_np = target_output_recon.cpu().detach().numpy()
+        target_output_recon_np = target_output_recon_np.swapaxes(1,2)
+
+        # Plot the main latent
         plt.figure()
         plt.title('Main latent')
         plt.plot(y1[0,:], '*', label = 'True')
@@ -981,9 +1000,10 @@ def main():
         
         plt.figure()
         true_data = new_x_train[i, :, int(num_time/2)]*1e6
-        recon_data = target_output_np[int(num_time/2),:,0]*1e6
+        recon_data = target_output_np[0,int(num_time/2),:]*1e6
         plt.title(f'Reconstruction - True: [{true_data.min():.1f}, {true_data.max():.1f}], SimulGEN: [{recon_data.min():.1f}, {recon_data.max():.1f}]')
-        plt.plot(recon_data, '.', label = 'Recon')
+        plt.plot(recon_data, '.', label = 'VAE+latent')
+        plt.plot(target_output_recon_np[0,int(num_time/2),:]*1e6, '.', label = 'VAE')
         plt.plot(true_data, '.', label = 'True')
         plt.legend()
         plt.savefig(f'output/reconstruction_plot_{i}.png', dpi=300, bbox_inches='tight')
