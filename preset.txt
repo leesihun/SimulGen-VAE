@@ -2,4 +2,4 @@ data_No, init_beta_divisior, num_filter_enc, latent_conditioner_filter
 1
 0
 1024 512 256 128
-32 64 128 64 32
+32 64 32
