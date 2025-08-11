@@ -537,6 +537,50 @@ def main():
 
             del loss
 
+
+        # Whole dataset
+        dataloader_whole = torch.utils.data.DataLoader(
+            new_x_train,
+            batch_size=1,
+            shuffle=False,
+            num_workers=None,
+            pin_memory=False
+        )
+        for j, image in enumerate(dataloader_whole):
+            loss_save[:]=100
+            x = image.to(device)
+            del image
+
+            mu, log_var, xs = VAE.encoder(x)
+            for i in range(recon_iter):
+                std = torch.exp(0.5*log_var)
+                latent_vector = reparameterize(mu, std)
+
+                gen_x, _ = VAE.decoder(latent_vector, xs, mode='fix')
+                gen_x_np = gen_x.cpu().detach().numpy()
+
+                loss = nn.MSELoss()(gen_x, x)
+
+                if loss<loss_save[0]:
+                    loss_save[0] = loss
+                    latent_vector_save = latent_vector
+                    latent_vectors[j,:] = latent_vector_save[0,:].cpu().detach().numpy()
+
+                    for k in range(len(xs)):
+                        hierarchical_latent_vectors[j,k,:] = xs[k].cpu().detach().numpy()[0]
+
+                    reconstruction_loss[j] = loss
+
+                    reconstructed[j,:,:] = gen_x_np[0,:,:]
+
+                    del latent_vector, x, mu, log_var, xs, std, gen_x, gen_x_np, latent_vector_save
+
+            print('parameter {} is finished''-''MSE: {:.4E}'.format(j+1, loss))
+            print('')
+            loss_total = loss_total+loss.cpu().detach().numpy()
+
+            del loss
+
         print('')
 
         print('Total Validation MSE loss: {:.3e}'.format(loss_total/j))
