@@ -8,7 +8,7 @@ RESERVED	0
 RESERVED	0
 '
 %LSH-VAE parameters  10002
-Training_epochs	12
+Training_epochs	10002
 Batch_size	16
 LearningR	0.001
 Latent_dim	8	# Hierarchical latent Dim1

@@ -11,6 +11,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 import matplotlib.pyplot as plt
+import os
 from modules.decoder import reparameterize
 
 
@@ -148,7 +149,8 @@ class ReconstructionEvaluator:
         plt.grid(True, alpha=0.3)
         
         if save_plots:
-            plt.savefig(f'output/reconstruction_comparison_{sample_idx}.png', dpi=300, bbox_inches='tight')
+            os.makedirs('checkpoints', exist_ok=True)
+            plt.savefig(f'checkpoints/reconstruction_comparison_{sample_idx}.png', dpi=300, bbox_inches='tight')
         
         plt.show()
     

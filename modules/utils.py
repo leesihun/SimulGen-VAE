@@ -366,7 +366,7 @@ def parse_training_parameters(params):
 
 
 def evaluate_vae_reconstruction(VAE, dataloader, device, num_param, num_filter_enc, latent_dim, 
-                               latent_dim_end, recon_iter=1, dataset_name="Dataset"):
+                               latent_dim_end, recon_iter=1, dataset_name="Dataset", save_images=True):
     """Evaluate VAE reconstruction performance on a dataset.
     
     Args:
@@ -379,13 +379,22 @@ def evaluate_vae_reconstruction(VAE, dataloader, device, num_param, num_filter_e
         latent_dim_end: Main latent dimension  
         recon_iter: Number of reconstruction iterations per sample
         dataset_name: Name for logging purposes
+        save_images: Whether to save reconstruction images to checkpoints folder
         
     Returns:
         tuple: (latent_vectors, hierarchical_latent_vectors, reconstruction_loss, reconstructed, total_loss)
     """
     import torch.nn as nn
     import numpy as np
+    import matplotlib.pyplot as plt
     from modules.decoder import reparameterize
+    
+    # Create checkpoints directory if it doesn't exist
+    if save_images:
+        os.makedirs('checkpoints', exist_ok=True)
+        # Create subdirectory for this dataset
+        save_dir = f'checkpoints/{dataset_name.replace(" ", "_").replace("(", "").replace(")", "").lower()}'
+        os.makedirs(save_dir, exist_ok=True)
     
     # Initialize storage arrays
     latent_vectors = np.zeros([num_param, latent_dim_end])
@@ -448,12 +457,44 @@ def evaluate_vae_reconstruction(VAE, dataloader, device, num_param, num_filter_e
         print(f'Parameter {j+1} finished - MSE: {loss:.4E}')
         loss_total = loss_total + loss.cpu().detach().numpy()
         
+        # Save reconstruction image if enabled
+        if save_images and j < 10:  # Save first 10 samples to avoid too many files
+            try:
+                # Get original and reconstructed data
+                original = x[0].cpu().detach().numpy()  # Shape: [channels, time]
+                recon = reconstructed[j]  # Shape: [channels, time]
+                
+                # Create comparison plot
+                plt.figure(figsize=(12, 6))
+                
+                # Plot a few channels for comparison
+                num_channels_to_plot = min(3, original.shape[0])
+                for ch in range(num_channels_to_plot):
+                    plt.subplot(num_channels_to_plot, 1, ch + 1)
+                    plt.plot(original[ch], label='Original', alpha=0.7)
+                    plt.plot(recon[ch], label='Reconstructed', alpha=0.7, linestyle='--')
+                    plt.title(f'Channel {ch+1} - Sample {j+1} - MSE: {loss:.4E}')
+                    plt.legend()
+                    plt.grid(True, alpha=0.3)
+                
+                plt.tight_layout()
+                plt.savefig(f'{save_dir}/reconstruction_sample_{j+1:03d}.png', dpi=300, bbox_inches='tight')
+                plt.close()
+                
+            except Exception as e:
+                print(f"Warning: Could not save reconstruction image for sample {j+1}: {e}")
+        
         # Clean up
         del loss, x, mu, log_var, xs, std
 
     print('')
     average_loss = loss_total / (j + 1) if j >= 0 else 0
     print(f'Total {dataset_name} MSE loss: {average_loss:.3e}')
+    
+    if save_images:
+        saved_count = min(10, j + 1) if j >= 0 else 0
+        print(f'Saved {saved_count} reconstruction images to: {save_dir}/')
+    
     print('--------------------------------')
     print('')
     
