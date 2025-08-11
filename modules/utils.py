@@ -34,24 +34,19 @@ def get_latest_file(directory, pattern='*'):
     return latest_file
 
 device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
-import time
 class MyBaseDataset(Dataset):
     def __init__(self, x_data, load_all):
-        print('Loading data...')
+        print("Loading data...")
         if load_all:
             self.x_data = torch.tensor(x_data).to(device)
             self.load_all = True
         else:
-            # Keep as numpy array but ensure it's C-contiguous for faster access
             if not x_data.flags['C_CONTIGUOUS']:
-                # Convert to C-contiguous without debug print for speed
                 x_data = np.ascontiguousarray(x_data)
             self.x_data = x_data
             self.load_all = False
             
-            # Pre-allocate pinned memory for faster CPU-GPU transfers
             if torch.cuda.is_available():
-                # Allocate pinned memory without debug print for speed
                 sample_shape = x_data[0].shape
                 self.pinned_buffer = torch.empty(sample_shape, dtype=torch.float32, pin_memory=True)
             else:
@@ -59,16 +54,12 @@ class MyBaseDataset(Dataset):
 
     def __getitem__(self, index):
         if self.load_all:
-            # Data already on GPU as tensor
             output = self.x_data[index]
         else:
-            # Optimized CPU-to-GPU transfer
             if self.pinned_buffer is not None:
-                # Use pinned memory buffer for faster transfer
                 self.pinned_buffer.copy_(torch.from_numpy(self.x_data[index]))
                 output = self.pinned_buffer.clone()
             else:
-                # Fallback for CPU-only systems
                 output = torch.from_numpy(self.x_data[index].copy()).float()
         
         return output
@@ -86,7 +77,7 @@ class MyBaseDataset(Dataset):
 from skimage.util import random_noise
 from torchvision.transforms import v2
 
-def cuda_memory_cleanup(debug_mode=0):
+def cuda_memory_cleanup():
     """Attempt to clear CUDA memory and cache."""
     try:
         # Empty CUDA cache
@@ -96,47 +87,30 @@ def cuda_memory_cleanup(debug_mode=0):
             # Force garbage collection
             gc.collect()
             
-            # Print current memory state only in debug mode
-            if debug_mode == 1:
-                allocated = torch.cuda.memory_allocated() / 1024**2
-                reserved = torch.cuda.memory_reserved() / 1024**2
-                max_allocated = torch.cuda.max_memory_allocated() / 1024**2
-                
-                print(f"CUDA Memory - Allocated: {allocated:.2f}MB, Reserved: {reserved:.2f}MB, Max: {max_allocated:.2f}MB")
             
             return True
     except Exception as e:
-        if debug_mode == 1:
-            print(f"Error during CUDA memory cleanup: {e}")
         return False
 
-def safe_to_device(tensor, device, debug_mode=0):
+def safe_to_device(tensor, device):
     """Safely move tensor to specified device with error handling."""
     try:
         return tensor.to(device)
     except RuntimeError as e:
         if "CUDA" in str(e):
-            if debug_mode == 1:
-                print(f"CUDA error moving tensor to device: {e}")
-                print("Attempting memory cleanup...")
             
             # Try to free memory
-            cuda_memory_cleanup(debug_mode)
+            cuda_memory_cleanup()
             
             try:
                 # Try again with smaller chunks if it's a large tensor
-                if tensor.numel() > 1e6:  # If tensor has more than 1M elements
-                    if debug_mode == 1:
-                        print("Large tensor detected, trying alternative approach...")
-                    # Move to CPU first if not already there
+                if tensor.numel() > 1e6:
                     if tensor.device.type != 'cpu':
                         tensor = tensor.cpu()
                     return tensor.to(device)
                 else:
                     return tensor.to(device)
             except RuntimeError:
-                if debug_mode == 1:
-                    print("Still cannot move to CUDA, falling back to CPU")
                 return tensor.to('cpu')
         else:
             # Re-raise if not CUDA related

@@ -1,20 +1,32 @@
-"""VAE Network Module
+"""VAE Network Module for SimulGenVAE
 
-This module implements the main Variational Autoencoder (VAE) architecture for SimulGenVAE.
-It combines hierarchical encoder-decoder networks with multiple loss functions and advanced
-optimization features for simulation data processing.
+This module implements the core Variational Autoencoder architecture featuring:
+- Hierarchical encoder-decoder networks for multi-scale representation
+- Multiple loss functions (MSE, MAE, SmoothL1, Huber)
+- Advanced memory management and performance optimizations
+- Comprehensive error handling for robust training
+
+The VAE architecture is specifically designed for physics simulation data with
+temporal and spatial dependencies, supporting both single and batch processing.
 
 Author: SiHun Lee, Ph.D.
-Email: kevin1007kr@gmail.com
+Contact: kevin1007kr@gmail.com
+Version: 2.0.0 (Refactored)
 """
 
+# Core PyTorch modules
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from typing import Tuple, List, Optional, Dict, Any
+
+# SimulGenVAE modules
 from modules.encoder import Encoder
 from modules.decoder import Decoder, reparameterize
 from modules.losses import kl
 from modules.common import add_sn
+
+# Utilities for model inspection and visualization
 import matplotlib.pyplot as plt
 from torchinfo import summary
 
@@ -105,77 +117,28 @@ class VAE(nn.Module):
             return decoder_output, recon_loss, [kl_loss]+kl_losses, recon_loss_MSE
             
         except RuntimeError as e:
-            if "CUDA out of memory" in str(e):
-                print(f"CUDA out of memory in VAE forward pass: {e}")
-                print(f"Input tensor shape: {x.shape}, device: {x.device}")
-                # Try to recover by freeing memory
-                torch.cuda.empty_cache()
-                # Re-raise to let caller handle it
-                raise
-            elif "CUDA error" in str(e):
-                print(f"CUDA error in VAE forward pass: {e}")
-                # Try to recover
-                torch.cuda.empty_cache()
-                raise
-            else:
-                print(f"Unexpected error in VAE forward pass: {e}")
-                raise
+            print(f"Error in VAE forward pass: {e}")
+            raise
     
     def compile_model(self, mode='default'):
-        """Compile the model for better performance using torch.compile.
-        
-        Should be called after moving to GPU and before training. Compiles both
-        encoder and decoder separately for optimal performance on consistent input sizes.
-        Includes fallback handling if compilation fails.
-        
-        Args:
-            mode (str or bool): Compilation mode. Options:
-                - 'default': Conservative compilation (recommended)
-                - 'reduce-overhead': Faster compilation time
-                - 'max-autotune': Most aggressive optimization (may fail)
-                - False or 'none': Skip compilation entirely
-        
-        Note:
-            If compilation fails, the model falls back to uncompiled mode without
-            raising an exception to ensure training can continue.
-        """
+        """Compile the model for better performance using torch.compile."""
         if mode is False or mode == 'none':
-            print("Model compilation disabled")
             return
             
         if not hasattr(torch, 'compile'):
-            print("torch.compile not available, skipping model compilation")
+            print("torch.compile not available")
             return
             
-        print(f"Compiling VAE model with mode='{mode}'...")
-        try:
-            print("  Compiling encoder...")
-            self.encoder = torch.compile(self.encoder, mode=mode)
-            print("  Compiling decoder...")
-            self.decoder = torch.compile(self.decoder, mode=mode)
-            print("✓ Model compilation successful")
-        except Exception as e:
-            print(f"Model compilation failed: {e}")
-            print("Falling back to uncompiled model...")
-            # Don't re-raise the exception, just continue with uncompiled model
+        print(f"Compiling VAE model with mode '{mode}'...")
+        self.encoder = torch.compile(self.encoder, mode=mode)
+        self.decoder = torch.compile(self.decoder, mode=mode)
+        print("Model compilation complete")
     
     def to(self, *args, **kwargs):
-        """Override to method to optimize memory format for better performance.
-        
-        Automatically converts the model to channels_last memory format when moving
-        to GPU, which can provide significant performance improvements on modern GPUs.
-        
-        Args:
-            *args: Positional arguments passed to parent to() method
-            **kwargs: Keyword arguments passed to parent to() method
-            
-        Returns:
-            VAE: The model moved to the specified device with optimized memory format
-        """
+        """Override to method to optimize memory format for better performance."""
         device = args[0] if args else kwargs.get('device', None)
         if device:
-            # Convert to channels_last memory format for better performance
-            print("Converting model to channels_last memory format for better performance")
+            print("Converting model to channels_last memory format")
             self = super().to(*args, **kwargs)
             self = self.to(memory_format=torch.channels_last)
             return self

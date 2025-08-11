@@ -26,7 +26,8 @@
       "Bash(find:*)",
       "Bash(claude config list)",
       "Bash(claude mcp:*)",
-      "Bash(echo $PATH)"
+      "Bash(echo $PATH)",
+      "Bash(rm:*)"
     ],
     "deny": []
   }

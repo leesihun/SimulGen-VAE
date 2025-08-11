@@ -16,30 +16,22 @@ DEFAULT_IMAGE_SIZE = 256
 INTERPOLATION_METHOD = cv2.INTER_CUBIC
 im_size = DEFAULT_IMAGE_SIZE
 
-def read_latent_conditioner_dataset_img(param_dir, param_data_type, debug_mode=0):
+def read_latent_conditioner_dataset_img(param_dir, param_data_type):
     cur_dir = os.getcwd()
-    file_dir = cur_dir+param_dir
+    file_dir = cur_dir + param_dir
 
     if param_data_type == ".jpg" or param_data_type == ".png":
-        if debug_mode == 1:
-            print('Reading image dataset from '+file_dir+'\n')
-
         files = [f for f in os.listdir(file_dir) if f.endswith(param_data_type)]
         files = natsort.natsorted(files)
 
-        # Read all images first
         raw_images = np.zeros((len(files), im_size, im_size))
         
         for i, file in enumerate(files):
-            if debug_mode == 1:
-                print(file)
             file_path = os.path.join(file_dir, file)
             im = cv2.imread(file_path, 0)
             resized_im = cv2.resize(im, (im_size, im_size), interpolation=INTERPOLATION_METHOD)
-            # Normalize to [0, 1] range for better training stability
             raw_images[i] = resized_im / 255.0
 
-        # Standard processing for CNN/ViT (no PCA here - use read_latent_conditioner_dataset_img_pca for PCA_MLP mode)
         latent_conditioner_data = raw_images.reshape(len(files), -1)
         latent_conditioner_data_shape = (im_size, im_size)
             
@@ -48,52 +40,34 @@ def read_latent_conditioner_dataset_img(param_dir, param_data_type, debug_mode=0
 
     return latent_conditioner_data, latent_conditioner_data_shape
 
-def read_latent_conditioner_dataset_img_pca(param_dir, param_data_type, debug_mode=0, pca_components=256, pca_patch_size=0):
-    """
-    PCA_MLP mode: Read images and convert them to PCA coefficients for MLP-based latent conditioner.
-    This function forces PCA preprocessing and returns flattened PCA coefficients suitable for MLP input.
-    """
+def read_latent_conditioner_dataset_img_pca(param_dir, param_data_type, pca_components=256, pca_patch_size=0):
+    """PCA_MLP mode: Read images and convert them to PCA coefficients for MLP-based latent conditioner."""
     cur_dir = os.getcwd()
     file_dir = cur_dir + param_dir
 
     if param_data_type == ".jpg" or param_data_type == ".png":
-        if debug_mode == 1:
-            print('PCA_MLP mode: Reading image dataset from ' + file_dir + '\n')
-
         files = [f for f in os.listdir(file_dir) if f.endswith(param_data_type)]
         files = natsort.natsorted(files)
 
-        # Read all images first
         raw_images = np.zeros((len(files), im_size, im_size))
         
         for i, file in enumerate(files):
-            if debug_mode == 1:
-                print(file)
             file_path = os.path.join(file_dir, file)
             im = cv2.imread(file_path, 0)
             resized_im = cv2.resize(im, (im_size, im_size), interpolation=INTERPOLATION_METHOD)
-            # Normalize to [0, 1] range for better training stability
             raw_images[i] = resized_im / 255.0
 
-        # Apply PCA preprocessing (forced for PCA_MLP mode)
-        print(f'PCA_MLP mode: Applying PCA preprocessing with {pca_components} components')
-        if pca_patch_size > 0:
-            print(f'Using patch-based PCA with patch size {pca_patch_size}')
+        print(f'Applying PCA preprocessing with {pca_components} components')
         
         pca_preprocessor = PCAPreprocessor(
             n_components=pca_components, 
             patch_size=pca_patch_size if pca_patch_size > 0 else None
         )
         
-        if debug_mode == 1:
-            print('Fitting new PCA model on training data')
         pca_preprocessor.fit(raw_images)
-    
-        # Transform images using PCA
-        pca_tensor = pca_preprocessor.transform(raw_images)  # Returns torch.Tensor
+        pca_tensor = pca_preprocessor.transform(raw_images)
         
-        # Convert to numpy and flatten for MLP compatibility
-        if len(pca_tensor.shape) == 4:  # (n_samples, channels, height, width)
+        if len(pca_tensor.shape) == 4:
             latent_conditioner_data = pca_tensor.view(pca_tensor.shape[0], -1).numpy()
         else:
             latent_conditioner_data = pca_tensor.numpy()
@@ -172,13 +146,11 @@ def apply_outline_preserving_augmentations(x, prob=0.5):
     return x
 
 
-def safe_cuda_initialization(debug_mode=0):
-    """Safely check CUDA availability with error handling and diagnostics"""
-
+def safe_cuda_initialization():
+    """Safely check CUDA availability"""
     if not torch.cuda.is_available():
-        if debug_mode == 1:
-            print("❌ CUDA not available, using CPU")
         return "cpu"
+    return "cuda:0"
         
 
 def safe_initialize_weights_He(m):
@@ -202,7 +174,6 @@ def setup_device_and_model(latent_conditioner):
             latent_conditioner = latent_conditioner.to('cuda:0')
             device = torch.device('cuda:0')
         except Exception as e:
-            # Keep this print as it's an important fallback notification
             print(f"Failed to move model to CUDA: {e}")
             device = torch.device('cpu')
     
@@ -225,18 +196,14 @@ def setup_optimizer_and_scheduler(latent_conditioner, latent_conditioner_lr, wei
     
     return optimizer, warmup_scheduler, main_scheduler, warmup_epochs
 
-def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_dataloader, latent_conditioner_validation_dataloader, latent_conditioner, latent_conditioner_lr, weight_decay=1e-4, is_image_data=True, image_size=256, debug_mode=0):
+def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_dataloader, latent_conditioner_validation_dataloader, latent_conditioner, latent_conditioner_lr, weight_decay=1e-4, is_image_data=True, image_size=256):
 
     writer = SummaryWriter(log_dir = './LatentConditionerRuns', comment = 'LatentConditioner')
 
     loss=0
     
-    # Setup device and model
     latent_conditioner, device = setup_device_and_model(latent_conditioner)
-    if debug_mode == 1:
-        print(f"Training on device: {device}")
 
-    # Setup optimizer and schedulers
     latent_conditioner_optimized, warmup_scheduler, main_scheduler, warmup_epochs = setup_optimizer_and_scheduler(
         latent_conditioner, latent_conditioner_lr, weight_decay, latent_conditioner_epoch
     )

@@ -1,11 +1,8 @@
 import numpy as np
-import warnings
 import time
-import psutil
 import gc
-from sklearn.preprocessing import MinMaxScaler, StandardScaler
+from sklearn.preprocessing import MinMaxScaler
 from pickle import dump
-import torch
 
 def reduce_dataset(data_save, num_time_to, num_node_red, num_param, num_time, num_node_red_start, num_node_red_end):
 
@@ -31,119 +28,46 @@ def reduce_dataset(data_save, num_time_to, num_node_red, num_param, num_time, nu
         FOM_data = FOM_data_temp
 
     end = time.time()
-    print(f"Time taken: {end - start} seconds")
-    print('FOM shape:   ', FOM_data.shape)
+    print(f"Dataset reduction completed in {end - start:.2f}s")
+    print(f"FOM data shape: {FOM_data.shape}")
 
     return num_time, FOM_data, num_node
 
 def data_augmentation(stretch, FOM_data, num_param, num_node):
-    #### T.B.D. w. audiomentation, librosa
-    # Not currently used at the moment
-
-    if stretch  == 1:
+    if stretch == 1:
         new_x_train = FOM_data
 
         augment = Compose([
-            AddGaussianNoise(min_amplitude = 0.001, max_amplitude = 0.05, p=1),
-            Resample(min_sample_rate = 1000, max_sample_rate = 15000, p=1),
+            AddGaussianNoise(min_amplitude=0.001, max_amplitude=0.05, p=1),
+            Resample(min_sample_rate=1000, max_sample_rate=15000, p=1),
             Shift(p=1),
         ])
 
         for i in range(num_param):
-            X = FOM_data[i, :,:]
-            X = augment(samples = X, sample_rate = 10000)
-            new_x_train[i,:,0:num_node] = X[:,0:num_node]
+            X = FOM_data[i, :, :]
+            X = augment(samples=X, sample_rate=10000)
+            new_x_train[i, :, 0:num_node] = X[:, 0:num_node]
 
         FOM_data_aug = np.append(FOM_data, new_x_train, axis=0)
-
     else:
         FOM_data_aug = FOM_data
 
     return FOM_data_aug
 
-def get_memory_usage():
-    """Get current memory usage in GB"""
-    process = psutil.Process()
-    return process.memory_info().rss / 1024**3
 
 def data_scaler(FOM_data_aug, FOM_data, num_time, num_node, directory, chunk_size=None):
-    """
-    Optimized data scaler with chunked processing and memory optimization.
-    
-    Args:
-        chunk_size: Number of samples to process at once (auto-calculated if None)
-    """
     start = time.time()
-    initial_memory = get_memory_usage()
-    print(f"Initial memory usage: {initial_memory:.2f} GB")
     
-    # Force float32 to halve memory usage - use GPU conversion if available
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    use_gpu = False#torch.cuda.is_available()
-    
-    # Auto-calculate chunk size based on available memory if not specified
     if chunk_size is None:
-        if use_gpu:
-            # Use GPU memory for calculation when GPU is available
-            gpu_memory_gb = torch.cuda.get_device_properties(0).total_memory / 1024**3
-            available_memory_gb = gpu_memory_gb * 0.6  # Use 60% of GPU memory conservatively
-        else:
-            available_memory_gb = psutil.virtual_memory().available / 1024**3
-        
-        # Use ~10% of available memory for chunk processing
-        chunk_memory_gb = available_memory_gb * 0.1
-        # Estimate memory per sample (float32 * num_node * safety_factor)
-        memory_per_sample = num_node * 4 * 2  # bytes, with safety factor
-        chunk_size = max(1000, int(chunk_memory_gb * 1024**3 / memory_per_sample))
-        print(f"Auto-calculated chunk_size: {chunk_size} (based on {available_memory_gb:.1f}GB {'GPU' if use_gpu else 'CPU'} available)")
+        chunk_size = 10000
     
     if FOM_data_aug.dtype != np.float32:
-        print(f"Converting to float32{'... (using GPU)' if use_gpu else '... (using CPU)'}...")
-        
-        if use_gpu:
-            # GPU conversion - much faster for large arrays
-            conversion_chunk_size = min(5000, FOM_data_aug.shape[0])  # Larger chunks for GPU
-            for i in range(0, FOM_data_aug.shape[0], conversion_chunk_size):
-                end_idx = min(i + conversion_chunk_size, FOM_data_aug.shape[0])
-                # Convert chunk to GPU tensor, change dtype, then back to numpy
-                chunk_tensor = torch.from_numpy(FOM_data_aug[i:end_idx]).to(device)
-                chunk_tensor = chunk_tensor.float()  # Convert to float32 on GPU
-                FOM_data_aug[i:end_idx] = chunk_tensor.cpu().numpy()
-                del chunk_tensor  # Free GPU memory
-                if i % (conversion_chunk_size * 4) == 0:  # Progress update every 4 chunks
-                    print(f"  Converted {end_idx}/{FOM_data_aug.shape[0]} samples...")
-            torch.cuda.empty_cache()  # Clear GPU cache
-        else:
-            # CPU fallback - chunked conversion to avoid memory overflow
-            conversion_chunk_size = min(1000, FOM_data_aug.shape[0])
-            for i in range(0, FOM_data_aug.shape[0], conversion_chunk_size):
-                end_idx = min(i + conversion_chunk_size, FOM_data_aug.shape[0])
-                FOM_data_aug[i:end_idx] = FOM_data_aug[i:end_idx].astype(np.float32)
-                if i % (conversion_chunk_size * 10) == 0:
-                    print(f"  Converted {end_idx}/{FOM_data_aug.shape[0]} samples...")
-        gc.collect()  # Force garbage collection
+        print("Converting to float32...")
+        FOM_data_aug = FOM_data_aug.astype(np.float32)
+        gc.collect()
         
     if FOM_data.dtype != np.float32:
-        print(f"Converting FOM_data to float32{'... (using GPU)' if use_gpu else '... (using CPU)'}...")
-        
-        if use_gpu:
-            conversion_chunk_size = min(5000, FOM_data.shape[0])
-            for i in range(0, FOM_data.shape[0], conversion_chunk_size):
-                end_idx = min(i + conversion_chunk_size, FOM_data.shape[0])
-                chunk_tensor = torch.from_numpy(FOM_data[i:end_idx]).to(device)
-                chunk_tensor = chunk_tensor.float()
-                FOM_data[i:end_idx] = chunk_tensor.cpu().numpy()
-                del chunk_tensor
-                if i % (conversion_chunk_size * 4) == 0:
-                    print(f"  Converted {end_idx}/{FOM_data.shape[0]} samples...")
-            torch.cuda.empty_cache()
-        else:
-            conversion_chunk_size = min(1000, FOM_data.shape[0])
-            for i in range(0, FOM_data.shape[0], conversion_chunk_size):
-                end_idx = min(i + conversion_chunk_size, FOM_data.shape[0])
-                FOM_data[i:end_idx] = FOM_data[i:end_idx].astype(np.float32)
-                if i % (conversion_chunk_size * 10) == 0:
-                    print(f"  Converted {end_idx}/{FOM_data.shape[0]} samples...")
+        FOM_data = FOM_data.astype(np.float32)
         gc.collect()
     
     after_conversion_memory = get_memory_usage()
@@ -243,7 +167,6 @@ def latent_conditioner_scaler(data, name):
     if len(original_shape) == 3:
         # Reshape to 2D for scaler
         data_reshaped = data.reshape(original_shape[0], -1)
-        print(f"Reshaping 3D data from {original_shape} to {data_reshaped.shape} for scaling")
     else:
         data_reshaped = data
 
@@ -267,7 +190,6 @@ def latent_conditioner_scaler_input(data, name):
     if len(original_shape) == 3:
         # Reshape to 2D for scaler
         data_reshaped = data.reshape(original_shape[0], -1)
-        print(f"Reshaping 3D data from {original_shape} to {data_reshaped.shape} for scaling")
     else:
         data_reshaped = data
 
