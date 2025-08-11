@@ -143,8 +143,8 @@ def main():
     from modules.latent_conditioner import train_latent_conditioner, read_latent_conditioner_dataset_img, read_latent_conditioner_dataset, read_latent_conditioner_dataset_img_pca, safe_cuda_initialization
     from modules.plotter import temporal_plotter
     from modules.VAE_network import VAE
-    from modules.train import train, print_gpu_mem_checkpoint
-    from modules.utils import MyBaseDataset, get_latest_file, LatentConditionerDataset, get_optimal_workers
+    from modules.train import train
+    from modules.utils import MyBaseDataset, get_latest_file, LatentConditionerDataset, get_optimal_workers, setup_distributed_training, print_gpu_mem_checkpoint, parse_condition_file, parse_training_parameters, evaluate_vae_reconstruction, evaluate_vae_simple
     from modules.augmentation import AugmentedDataset, create_augmented_dataloaders
 
     from torchinfo import summary
@@ -162,103 +162,45 @@ def main():
     args = parser.parse_args()
 
     # Setup distributed training if requested
-    if args.use_ddp:
-        try:
-            # torchrun automatically sets environment variables
-            local_rank = int(os.environ.get("LOCAL_RANK", -1))
-            if local_rank == -1:
-                print("For DDP training, please use: torchrun --nproc_per_node=NUM_GPUS SimulGen-VAE.py --use_ddp [other args]")
-                is_distributed = False
-            else:
-                # Initialize the process group (torchrun handles most setup)
-                torch.cuda.set_device(local_rank)
-                dist.init_process_group(backend="nccl")
-                is_distributed = True
-                print(f"Initialized DDP process group. Rank {dist.get_rank()} of {dist.get_world_size()}")
-        except Exception as e:
-            print(f"Failed to initialize DDP: {e}")
-            print("Falling back to single GPU training")
-            is_distributed = False
-    else:
-        is_distributed = False
-    
-    def print_gpu_mem_checkpoint(msg):
-        """Print GPU memory usage statistics for debugging.
-        
-        Args:
-            msg (str): Descriptive message for the checkpoint
-        """
-        if debug_mode == 1 and torch.cuda.is_available():
-            allocated = torch.cuda.memory_allocated() / 1024**2
-            max_allocated = torch.cuda.max_memory_allocated() / 1024**2
-            print(f"[GPU MEM] {msg}: Allocated={allocated:.2f}MB, Max Allocated={max_allocated:.2f}MB")
-            torch.cuda.reset_peak_memory_stats()
+    is_distributed = setup_distributed_training(args)
 
-    def parse_condition_file(filepath):
-        """Parse configuration file to extract training parameters.
-        
-        Reads the condition.txt file and extracts key-value pairs for
-        training configuration, skipping comments and section markers.
-        
-        Args:
-            filepath (str): Path to the condition.txt configuration file
-            
-        Returns:
-            dict: Dictionary mapping parameter names to their values
-            
-        Note:
-            Ignores lines starting with %, ', or # (comments and sections)
-        """
-        params = {}
-        with open(filepath, encoding='utf-8') as f:
-            for line in f:
-                # Remove comments and whitespace
-                line = line.split('#')[0].strip()
-                if not line or line.startswith('%') or line.startswith("'"):
-                    continue  # skip empty lines and section markers
-                parts = line.split()
-                if len(parts) >= 2:
-                    key = parts[0]
-                    value = parts[1]
-                    params[key] = value
-        return params
-
-    # Usage
+    # Parse configuration files
     params = parse_condition_file('input_data/condition.txt')
-
-    # Now you can access values by key, e.g.:
-    num_param = int(params['Dim1'])
-    num_time = int(params['Dim2'])
-    num_time_to = int(params['Dim2_red'])
-    num_node = int(params['Dim3'])
-    num_node_to = int(params['Dim3_red'])
-    num_var = int(params['num_var'])
-    n_epochs = int(params['Training_epochs'])
-    batch_size = int(params['Batch_size'])
-    LR = float(params['LearningR'])
-    latent_dim = int(params['Latent_dim'])
-    latent_dim_end = int(params['Latent_dim_end'])
-    loss_type = int(params['Loss_type'])
-    stretch = int(params['Stretch'])
-    alpha = int(params['alpha'])
-    num_samples_f = int(params.get('num_aug_f', 0))
-    num_samples_a = int(params.get('num_aug_a', 0))
-    print_graph_recon = int(params.get('rec_graph', 0))
-    recon_iter = int(params.get('Recon_iter', 1))
-    num_physical_param = int(params['num_param'])
-    n_sample = int(params['n_sample'])
-    param_dir = params['param_dir']
-    latent_conditioner_epoch = int(params['n_epoch'])
-    latent_conditioner_lr = float(params['latent_conditioner_lr'])
-    latent_conditioner_batch_size = int(params['latent_conditioner_batch'])
-    latent_conditioner_data_type = params['input_type']
-    param_data_type = params['param_data_type']
-    latent_conditioner_weight_decay = float(params.get('latent_conditioner_weight_decay', 1e-4))  # Default to 1e-4 if not specified
-    latent_conditioner_dropout_rate = float(params.get('latent_conditioner_dropout_rate', 0.3))  # Default to 0.3 if not specified
-    use_spatial_attention = int(params.get('use_spatial_attention', 1))  # Default to 1 (enabled)
-    use_pca = int(params['use_pca'])
-    pca_components = int(params['pca_components'])
-    pca_patch_size = int(params['pca_patch_size'])
+    config = parse_training_parameters(params)
+    
+    # Extract commonly used variables for backward compatibility
+    num_param = config['num_param']
+    num_time = config['num_time']
+    num_time_to = config['num_time_to']
+    num_node = config['num_node']
+    num_node_to = config['num_node_to']
+    num_var = config['num_var']
+    n_epochs = config['n_epochs']
+    batch_size = config['batch_size']
+    LR = config['LR']
+    latent_dim = config['latent_dim']
+    latent_dim_end = config['latent_dim_end']
+    loss_type = config['loss_type']
+    stretch = config['stretch']
+    alpha = config['alpha']
+    num_samples_f = config['num_samples_f']
+    num_samples_a = config['num_samples_a']
+    print_graph_recon = config['print_graph_recon']
+    recon_iter = config['recon_iter']
+    num_physical_param = config['num_physical_param']
+    n_sample = config['n_sample']
+    param_dir = config['param_dir']
+    latent_conditioner_epoch = config['latent_conditioner_epoch']
+    latent_conditioner_lr = config['latent_conditioner_lr']
+    latent_conditioner_batch_size = config['latent_conditioner_batch_size']
+    latent_conditioner_data_type = config['latent_conditioner_data_type']
+    param_data_type = config['param_data_type']
+    latent_conditioner_weight_decay = config['latent_conditioner_weight_decay']
+    latent_conditioner_dropout_rate = config['latent_conditioner_dropout_rate']
+    use_spatial_attention = config['use_spatial_attention']
+    use_pca = config['use_pca']
+    pca_components = config['pca_components']
+    pca_patch_size = config['pca_patch_size']
 
     if use_pca ==1:
         use_pca = True
@@ -376,31 +318,16 @@ def main():
 
     print('Dataset range: ', np.min(new_x_train), np.max(new_x_train))
     
-    # Configure augmentation parameters
-    augmentation_config = {
-        'noise_prob': 0.2,        # Probability of adding noise
-        'noise_level': 0.03,      # Noise intensity (0.03 = 3%)
-        'scaling_prob': 0.1,      # Probability of scaling
-        'scaling_range': (0.9, 1.1), # Scaling factor range
-        'shift_prob': 0.0,        # Probability of time shifting
-        'shift_max': 0.1,         # Maximum shift fraction
-        'mixup_prob': 0.2,        # Probability of applying mixup
-        'mixup_alpha': 0.2,       # Mixup interpolation strength
-        'cutout_prob': 0.0,       # Probability of applying cutout
-        'cutout_max': 0.1,        # Maximum cutout fraction
-        'enabled': True           # Master switch for augmentation
-    }
-    
-    # Use the augmented dataset and dataloaders
+    # Create augmented dataloaders with default configuration
+    # Default config: noise=0.2, scaling=0.1, no shift/cutout, mixup=0.2
     print("Creating augmented dataset with on-the-fly data augmentation...")
     
-        
-    # Create dataloaders with error handling
+    # Create dataloaders with error handling (uses default augmentation config)
     dataloader, val_dataloader = create_augmented_dataloaders(
         new_x_train, 
         batch_size=batch_size, 
         load_all=load_all,
-        augmentation_config=augmentation_config,
+        augmentation_config=None,  # Use defaults from create_augmented_dataloaders
         val_split=0.2,  # 80% train, 20% validation
         num_workers=None  # Auto-determine optimal workers
     )
@@ -417,7 +344,7 @@ def main():
         
 
     print('Dataloader initiated...')
-    print_gpu_mem_checkpoint('After dataloader creation')
+    print_gpu_mem_checkpoint('After dataloader creation', debug_mode)
     # Estimate and print input data GPU memory usage
     def get_tensor_mem_mb(tensor):
         if isinstance(tensor, torch.Tensor):
@@ -430,11 +357,12 @@ def main():
     # new_x_train is a numpy array
     if debug_mode == 1:
         print(f"[INFO] new_x_train shape: {new_x_train.shape}, dtype: {new_x_train.dtype}, estimated GPU memory: {get_tensor_mem_mb(new_x_train):.2f} MB")
-    print_gpu_mem_checkpoint('Before training starts (after data and dataloader setup)')
+    print_gpu_mem_checkpoint('Before training starts (after data and dataloader setup)', debug_mode)
 
 
 
     from modules.decoder import reparameterize
+    from modules.reconstruction_evaluator import ReconstructionEvaluator
     loss_total=0
 
     # VAE training
@@ -446,144 +374,31 @@ def main():
         VAE_trained = torch.load('./model_save/SimulGen-VAE', map_location= device, weights_only=False)
         VAE = VAE_trained.eval()
 
-        latent_vectors = np.zeros([num_param, latent_dim_end])
-        gen_x_node = np.zeros([1, num_node, num_time])
-        loss_total = 0
-        loss_save = np.zeros([num_var])
-        reconstruction_loss = np.zeros([num_param])
-        hierarchical_latent_vectors = np.zeros([num_param, len(num_filter_enc)-1, latent_dim])
-        reconstructed = np.empty([num_param, num_node, num_time])
-        # Optimize reconstruction DataLoader with intelligent worker detection  
-        recon_optimal_workers = 0 if len(dataset) < 1000 else min(2, torch.multiprocessing.cpu_count())
-        
-        # Reconstruction loss
-        for j, image in enumerate(dataloader):
-            loss_save[:]=100
-            x = image.to(device)
-            del image
-
-            mu, log_var, xs = VAE.encoder(x)
-            for i in range(recon_iter):
-                std = torch.exp(0.5*log_var)
-                latent_vector = reparameterize(mu, std)
-
-                gen_x, _ = VAE.decoder(latent_vector, xs, mode='fix')
-                gen_x_np = gen_x.cpu().detach().numpy()
-
-                loss = nn.MSELoss()(gen_x, x)
-
-                if loss<loss_save[0]:
-                    loss_save[0] = loss
-                    latent_vector_save = latent_vector
-                    latent_vectors[j,:] = latent_vector_save[0,:].cpu().detach().numpy()
-
-                    for k in range(len(xs)):
-                        hierarchical_latent_vectors[j,k,:] = xs[k].cpu().detach().numpy()[0]
-
-                    reconstruction_loss[j] = loss
-
-                    reconstructed[j,:,:] = gen_x_np[0,:,:]
-
-                    del latent_vector, x, mu, log_var, xs, std, gen_x, gen_x_np, latent_vector_save
-
-            print('parameter {} is finished''-''MSE: {:.4E}'.format(j+1, loss))
-            print('')
-            loss_total = loss_total+loss.cpu().detach().numpy()
-
-            del loss
-
-        print('')
-
-        print('Total Reconstruction MSE loss: {:.3e}'.format(loss_total/j))
-        print('')
-        print('--------------------------------')
-        print('')
-        print('')
+        # Evaluate reconstruction loss on training data
+        _ = evaluate_vae_reconstruction(
+            VAE, dataloader, device, len(dataloader.dataset), num_filter_enc, latent_dim, 
+            latent_dim_end, recon_iter, "Training Reconstruction"
+        )
 
         
-        # Validation loss
-        for j, image in enumerate(val_dataloader):
-            loss_save[:]=100
-            x = image.to(device)
-            del image
+        # Evaluate validation loss
+        _ = evaluate_vae_reconstruction(
+            VAE, val_dataloader, device, len(val_dataloader.dataset), num_filter_enc, latent_dim, 
+            latent_dim_end, recon_iter, "Validation"
+        )
 
-            mu, log_var, xs = VAE.encoder(x)
-            for i in range(recon_iter):
-                std = torch.exp(0.5*log_var)
-                latent_vector = reparameterize(mu, std)
-
-                gen_x, _ = VAE.decoder(latent_vector, xs, mode='fix')
-                gen_x_np = gen_x.cpu().detach().numpy()
-
-                loss = nn.MSELoss()(gen_x, x)
-
-                if loss<loss_save[0]:
-                    loss_save[0] = loss
-                    latent_vector_save = latent_vector
-                    latent_vectors[j,:] = latent_vector_save[0,:].cpu().detach().numpy()
-
-                    for k in range(len(xs)):
-                        hierarchical_latent_vectors[j,k,:] = xs[k].cpu().detach().numpy()[0]
-
-                    reconstruction_loss[j] = loss
-
-                    reconstructed[j,:,:] = gen_x_np[0,:,:]
-
-                    del latent_vector, x, mu, log_var, xs, std, gen_x, gen_x_np, latent_vector_save
-
-            print('parameter {} is finished''-''MSE: {:.4E}'.format(j+1, loss))
-            print('')
-            loss_total = loss_total+loss.cpu().detach().numpy()
-
-            del loss
-
-
-        # Whole dataset
+        # Evaluate on whole dataset for final latent vectors (used for LatentConditioner training)
         dataloader_whole = torch.utils.data.DataLoader(
-            new_x_train,
+            MyBaseDataset(new_x_train, False),  # Create dataset from raw data
             batch_size=1,
             shuffle=False,
-            num_workers=None,
+            num_workers=0,
             pin_memory=False
         )
-        for j, image in enumerate(dataloader_whole):
-            loss_save[:]=100
-            x = image.to(device)
-            del image
-
-            mu, log_var, xs = VAE.encoder(x)
-            for i in range(recon_iter):
-                std = torch.exp(0.5*log_var)
-                latent_vector = reparameterize(mu, std)
-
-                gen_x, _ = VAE.decoder(latent_vector, xs, mode='fix')
-                gen_x_np = gen_x.cpu().detach().numpy()
-
-                loss = nn.MSELoss()(gen_x, x)
-
-                if loss<loss_save[0]:
-                    loss_save[0] = loss
-                    latent_vector_save = latent_vector
-                    latent_vectors[j,:] = latent_vector_save[0,:].cpu().detach().numpy()
-
-                    for k in range(len(xs)):
-                        hierarchical_latent_vectors[j,k,:] = xs[k].cpu().detach().numpy()[0]
-
-                    reconstruction_loss[j] = loss
-
-                    reconstructed[j,:,:] = gen_x_np[0,:,:]
-
-                    del latent_vector, x, mu, log_var, xs, std, gen_x, gen_x_np, latent_vector_save
-
-            print('parameter {} is finished''-''MSE: {:.4E}'.format(j+1, loss))
-            print('')
-            loss_total = loss_total+loss.cpu().detach().numpy()
-
-            del loss
-
-        print('')
-
-        print('Total Validation MSE loss: {:.3e}'.format(loss_total/j))
+        latent_vectors, hierarchical_latent_vectors, reconstruction_loss, _, _ = evaluate_vae_reconstruction(
+            VAE, dataloader_whole, device, num_param, num_filter_enc, latent_dim, 
+            latent_dim_end, recon_iter, "Whole Dataset"
+        )
 
         np.save('model_save/latent_vectors', latent_vectors)
         np.save('model_save/xs', hierarchical_latent_vectors)
@@ -601,37 +416,7 @@ def main():
         VAE = VAE_trained.eval()
 
         # Compare reconstructed validation dataset vs. true validation dataset
-        for j, image in enumerate(val_dataloader):
-            x = image.to(device)
-            mu, log_var, xs = VAE.encoder(x)
-            std = torch.exp(0.5*log_var)
-            latent_vector = reparameterize(mu, std)
-            gen_x, _ = VAE.decoder(latent_vector, xs, mode='fix')
-            gen_x_np = gen_x.cpu().detach().numpy()
-            loss = nn.MSELoss()(gen_x, x)
-            print('parameter {} is finished''-''MSE: {:.4E}'.format(j+1, loss))
-            print('')
-            loss_total = loss_total+loss.cpu().detach().numpy()
-            image_np = image.cpu().detach().numpy()
-
-
-
-
-            # plt.figure()
-            # true_data = image_np[0, :, int(image_np.shape[2]/2)] * 1e6
-            # recon_data = gen_x_np[0, :, 0] * 1e6
-            # plt.title(f'Reconstruction - True: [{true_data.min():.1f}, {true_data.max():.1f}], SimulGEN: [{recon_data.min():.1f}, {recon_data.max():.1f}]')
-            # plt.plot(recon_data, '.', label='SimulGen')
-            # plt.plot(true_data, '.', label='True')
-            # plt.legend()
-            # plt.show()
-
-
-            del loss, image, image_np
-
-        print('')
-
-        print('Total Validation MSE loss: {:.3e}'.format(loss_total/j))
+        loss_total = evaluate_vae_simple(VAE, val_dataloader, device, "Validation (LatentConditioner Mode)")
 
         print('--------------------------------')
         print('')
@@ -970,89 +755,13 @@ def main():
     VAE_trained = torch.load('model_save/SimulGen-VAE', map_location= device, weights_only=False)
     VAE = VAE_trained.eval()
 
-    # Optimize LatentConditioner evaluation DataLoader with intelligent worker detection
-    latent_conditioner_eval_optimal_workers = 0 if len(latent_conditioner_dataset) < 1000 else min(2, torch.multiprocessing.cpu_count())
-    
-    latent_conditioner_dataloader_test = torch.utils.data.DataLoader(
-        latent_conditioner_dataset, 
-        batch_size=1, 
-        shuffle=False, 
-        num_workers=latent_conditioner_eval_optimal_workers,
-        pin_memory=True if latent_conditioner_eval_optimal_workers > 0 else False,
-        persistent_workers=True if latent_conditioner_eval_optimal_workers > 0 else False,
-        prefetch_factor=2 if latent_conditioner_eval_optimal_workers > 0 else None
+    # Use the new reconstruction evaluator for cleaner, more accurate evaluation
+    print("Starting reconstruction evaluation with proper data alignment...")
+    evaluator = ReconstructionEvaluator(VAE, device, num_time, debug_mode)
+    evaluator.evaluate_reconstruction_comparison(
+        latent_conditioner, latent_conditioner_dataset, 
+        new_x_train, latent_vectors_scaler, xs_scaler
     )
-
-    for i, (x, y1, y2) in enumerate(latent_conditioner_dataloader_test):
-        # x already contains preprocessed data (PCA coefficients if use_pca=True, raw images if use_pca=False)
-        x = x.to(device)
-
-        y_pred1, y_pred2 = latent_conditioner(x)
-        y_pred1 = y_pred1.cpu().detach().numpy() # predicted by latent conditioner
-        y1 = y1.cpu().detach().numpy() # true main latent
-        y_pred2 = y_pred2.cpu().detach().numpy() # predicted by latent conditioner
-        y2 = y2.cpu().detach().numpy() # true hierarchical latent
-        
-
-        # Now reconstruct the data using the predicted main latent and hierarchical latent
-        latent_predict = latent_vectors_scaler.inverse_transform(y_pred1)
-        xs_predict = xs_scaler.inverse_transform(y_pred2.reshape([1, -1]))
-        xs_predict = xs_predict.reshape([-1, 1, y2.shape[-1]])
-
-        latent_predict = torch.from_numpy(latent_predict)
-        xs_predict = torch.from_numpy(xs_predict)
-
-        latent_predict = latent_predict.to(device)
-        xs_predict = xs_predict.to(device)
-
-        xs_predict = list(xs_predict)
-
-        target_output, _ = VAE.decoder(latent_predict, xs_predict, mode='fix')
-        target_output_np = target_output.cpu().detach().numpy()
-        target_output_np = target_output_np.swapaxes(1,2)
-
-        y1_recon = latent_vectors_scaler.inverse_transform(y1)
-        y2_recon = xs_scaler.inverse_transform(y2.reshape([1, -1]))
-        y2_recon = y2_recon.reshape([-1, 1, y2.shape[-1]])
-
-        y1_recon = torch.from_numpy(y1_recon)
-        y2_recon = torch.from_numpy(y2_recon)
-
-        y1_recon = y1_recon.to(device)
-        y2_recon = y2_recon.to(device)
-
-        y2_recon = list(y2_recon)
-
-        target_output_recon, _ = VAE.decoder(y1_recon, y2_recon, mode='fix')
-        target_output_recon_np = target_output_recon.cpu().detach().numpy()
-        target_output_recon_np = target_output_recon_np.swapaxes(1,2)
-
-        # Plot the main latent
-        plt.figure()
-        plt.title('Main latent')
-        plt.plot(y1[0,:], '*', label = 'True')
-        plt.plot(y_pred1[0,:], 'o', label = 'Predicted')
-        plt.legend()
-        # plt.close()
-
-        plt.figure()
-        plt.title('Hierarchical latent')
-        plt.plot(y2[0,:], '*', label = 'True')
-        plt.plot(y_pred2[0,0, :], 'o', label = 'Predicted')
-        plt.legend()
-        # plt.close()
-        
-        plt.figure()
-        true_data = new_x_train[i, :, int(num_time/2)]*1e6
-        recon_data = target_output_np[0,int(num_time/2),:]*1e6
-        plt.title(f'Reconstruction - True: [{true_data.min():.1f}, {true_data.max():.1f}], SimulGEN: [{recon_data.min():.1f}, {recon_data.max():.1f}]')
-        plt.plot(recon_data, '.', label = 'VAE+latent')
-        plt.plot(target_output_recon_np[0,int(num_time/2),:]*1e6, '.', label = 'VAE')
-        plt.plot(true_data, '.', label = 'True')
-        plt.legend()
-        plt.savefig(f'output/reconstruction_plot_{i}.png', dpi=300, bbox_inches='tight')
-        plt.show()
-        # plt.close()
 
 if __name__ == "__main__":
     main()

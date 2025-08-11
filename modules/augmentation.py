@@ -157,7 +157,8 @@ def create_augmented_dataloaders(x_data, batch_size, load_all=False, augmentatio
         x_data: Input data in shape [samples, channels, time]
         batch_size: Batch size for training
         load_all: Whether to load all data to GPU
-        augmentation_config: Dictionary of augmentation parameters
+        augmentation_config: Dictionary of augmentation parameters (optional)
+                           If None, uses sensible defaults
         val_split: Fraction of data to use for validation
         num_workers: Number of workers for dataloader
         
@@ -166,8 +167,31 @@ def create_augmented_dataloaders(x_data, batch_size, load_all=False, augmentatio
     """
     from torch.utils.data import DataLoader, random_split
     
-    # Create dataset
-    dataset = AugmentedDataset(x_data, load_all, augmentation_config)
+    # Default augmentation configuration - optimized for SimulGenVAE
+    default_config = {
+        'noise_prob': 0.2,        # Probability of adding noise
+        'noise_level': 0.03,      # Noise intensity (0.03 = 3%)
+        'scaling_prob': 0.1,      # Probability of scaling
+        'scaling_range': (0.9, 1.1), # Scaling factor range
+        'shift_prob': 0.0,        # Probability of time shifting
+        'shift_max': 0.1,         # Maximum shift fraction
+        'mixup_prob': 0.2,        # Probability of applying mixup
+        'mixup_alpha': 0.2,       # Mixup interpolation strength
+        'cutout_prob': 0.0,       # Probability of applying cutout
+        'cutout_max': 0.1,        # Maximum cutout fraction
+        'enabled': True           # Master switch for augmentation
+    }
+    
+    # Use defaults or merge with user config
+    if augmentation_config is None:
+        final_config = default_config
+    else:
+        # Merge user config with defaults (user config takes precedence)
+        final_config = default_config.copy()
+        final_config.update(augmentation_config)
+    
+    # Create dataset with final configuration
+    dataset = AugmentedDataset(x_data, load_all, final_config)
     
     # Split into train and validation
     val_size = int(len(dataset) * val_split)
