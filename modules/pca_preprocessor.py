@@ -8,7 +8,7 @@ import math
 class PCAPreprocessor:
     """PCA preprocessing for image inputs to reduce dimensionality while preserving spatial structure"""
     
-    def __init__(self, n_components=1024, patch_size=None, save_dir='checkpoints'):
+    def __init__(self, n_components=1024, patch_size=None, save_dir='model_save'):
         """
         Initialize PCA preprocessor
         
