@@ -1,8 +1,13 @@
 import numpy as np
 import time
 import gc
-from sklearn.preprocessing import MinMaxScaler
+import psutil
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from pickle import dump
+
+def get_memory_usage():
+    """Get current memory usage in GB"""
+    return psutil.Process().memory_info().rss / (1024**3)
 
 def reduce_dataset(data_save, num_time_to, num_node_red, num_param, num_time, num_node_red_start, num_node_red_end):
 
@@ -57,6 +62,7 @@ def data_augmentation(stretch, FOM_data, num_param, num_node):
 
 def data_scaler(FOM_data_aug, FOM_data, num_time, num_node, directory, chunk_size=None):
     start = time.time()
+    initial_memory = get_memory_usage()
     
     if chunk_size is None:
         chunk_size = 10000
