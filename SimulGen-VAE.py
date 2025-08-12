@@ -470,7 +470,7 @@ def main():
         batch_size=latent_conditioner_batch_size, 
         shuffle=True, 
         num_workers=latent_conditioner_optimal_workers,
-        pin_memory=True,
+        pin_memory=False,
         persistent_workers=latent_conditioner_optimal_workers > 0,
         prefetch_factor=2 if latent_conditioner_optimal_workers > 0 else None,
         drop_last=True
