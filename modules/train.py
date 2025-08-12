@@ -217,8 +217,8 @@ def train(
     # Initialize TensorBoard logging for training visualization
     writer = SummaryWriter(log_dir='./runs', comment='VAE_Training')
     
-    # Configure comprehensive logging
-    LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
+    # Streamlined logging configuration - reduced overhead
+    LOG_FORMAT = "%(asctime)s - %(message)s"  # Remove levelname for speed
     logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
     logger = logging.getLogger(__name__)
     
@@ -306,8 +306,8 @@ def train(
     logger.info(f"Moving model to {device}...")
     model = model.to(device)
     
-    # Model compilation for enhanced performance (disabled for compatibility)
-    model.compile_model(mode='none')
+    # Model compilation for enhanced performance
+    model.compile_model(mode='max-autotune')
     
     # Initialize optimizer with weight decay for regularization
     logger.info(f"Initializing AdamW optimizer (LR: {LR:.1e})")
@@ -360,14 +360,17 @@ def train(
     # Prepare model for training
     model.train()
     
-    # Optimize CUDA settings for training
+    # Optimize CUDA settings for maximum training performance
     if torch.cuda.is_available():
         torch.cuda.set_device(device)
-        # Enable optimized attention for better performance
+        # Enable optimized cuDNN algorithms for consistent input sizes
         torch.backends.cudnn.benchmark = True
-        # Enable memory efficient attention if available
+        torch.backends.cudnn.deterministic = False  # Allow faster non-deterministic algorithms
+        # Enable optimized attention mechanisms if available
         if hasattr(torch.backends.cuda, 'enable_math_sdp'):
             torch.backends.cuda.enable_math_sdp(True)
+        if hasattr(torch.backends.cuda, 'enable_flash_sdp'):
+            torch.backends.cuda.enable_flash_sdp(True)  # Flash attention for speed
     
     logger.info("Starting training loop...")
     total_start_time = time.time()
@@ -438,20 +441,22 @@ def train(
                 epoch_metrics['recon_loss_MSE'] += weighted_recon_MSE.item()
                 epoch_metrics['batch_count'] += 1
                 
-                # Memory cleanup for large-scale training
-                del total_loss, weighted_recon_loss, weighted_kl_loss
-                del recon_loss, kl_losses, recon_loss_MSE, reconstruction, batch_data
+                # Lightweight memory cleanup - only delete large tensors
+                #del total_loss, weighted_recon_loss, weighted_kl_loss
+                #del recon_loss, kl_losses, recon_loss_MSE, reconstruction, batch_dat
+                del reconstruction, batch_data
                 
-                # Periodic memory cleanup
-                if batch_idx % 100 == 0 and torch.cuda.is_available():
+                # Less frequent memory cleanup to reduce overhead
+                if batch_idx % 500 == 0 and torch.cuda.is_available():
                     torch.cuda.empty_cache()
                     
         except Exception as e:
             logger.error(f"Training error at epoch {epoch+1}: {e}")
             raise
 
-        # Validation evaluation (every 10 epochs or last epoch)
-        if epoch % 10 == 0 or epoch == epochs - 1:
+        # Adaptive validation scheduling - less frequent early in training
+        validation_frequency = max(1, min(25, epochs // 40)) if epoch < epochs * 0.7 else 5
+        if epoch % validation_frequency == 0 or epoch == epochs - 1:
             logger.info(f"Running validation at epoch {epoch+1}...")
             model.eval()
             
@@ -482,10 +487,10 @@ def train(
                         val_metrics['recon_loss'] += val_weighted_recon.item()
                         val_metrics['batch_count'] += 1
                         
-                        # Memory cleanup
-                        del val_batch_data, val_reconstruction, val_recon_loss
-                        del val_kl_losses, val_recon_MSE, val_total_loss
-                        del val_weighted_kl, val_weighted_recon
+                        # Memory cleanup - keep large tensor deletions, comment small ones
+                        del val_batch_data, val_reconstruction
+                        #del val_recon_loss, val_kl_losses, val_recon_MSE, val_total_loss
+                        #del val_weighted_kl, val_weighted_recon
                         
             except Exception as e:
                 logger.warning(f"Validation error at epoch {epoch+1}: {e}")
@@ -559,30 +564,27 @@ def train(
         avg_epoch_time = elapsed_time / (epoch + 1)
         eta_hours = (epochs - epoch - 1) * avg_epoch_time / 3600
         
-        # Log comprehensive training progress
-        log_message = (
-            f"[Epoch {epoch+1:4d}/{epochs}] "
-            f"Loss: {loss_print[epoch]:.4e} "
-            f"Val: {loss_val_print[epoch]:.4e} "
-            f"Recon: {recon_print[epoch]:.4e} "
-            f"ReconVal: {recon_loss_val_print[epoch]:.4e} "
-            f"KL: {kl_print[epoch]:.4e} "
-            f"β: {current_beta:.4e} "
-            f"LR: {current_lr:.2e} "
-            f"Time: {epoch_duration:.1f}s "
-            f"ETA: {eta_hours:.1f}h"
-        )
+        # Reduced logging frequency - only log every 10 epochs or significant milestones
+        if epoch % 10 == 0 or epoch == epochs - 1 or epoch < 5:
+            log_message = (
+                f"[Epoch {epoch+1:4d}/{epochs}] "
+                f"Loss: {loss_print[epoch]:.4e} "
+                f"Val: {loss_val_print[epoch]:.4e} "
+                f"Recon: {recon_print[epoch]:.4e} "
+                f"KL: {kl_print[epoch]:.4e} "
+                f"Time: {epoch_duration:.1f}s "
+                f"ETA: {eta_hours:.1f}h"
+            )
+            logger.info(log_message)
         
-        logger.info(log_message)
-        
-        # TensorBoard logging
-        writer.add_scalar('Loss/Train', loss_print[epoch], epoch)
-        writer.add_scalar('Loss/Validation', loss_val_print[epoch], epoch)
-        writer.add_scalar('Loss/Reconstruction', recon_print[epoch], epoch)
-        writer.add_scalar('Loss/KL_Divergence', kl_print[epoch], epoch)
-        writer.add_scalar('Training/Beta', current_beta, epoch)
-        writer.add_scalar('Training/Learning_Rate', current_lr, epoch)
-        writer.add_scalar('Training/Epoch_Duration', epoch_duration, epoch)
+        # Reduced TensorBoard logging frequency
+        if epoch % 5 == 0 or epoch == epochs - 1:
+            writer.add_scalar('Loss/Train', loss_print[epoch], epoch)
+            writer.add_scalar('Loss/Validation', loss_val_print[epoch], epoch)
+            writer.add_scalar('Loss/Reconstruction', recon_print[epoch], epoch)
+            writer.add_scalar('Loss/KL_Divergence', kl_print[epoch], epoch)
+            writer.add_scalar('Training/Beta', current_beta, epoch)
+            writer.add_scalar('Training/Learning_Rate', current_lr, epoch)
         
         # Early stopping check
         if epochs_without_improvement >= early_stopping_patience and epoch > epochs * 0.5:

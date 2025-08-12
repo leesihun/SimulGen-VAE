@@ -112,15 +112,15 @@ class VAE(nn.Module):
 
             kl_loss = kl(mu, log_var)
 
-            # Clean up intermediate variables to free memory faster
-            del mu, log_var, xs, z
+            # Minimal cleanup - only delete large intermediate tensors
+            del xs, z  # Keep mu, log_var for potential debugging
             return decoder_output, recon_loss, [kl_loss]+kl_losses, recon_loss_MSE
             
         except RuntimeError as e:
             print(f"Error in VAE forward pass: {e}")
             raise
     
-    def compile_model(self, mode='default'):
+    def compile_model(self, mode='max-autotune'):
         """Compile the model for better performance using torch.compile."""
         if mode is False or mode == 'none':
             return
@@ -129,10 +129,16 @@ class VAE(nn.Module):
             print("torch.compile not available")
             return
             
-        print(f"Compiling VAE model with mode '{mode}'...")
-        self.encoder = torch.compile(self.encoder, mode=mode)
-        self.decoder = torch.compile(self.decoder, mode=mode)
-        print("Model compilation complete")
+        print(f"Compiling VAE model with mode '{mode}' for maximum performance...")
+        try:
+            # Use aggressive optimization for training speed
+            self.encoder = torch.compile(self.encoder, mode=mode, dynamic=False)
+            self.decoder = torch.compile(self.decoder, mode=mode, dynamic=False)
+            print("Model compilation complete - expect significant speedup after warmup")
+        except Exception as e:
+            print(f"Max-autotune compilation failed, falling back to current mode: {e}")
+            self.encoder = torch.compile(self.encoder, mode='none')
+            self.decoder = torch.compile(self.decoder, mode='none')
     
     def to(self, *args, **kwargs):
         """Override to method to optimize memory format for better performance."""

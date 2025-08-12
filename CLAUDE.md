@@ -2,6 +2,11 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Precautions
+
+The SimulGenVAE code is meant to be ran on a different hardware with GPU. Claude code SHOULD NEVER try to run locally nor try to retrieve data from any runs/dataset.
+Ask the user for any info on which the Cluade needs.
+
 ## Overview
 
 SimulGenVAE is a high-performance Variational Autoencoder system designed for fast generation and inference of transient/static simulation data with Physics-Aware Neural Network (PANN) integration. The system supports both single-GPU and multi-GPU distributed training with three different latent conditioning architectures.
