@@ -103,7 +103,7 @@ def main():
         evaluate_vae_reconstruction, evaluate_vae_simple
     )
     from modules.augmentation import create_augmented_dataloaders
-    from modules.plotter import temporal_plotter
+    from modules.plotter import temporal_plotter, nodal_plotter, dual_view_plotter
     
     # Model inspection
     from torchinfo import summary
@@ -295,7 +295,13 @@ def main():
     del data_save
 
     FOM_data_aug = data_augmentation(stretch, FOM_data, num_param, num_node)
-    #temporal_plotter(FOM_data_aug, 0, 7,0,print_graph,7)
+    
+    # Enhanced plotting with dual view (temporal + nodal)
+    if print_graph != "2":  # If plotting is enabled (not off mode)
+        print("Generating dual-view plots for data visualization...")
+        dual_view_plotter(FOM_data_aug, param_idx=7, print_graph=print_graph)
+        temporal_plotter(FOM_data_aug, 0, 7, 0, print_graph, 7)
+    
     new_x_train, _, _ = data_scaler(FOM_data_aug, FOM_data, num_time, num_node, data_No)
 
     del FOM_data, FOM_data_aug
@@ -383,7 +389,7 @@ def main():
         VAE_trained = torch.load('model_save/SimulGen-VAE', map_location=device, weights_only=False)
         VAE = VAE_trained.eval()
         
-        loss_total = evaluate_vae_simple(VAE, val_dataloader, device, "Validation (LatentConditioner Mode)")
+        _ = evaluate_vae_simple(VAE, val_dataloader, device, "Validation (LatentConditioner Mode)")
         print("LatentConditioner mode validation complete")
         
 
@@ -399,15 +405,15 @@ def main():
     if latent_conditioner_data_type == 'image' and use_pca:
         print('Loading image data for PCA_MLP mode...')
         image = False  # Use MLP architecture for PCA coefficients
-        latent_conditioner_data, latent_conditioner_data_shape = read_latent_conditioner_dataset_img_pca(param_dir, param_data_type, debug_mode, num_pca, pca_patch_size)
+        latent_conditioner_data, latent_conditioner_data_shape = read_latent_conditioner_dataset_img_pca(param_dir, param_data_type, num_pca, pca_patch_size)
     elif latent_conditioner_data_type=='image':
         print('Loading image data for CNN...')
         image=True
-        latent_conditioner_data, latent_conditioner_data_shape = read_latent_conditioner_dataset_img(param_dir, param_data_type, debug_mode)
+        latent_conditioner_data, latent_conditioner_data_shape = read_latent_conditioner_dataset_img(param_dir, param_data_type)
     elif latent_conditioner_data_type=='image_vit':
         print('Loading image data for ViT...')
         image=True
-        latent_conditioner_data, latent_conditioner_data_shape = read_latent_conditioner_dataset_img(param_dir, param_data_type, debug_mode)
+        latent_conditioner_data, latent_conditioner_data_shape = read_latent_conditioner_dataset_img(param_dir, param_data_type)
     elif latent_conditioner_data_type=='csv':
         print('Loading csv data for MLP...')
         image=False

@@ -127,30 +127,80 @@ class ReconstructionEvaluator:
         return target_output_np
     
     def _plot_reconstruction_comparison(self, sample_idx, original, predicted, true_recon, save_plots=False):
-        """Plot comparison between original, predicted, and true reconstructions."""
+        """Plot comparison between original, predicted, and true reconstructions with both temporal and nodal views."""
+        # Create 2x2 subplot layout
+        fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+        fig.suptitle(f'Sample {sample_idx} - Dual-View Reconstruction Comparison', fontsize=16)
+        
+        # Get data dimensions
+        num_nodes = original.shape[1]
+        
+        # Select representative indices for visualization
+        time_indices = [int(self.num_time * 0.25), int(self.num_time * 0.5), int(self.num_time * 0.75)]
+        node_indices = [int(num_nodes * 0.25), int(num_nodes * 0.5), int(num_nodes * 0.75)]
+        
+        # === NODAL VIEW (Top Row) ===
+        # Top Left: Nodal distribution at middle timestep
         time_idx = int(self.num_time / 2)
+        original_nodal = original[0, :, time_idx] * 1e6
+        predicted_nodal = predicted[0, time_idx, :] * 1e6
+        true_recon_nodal = true_recon[0, time_idx, :] * 1e6
         
-        # Extract middle time slice and scale for visualization
-        original_slice = original[0, :, time_idx] * 1e6
-        predicted_slice = predicted[0, time_idx, :] * 1e6
-        true_recon_slice = true_recon[0, time_idx, :] * 1e6
+        axes[0, 0].set_title(f'Nodal View - Spatial Distribution (t={time_idx})')
+        axes[0, 0].plot(original_nodal, '.', label=f'Original [{original_nodal.min():.1f}, {original_nodal.max():.1f}]', alpha=0.8, markersize=1)
+        axes[0, 0].plot(predicted_nodal, '.', label=f'VAE+LC [{predicted_nodal.min():.1f}, {predicted_nodal.max():.1f}]', alpha=0.8, markersize=1)
+        axes[0, 0].plot(true_recon_nodal, '.', label=f'VAE-only [{true_recon_nodal.min():.1f}, {true_recon_nodal.max():.1f}]', alpha=0.8, markersize=1)
+        axes[0, 0].set_xlabel('Node Index')
+        axes[0, 0].set_ylabel('Value (×1e6)')
+        axes[0, 0].legend()
+        axes[0, 0].grid(True, alpha=0.3)
         
-        plt.figure(figsize=(12, 6))
+        # Top Right: Multiple nodal snapshots
+        axes[0, 1].set_title('Nodal View - Multiple Time Snapshots')
+        colors = ['blue', 'green', 'red']
+        for i, t_idx in enumerate(time_indices):
+            orig_snap = original[0, :, t_idx] * 1e6
+            pred_snap = predicted[0, t_idx, :] * 1e6
+            axes[0, 1].plot(orig_snap, '--', color=colors[i], alpha=0.7, linewidth=1, label=f'Original t={t_idx}')
+            axes[0, 1].plot(pred_snap, '-', color=colors[i], alpha=0.8, linewidth=1, label=f'VAE+LC t={t_idx}')
+        axes[0, 1].set_xlabel('Node Index')
+        axes[0, 1].set_ylabel('Value (×1e6)')
+        axes[0, 1].legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+        axes[0, 1].grid(True, alpha=0.3)
         
-        # Plot comparison
-        plt.title(f'Sample {sample_idx} - Reconstruction Comparison (t={time_idx})')
-        plt.plot(original_slice, '.', label=f'Original [{original_slice.min():.1f}, {original_slice.max():.1f}]', alpha=0.8)
-        plt.plot(predicted_slice, '.', label=f'VAE+LatentConditioner [{predicted_slice.min():.1f}, {predicted_slice.max():.1f}]', alpha=0.8)
-        plt.plot(true_recon_slice, '.', label=f'VAE-only [{true_recon_slice.min():.1f}, {true_recon_slice.max():.1f}]', alpha=0.8)
+        # === TEMPORAL VIEW (Bottom Row) ===
+        # Bottom Left: Temporal evolution at middle node
+        node_idx = int(num_nodes / 2)
+        original_temporal = original[0, node_idx, :] * 1e6
+        predicted_temporal = predicted[0, :, node_idx] * 1e6
+        true_recon_temporal = true_recon[0, :, node_idx] * 1e6
         
-        plt.xlabel('Node Index')
-        plt.ylabel('Value (×1e6)')
-        plt.legend()
-        plt.grid(True, alpha=0.3)
+        axes[1, 0].set_title(f'Temporal View - Time Evolution (node={node_idx})')
+        axes[1, 0].plot(original_temporal, '-', label=f'Original [{original_temporal.min():.1f}, {original_temporal.max():.1f}]', alpha=0.8)
+        axes[1, 0].plot(predicted_temporal, '-', label=f'VAE+LC [{predicted_temporal.min():.1f}, {predicted_temporal.max():.1f}]', alpha=0.8)
+        axes[1, 0].plot(true_recon_temporal, '-', label=f'VAE-only [{true_recon_temporal.min():.1f}, {true_recon_temporal.max():.1f}]', alpha=0.8)
+        axes[1, 0].set_xlabel('Time Index')
+        axes[1, 0].set_ylabel('Value (×1e6)')
+        axes[1, 0].legend()
+        axes[1, 0].grid(True, alpha=0.3)
+        
+        # Bottom Right: Multiple temporal traces at different nodes
+        axes[1, 1].set_title('Temporal View - Multiple Node Traces')
+        for i, n_idx in enumerate(node_indices):
+            orig_trace = original[0, n_idx, :] * 1e6
+            pred_trace = predicted[0, :, n_idx] * 1e6
+            axes[1, 1].plot(orig_trace, '--', color=colors[i], alpha=0.7, linewidth=1, label=f'Original n={n_idx}')
+            axes[1, 1].plot(pred_trace, '-', color=colors[i], alpha=0.8, linewidth=1, label=f'VAE+LC n={n_idx}')
+        axes[1, 1].set_xlabel('Time Index')
+        axes[1, 1].set_ylabel('Value (×1e6)')
+        axes[1, 1].legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+        axes[1, 1].grid(True, alpha=0.3)
+        
+        plt.tight_layout()
         
         if save_plots:
             os.makedirs('checkpoints', exist_ok=True)
-            plt.savefig(f'checkpoints/reconstruction_comparison_{sample_idx}.png', dpi=300, bbox_inches='tight')
+            plt.savefig(f'checkpoints/reconstruction_dual_view_{sample_idx}.png', dpi=300, bbox_inches='tight')
         
         plt.show()
     
