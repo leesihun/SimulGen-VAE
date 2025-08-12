@@ -75,10 +75,7 @@ def read_latent_conditioner_dataset_img_pca(param_dir, param_data_type, pca_comp
         # For MLP mode, we return flattened shape
         latent_conditioner_data_shape = (latent_conditioner_data.shape[1],)
         
-        if debug_mode == 1:
-            print(f'PCA_MLP output shape: {latent_conditioner_data_shape}')
-            print(f'Data reduced from {im_size*im_size} to {latent_conditioner_data.shape[1]} dimensions')
-            
+        
     else:
         raise NotImplementedError('PCA_MLP mode only supports .jpg/.png files')
 
