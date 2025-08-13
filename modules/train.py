@@ -513,16 +513,16 @@ def train(
                 best_val_loss = loss_val_print[epoch]
                 epochs_without_improvement = 0
                 
-                # Save best model checkpoint
-                logger.info(f"New best validation loss: {best_val_loss:.6f} - Saving checkpoint")
-                torch.save({
-                    'epoch': epoch,
-                    'model_state_dict': model.state_dict(),
-                    'optimizer_state_dict': optimizer.state_dict(),
-                    'scheduler_state_dict': scheduler.state_dict(),
-                    'best_val_loss': best_val_loss,
-                    'training_metrics': training_metrics
-                }, 'checkpoints/best_model.pth')
+                # # Save best model checkpoint
+                # logger.info(f"New best validation loss: {best_val_loss:.6f} - Saving checkpoint")
+                # torch.save({
+                #     'epoch': epoch,
+                #     'model_state_dict': model.state_dict(),
+                #     'optimizer_state_dict': optimizer.state_dict(),
+                #     'scheduler_state_dict': scheduler.state_dict(),
+                #     'best_val_loss': best_val_loss,
+                #     'training_metrics': training_metrics
+                # }, 'checkpoints/best_model.pth')
             else:
                 epochs_without_improvement += 1
                 
