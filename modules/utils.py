@@ -521,3 +521,9 @@ def initialize_folder(folder_name):
             os.remove(os.path.join(folder_name, file))
     else:
         os.makedirs(folder_name)
+    import shutil
+    # delete all files/subfolders in folder_name
+    for file in os.listdir(folder_name):
+        os.remove(os.path.join(folder_name, file))
+    for subfolder in os.listdir(folder_name):
+        shutil.rmtree(os.path.join(folder_name, subfolder))
