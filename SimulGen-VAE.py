@@ -110,13 +110,6 @@ def main():
 
     from modules.utils import initialize_folder
 
-    # Initialize folder contents
-    initialize_folder('model_save')
-    initialize_folder('checkpoints')
-    initialize_folder('LatentConditionerRuns')
-    initialize_folder('model_save')
-    initialize_folder('output')
-
     # Parse command line arguments
     parser = argparse.ArgumentParser(
         description="SimulGenVAE: High-Performance Physics-Aware Variational Autoencoder",
@@ -298,6 +291,16 @@ def main():
     print_graph = args.plot
 
     train_latent_conditioner_only = int(args.train_latent_conditioner)
+
+    
+
+    if train_latent_conditioner_only == 0:
+        # Initialize folder contents
+        initialize_folder('model_save')
+        initialize_folder('checkpoints')
+        initialize_folder('LatentConditionerRuns')
+        initialize_folder('model_save')
+        initialize_folder('output')
 
     data_save = input_dataset(num_param, num_time, num_node, data_No)
     num_time, FOM_data, num_node = reduce_dataset(data_save, num_time_to, num_node_red, num_param, num_time, num_node_red_start, num_node_red_end)
