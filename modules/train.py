@@ -307,7 +307,7 @@ def train(
     model = model.to(device)
     
     # Model compilation for enhanced performance
-    model.compile_model(mode='max-autotune')
+    model.compile_model(mode='default')
     
     # Initialize optimizer with weight decay for regularization
     logger.info(f"Initializing AdamW optimizer (LR: {LR:.1e})")
