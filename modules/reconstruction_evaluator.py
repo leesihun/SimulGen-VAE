@@ -66,9 +66,6 @@ class ReconstructionEvaluator:
             print(f"Evaluating {len(latent_conditioner_dataset)} samples...")
         
         for i, ((x_lc, y1_true, y2_true), (x_orig,)) in enumerate(zip(dataloader_test, original_dataloader)):
-            if i >= 5:  # Limit to first 5 samples for visualization
-                break
-                
             # Move to device
             x_lc = x_lc.to(self.device)
             x_orig = x_orig.to(self.device)

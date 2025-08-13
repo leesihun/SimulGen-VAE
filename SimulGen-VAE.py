@@ -108,6 +108,15 @@ def main():
     # Model inspection
     from torchinfo import summary
 
+    from modules.utils import initialize_folder
+
+    # Initialize folder contents
+    initialize_folder('model_save')
+    initialize_folder('checkpoints')
+    initialize_folder('LatentConditionerRuns')
+    initialize_folder('model_save')
+    initialize_folder('output')
+
     # Parse command line arguments
     parser = argparse.ArgumentParser(
         description="SimulGenVAE: High-Performance Physics-Aware Variational Autoencoder",

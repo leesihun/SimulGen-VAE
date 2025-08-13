@@ -513,3 +513,11 @@ def evaluate_vae_simple(VAE, dataloader, device, dataset_name="Dataset"):
     
     return loss_total
 
+def initialize_folder(folder_name):
+    """Initialize folder by deleting all files in it."""
+    os.makedirs(folder_name, exist_ok=True)
+    if os.path.exists(folder_name):
+        for file in os.listdir(folder_name):
+            os.remove(os.path.join(folder_name, file))
+    else:
+        os.makedirs(folder_name)
