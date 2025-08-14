@@ -136,9 +136,14 @@ class VAE(nn.Module):
             self.decoder = torch.compile(self.decoder, mode=mode, dynamic=False)
             print("Model compilation complete - expect significant speedup after warmup")
         except Exception as e:
-            print(f"Max-autotune compilation failed, falling back to current mode: {e}")
-            self.encoder = torch.compile(self.encoder, mode='none')
-            self.decoder = torch.compile(self.decoder, mode='none')
+            print(f"Compilation failed ({e}), falling back to reduce-overhead mode...")
+            try:
+                self.encoder = torch.compile(self.encoder, mode='reduce-overhead')
+                self.decoder = torch.compile(self.decoder, mode='reduce-overhead')
+                print("Successfully compiled with reduce-overhead mode")
+            except Exception as e2:
+                print(f"All compilation failed ({e2}), running in eager mode")
+                # Don't compile at all if everything fails
     
     def to(self, *args, **kwargs):
         """Override to method to optimize memory format for better performance."""
