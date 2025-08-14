@@ -307,14 +307,13 @@ def train(
     model = model.to(device)
     
     # Model compilation for enhanced performance
-    model.compile_model(mode='max-autotune')  # More stable than 'default'
+    model.compile_model(mode='default')  # More stable than 'default'
     
     # Initialize optimizer with weight decay for regularization
     logger.info(f"Initializing AdamW optimizer (LR: {LR:.1e})")
     optimizer = torch.optim.AdamW(
         model.parameters(), 
         lr=LR,
-        weight_decay=1e-4,  # L2 regularization
         betas=(0.9, 0.999),  # Standard Adam parameters
         eps=1e-8
     )

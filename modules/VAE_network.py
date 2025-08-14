@@ -137,9 +137,9 @@ class VAE(nn.Module):
             
         print(f"Compiling VAE model with mode '{mode}' for maximum performance...")
         try:
-            # Use aggressive optimization for training speed
-            self.encoder = torch.compile(self.encoder, mode=mode, dynamic=False)
-            self.decoder = torch.compile(self.decoder, mode=mode, dynamic=False)
+            # Use conservative compilation settings for complex models
+            self.encoder = torch.compile(self.encoder, mode=mode, dynamic=True, fullgraph=False)
+            self.decoder = torch.compile(self.decoder, mode=mode, dynamic=True, fullgraph=False)
             print("Model compilation complete - expect significant speedup after warmup")
         except Exception as e:
             print(f"Compilation failed ({e}), falling back to reduce-overhead mode...")
@@ -155,8 +155,10 @@ class VAE(nn.Module):
         """Override to method to optimize memory format for better performance."""
         device = args[0] if args else kwargs.get('device', None)
         if device:
-            print("Converting model to channels_last memory format")
+            print("Moving model to device (channels_last disabled for compilation compatibility)")
+            # Disable channels_last format change when using torch.compile
+            # as it can cause JSON parsing errors in inductor backend
             self = super().to(*args, **kwargs)
-            self = self.to(memory_format=torch.channels_last)
+            # self = self.to(memory_format=torch.channels_last)  # Disabled for compilation
             return self
         return super().to(*args, **kwargs)
