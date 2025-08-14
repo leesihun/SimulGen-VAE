@@ -401,8 +401,8 @@ def main():
         VAE_trained = torch.load('model_save/SimulGen-VAE', map_location=device, weights_only=False)
         VAE = VAE_trained.eval()
         
-        _ = evaluate_vae_simple(VAE, val_dataloader, device, "Validation (LatentConditioner Mode)")
-        print("LatentConditioner mode validation complete")
+        #_ = evaluate_vae_simple(VAE, val_dataloader, device, "Validation (LatentConditioner Mode)")
+        #print("LatentConditioner mode validation complete")
         
 
        
