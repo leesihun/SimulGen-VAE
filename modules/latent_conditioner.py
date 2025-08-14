@@ -177,7 +177,8 @@ def setup_device_and_model(latent_conditioner):
     return latent_conditioner, device
 
 def setup_optimizer_and_scheduler(latent_conditioner, latent_conditioner_lr, weight_decay, latent_conditioner_epoch):
-    optimizer = torch.optim.AdamW(latent_conditioner.parameters(), lr=latent_conditioner_lr, weight_decay=weight_decay)
+    #optimizer = torch.optim.AdamW(latent_conditioner.parameters(), lr=latent_conditioner_lr, weight_decay=weight_decay)
+    optimizer=torch.optim.SGD(latent_conditioner.parameters(), lr=latent_conditioner_lr, weight_decay=weight_decay)
     warmup_epochs = 10
     warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
         optimizer, 
