@@ -31,10 +31,10 @@ num_param	1
 n_sample	484
 param_dir	/images
 n_epoch	10000
-latent_conditioner_lr	0.01
-latent_conditioner_batch	128
+latent_conditioner_lr	0.02
+latent_conditioner_batch	256
 latent_conditioner_weight_decay	1e-4
-latent_conditioner_dropout_rate	0.5
+latent_conditioner_dropout_rate	0.2
 use_spatial_attention	1	# 0=off, 1=on - spatial attention in CNN
 input_type	image	#image, csvs, image_vit
 param_data_type .png
