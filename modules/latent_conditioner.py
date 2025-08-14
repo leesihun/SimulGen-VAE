@@ -235,6 +235,16 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
             if not model_summary_shown:
                 batch_size = x.shape[0]
                 input_features = x.shape[-1]
+                img_size = int(math.sqrt(input_features))
+                
+                print(f"DEBUG: Input shape: {x.shape}, Input range: [{x.min():.4f}, {x.max():.4f}]")
+                print(f"DEBUG: Image size: {img_size}x{img_size} ({input_features} pixels)")
+                
+                # Check sample image statistics
+                sample_img = x[0].reshape(img_size, img_size)
+                print(f"DEBUG: Sample image - mean: {sample_img.mean():.4f}, std: {sample_img.std():.4f}")
+                print(f"DEBUG: Non-zero pixels: {(sample_img > 0.01).sum()}/{sample_img.numel()}")
+                
                 summary(latent_conditioner, (batch_size, 1, input_features))
                 model_summary_shown = True
             
@@ -281,7 +291,16 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
             
             loss.backward()
             
-            torch.nn.utils.clip_grad_norm_(latent_conditioner.parameters(), max_norm=5.0)
+            # Check gradient norms before clipping
+            total_grad_norm = torch.nn.utils.clip_grad_norm_(latent_conditioner.parameters(), max_norm=5.0)
+            
+            # Monitor gradient health
+            if epoch % 100 == 0 and i == 0:  # Log every 100 epochs, first batch
+                print(f"DEBUG: Gradient norm: {total_grad_norm:.4f}, Loss: {loss.item():.4E}")
+                if total_grad_norm > 10.0:
+                    print(f"WARNING: Large gradient norm detected: {total_grad_norm:.2f}")
+                elif total_grad_norm < 1e-6:
+                    print(f"WARNING: Very small gradient norm: {total_grad_norm:.2E}")
             
             latent_conditioner_optimized.step()
         
