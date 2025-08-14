@@ -128,6 +128,12 @@ class VAE(nn.Module):
         if not hasattr(torch, 'compile'):
             print("torch.compile not available")
             return
+        
+        # Clear any existing compilation cache
+        try:
+            torch._dynamo.reset()
+        except:
+            pass
             
         print(f"Compiling VAE model with mode '{mode}' for maximum performance...")
         try:
