@@ -80,7 +80,7 @@ def data_scaler(FOM_data_aug, FOM_data, num_time, num_node, directory, chunk_siz
     print(f"Memory after float32 conversion: {after_conversion_memory:.2f} GB (saved: {initial_memory - after_conversion_memory:.2f} GB)")
     
     # Wider range for better VAE training - VAEs work better with [-1, 1] or [-0.9, 0.9]
-    scaler = MinMaxScaler(feature_range=(-0.9, 0.9))
+    scaler = MinMaxScaler(feature_range=(-0.7, 0.7))
     
     # For MinMaxScaler, we need to fit on a representative sample since it doesn't support partial_fit
     print("Fitting scaler on representative sample...")
@@ -159,7 +159,7 @@ def data_scaler(FOM_data_aug, FOM_data, num_time, num_node, directory, chunk_siz
 
 def latent_conditioner_scaler(data, name):
     # Also update LatentConditioner scaler to match
-    scaler = MinMaxScaler(feature_range=(-0.9, 0.9))
+    scaler = MinMaxScaler(feature_range=(-0.7, 0.7))
 
     # Handle 3D arrays by reshaping to 2D for scaling
     original_shape = data.shape
