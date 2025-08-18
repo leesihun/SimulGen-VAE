@@ -30,7 +30,7 @@ def read_latent_conditioner_dataset_img(param_dir, param_data_type):
             file_path = os.path.join(file_dir, file)
             im = cv2.imread(file_path, 0)
             resized_im = cv2.resize(im, (im_size, im_size), interpolation=INTERPOLATION_METHOD)
-            raw_images[i] = resized_im / 255.0
+            raw_images[i] = resized_im
 
         latent_conditioner_data = raw_images.reshape(len(files), -1)
         latent_conditioner_data_shape = (im_size, im_size)
@@ -55,7 +55,7 @@ def read_latent_conditioner_dataset_img_pca(param_dir, param_data_type, pca_comp
             file_path = os.path.join(file_dir, file)
             im = cv2.imread(file_path, 0)
             resized_im = cv2.resize(im, (im_size, im_size), interpolation=INTERPOLATION_METHOD)
-            raw_images[i] = resized_im / 255.0
+            raw_images[i] = resized_im
 
         print(f'Applying PCA preprocessing with {pca_components} components')
         

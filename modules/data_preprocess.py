@@ -2,8 +2,9 @@ import numpy as np
 import time
 import gc
 import psutil
-from sklearn.preprocessing import MinMaxScaler, StandardScaler
+from sklearn.preprocessing import MinMaxScaler
 from pickle import dump
+import matplotlib.pyplot as plt
 
 def get_memory_usage():
     """Get current memory usage in GB"""
@@ -189,7 +190,7 @@ def latent_conditioner_scaler(data, name):
 
 def latent_conditioner_scaler_input(data, name):
 
-    scaler = StandardScaler()
+    scaler = MinMaxScaler(feature_range=(-0.7, 0.7))
 
     # Handle 3D arrays by reshaping to 2D for scaling
     original_shape = data.shape
@@ -207,5 +208,9 @@ def latent_conditioner_scaler_input(data, name):
         scaled_data = scaled_data.reshape(original_shape)
 
     dump(scaler, open(name, 'wb'))
+
+    # Verify the scaled data
+    # Plot it
+    plt.imshow(scaled_data[0].reshape(original_shape[1], original_shape[2]), cmap='gray')
 
     return scaled_data, scaler
