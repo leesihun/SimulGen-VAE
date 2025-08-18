@@ -212,5 +212,6 @@ def latent_conditioner_scaler_input(data, name):
     # Verify the scaled data
     # Plot it
     plt.imshow(scaled_data[0].reshape(original_shape[1], original_shape[2]), cmap='gray')
+    plt.show()
 
     return scaled_data, scaler
