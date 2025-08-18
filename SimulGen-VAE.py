@@ -78,7 +78,7 @@ def main():
     from modules.input_variables import input_user_variables, input_dataset
     from modules.data_preprocess import (
         reduce_dataset, data_augmentation, data_scaler, 
-        latent_conditioner_scaler, latent_conditioner_scaler_input
+        latent_conditioner_scaler
     )
     
     # Model architectures
@@ -436,7 +436,11 @@ def main():
     physical_param_input = latent_conditioner_data
 
 
-    physical_param_input, param_input_scaler = latent_conditioner_scaler(physical_param_input, './model_save/latent_conditioner_input_scaler.pkl')
+    #physical_param_input, param_input_scaler = latent_conditioner_scaler(physical_param_input, './model_save/latent_conditioner_input_scaler.pkl')
+    if latent_conditioner_data_type == 'image':
+        physical_param_input = physical_param_input / 255.0
+    else:
+        physical_param_input, param_input_scaler = latent_conditioner_scaler(physical_param_input, './model_save/latent_conditioner_input_scaler.pkl')
     out_latent_vectors, latent_vectors_scaler = latent_conditioner_scaler(out_latent_vectors, './model_save/latent_vectors_scaler.pkl')
     out_hierarchical_latent_vectors, xs_scaler = latent_conditioner_scaler(xs_vectors, './model_save/xs_scaler.pkl')
 

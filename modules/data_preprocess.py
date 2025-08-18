@@ -187,26 +187,3 @@ def latent_conditioner_scaler(data, name):
     dump(scaler, open(name, 'wb'))
 
     return scaled_data, scaler
-
-def latent_conditioner_scaler_input(data, name):
-
-    scaler = MinMaxScaler(feature_range=(-0.7, 0.7))
-
-    # Handle 3D arrays by reshaping to 2D for scaling
-    original_shape = data.shape
-    if len(original_shape) == 3:
-        # Reshape to 2D for scaler
-        data_reshaped = data.reshape(original_shape[0], -1)
-    else:
-        data_reshaped = data
-
-    scaler.fit(data_reshaped)
-    scaled_data = scaler.transform(data_reshaped)
-
-    # Reshape back to original dimensions
-    if len(original_shape) == 3:
-        scaled_data = scaled_data.reshape(original_shape)
-
-    dump(scaler, open(name, 'wb'))
-
-    return scaled_data, scaler
