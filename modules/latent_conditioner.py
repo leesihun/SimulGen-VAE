@@ -273,7 +273,9 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
 
             if i==0 and epoch==0:
                 # Plot the first image
-                plt.imshow(x[0].reshape(img_size, img_size), cmap='gray')
+                # First copy it to cpu
+                x_cpu = x[0].cpu().numpy()
+                plt.imshow(x_cpu.reshape(img_size, img_size), cmap='gray')
                 plt.show()
 
             # Enable multi-scale prediction if available
