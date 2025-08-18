@@ -233,6 +233,20 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
             if x.device != device:
                 x, y1, y2 = x.to(device, non_blocking=True), y1.to(device, non_blocking=True), y2.to(device, non_blocking=True)
             
+            # Show ORIGINAL input before any augmentations (first batch, first epoch only)
+            if i == 0 and epoch == 0:
+                input_features = x.shape[-1]
+                img_size = int(math.sqrt(input_features))
+                print(f"ORIGINAL INPUT - Range: [{x.min():.4f}, {x.max():.4f}]")
+                
+                # Show original image
+                x_cpu = x[0].cpu().numpy()
+                plt.figure(figsize=(12, 4))
+                plt.subplot(1, 3, 1)
+                plt.imshow(x_cpu.reshape(img_size, img_size), cmap='gray')
+                plt.title('Original Input')
+                plt.colorbar()
+            
             if not model_summary_shown:
                 batch_size = x.shape[0]
                 input_features = x.shape[-1]
@@ -255,6 +269,14 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
                 #x_2d = apply_outline_preserving_augmentations(x_2d, prob=0.8)
                 x = x_2d.reshape(x.shape[0], -1)
                 
+                # Show augmented image
+                if i == 0 and epoch == 0:
+                    x_aug_cpu = x[0].cpu().numpy()
+                    plt.subplot(1, 3, 2)
+                    plt.imshow(x_aug_cpu.reshape(img_size, img_size), cmap='gray')
+                    plt.title('After Augmentation')
+                    plt.colorbar()
+                
             if torch.rand(1, device=x.device) < 0.1 and x.size(0) > 1:
                 alpha = 0.2
                 lam = torch.tensor(np.random.beta(alpha, alpha), device=x.device, dtype=x.dtype)
@@ -269,14 +291,19 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
                 noise = torch.randn_like(x) * 0.01
                 x = x + noise
             
-            latent_conditioner_optimized.zero_grad(set_to_none=True)
-
-            if i==0 and epoch==0:
-                # Plot the first image
-                # First copy it to cpu
-                x_cpu = x[0].cpu().numpy()
-                plt.imshow(x_cpu.reshape(img_size, img_size), cmap='gray')
+            # Show final processed image (after mixup + noise)
+            if i == 0 and epoch == 0:
+                x_final_cpu = x[0].cpu().numpy()
+                plt.subplot(1, 3, 3)
+                plt.imshow(x_final_cpu.reshape(img_size, img_size), cmap='gray')
+                plt.title('After Mixup + Noise')
+                plt.colorbar()
+                
+                print(f"FINAL INPUT - Range: [{x.min():.4f}, {x.max():.4f}]")
+                plt.tight_layout()
                 plt.show()
+            
+            latent_conditioner_optimized.zero_grad(set_to_none=True)
 
             # Enable multi-scale prediction if available
             if hasattr(latent_conditioner, 'return_dict'):
