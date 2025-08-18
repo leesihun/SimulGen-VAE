@@ -89,18 +89,40 @@ class LatentConditionerImg(nn.Module):
         
         self.layers = nn.ModuleList()
         self.feature_projections = nn.ModuleList()
+        self.multi_scale_heads = nn.ModuleList()
         in_channels = latent_conditioner_filter[0]
         
         for i, out_channels in enumerate(latent_conditioner_filter):
             stride = 2
             layer = self._make_layer(in_channels, out_channels, 1, stride, True, dropout_rate)
             self.layers.append(layer)
+            
+            # Multi-scale feature heads for intermediate supervision
+            ms_head = nn.Sequential(
+                nn.AdaptiveAvgPool2d((1, 1)),
+                nn.Flatten(),
+                add_sn(nn.Linear(out_channels, latent_dim_end // 2)),
+                nn.SiLU(inplace=True),
+                nn.Dropout(dropout_rate * 0.5),
+                add_sn(nn.Linear(latent_dim_end // 2, latent_dim_end)),
+                nn.Tanh()
+            )
+            self.multi_scale_heads.append(ms_head)
+            
             in_channels = out_channels
         
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
 
+        # Aggregate multi-scale features
+        total_features = latent_conditioner_filter[-1] + sum(latent_conditioner_filter[:-1]) // 4
         shared_dim = latent_conditioner_filter[-1]
         encoder_dim = latent_dim_end
+        
+        self.feature_fusion = nn.Sequential(
+            add_sn(nn.Linear(total_features, shared_dim)),
+            nn.SiLU(inplace=True),
+            nn.Dropout(dropout_rate),
+        )
         
         self.latent_encoder = nn.Sequential(
             add_sn(nn.Linear(shared_dim, encoder_dim)),
@@ -167,16 +189,43 @@ class LatentConditionerImg(nn.Module):
         x = self.gn1(x)
         x = self.silu(x)
         
-        for layer in self.layers:
+        # Multi-scale feature extraction
+        multi_scale_features = []
+        multi_scale_predictions = []
+        
+        for i, layer in enumerate(self.layers):
             x = layer(x)
+            
+            # Extract features at this scale
+            scale_features = self.avgpool(x).flatten(1)
+            multi_scale_features.append(scale_features)
+            
+            # Multi-scale prediction for intermediate supervision
+            scale_pred = self.multi_scale_heads[i](x)
+            multi_scale_predictions.append(scale_pred)
         
-        final_features = self.avgpool(x).flatten(1)
+        # Aggregate all multi-scale features
+        # Downsample earlier features to match dimensions
+        aggregated_features = [multi_scale_features[-1]]  # Full resolution features
+        for feat in multi_scale_features[:-1]:
+            downsampled = feat[:, :feat.shape[1]//4]  # Simple downsampling
+            aggregated_features.append(downsampled)
         
-        latent_encoded = self.latent_encoder(final_features)
-        xs_encoded = self.xs_encoder(final_features)
+        fused_features = torch.cat(aggregated_features, dim=1)
+        fused_features = self.feature_fusion(fused_features)
+        
+        latent_encoded = self.latent_encoder(fused_features)
+        xs_encoded = self.xs_encoder(fused_features)
         
         latent_main = self.latent_head(latent_encoded)
         xs_main = self.xs_head(xs_encoded)
         xs_main = xs_main.unflatten(1, (self.size2, self.latent_dim))
+        
+        if self.return_dict:
+            return {
+                'latent_main': latent_main,
+                'xs_main': xs_main,
+                'multi_scale_predictions': multi_scale_predictions
+            }
         
         return latent_main, xs_main

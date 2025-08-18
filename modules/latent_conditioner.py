@@ -271,18 +271,40 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
             
             latent_conditioner_optimized.zero_grad(set_to_none=True)
 
-            y_pred1, y_pred2 = latent_conditioner(x)
+            # Enable multi-scale prediction if available
+            if hasattr(latent_conditioner, 'return_dict'):
+                latent_conditioner.return_dict = True
+                output = latent_conditioner(x)
+                if isinstance(output, dict):
+                    y_pred1, y_pred2 = output['latent_main'], output['xs_main']
+                    multi_scale_preds = output.get('multi_scale_predictions', [])
+                else:
+                    y_pred1, y_pred2 = output
+                    multi_scale_preds = []
+                latent_conditioner.return_dict = False
+            else:
+                y_pred1, y_pred2 = latent_conditioner(x)
+                multi_scale_preds = []
             
 
             label_smooth = 0.1
             y1_smooth = y1 * (1 - label_smooth) + torch.randn_like(y1) * label_smooth * 0.1
             y2_smooth = y2 * (1 - label_smooth) + torch.randn_like(y2) * label_smooth * 0.1
             
+            # Main loss components
             A = nn.MSELoss()(y_pred1, y1_smooth)
             B = nn.MSELoss()(y_pred2, y2_smooth)
             
+            # Multi-scale loss for intermediate supervision
+            ms_loss = 0.0
+            if multi_scale_preds:
+                ms_weight = 0.3  # Weight for multi-scale loss
+                for i, ms_pred in enumerate(multi_scale_preds):
+                    # Progressive weighting: earlier layers get less weight
+                    scale_weight = (i + 1) / len(multi_scale_preds) * ms_weight
+                    ms_loss += scale_weight * nn.MSELoss()(ms_pred, y1_smooth)
 
-            loss = A*9 + B 
+            loss = A*9 + B + ms_loss 
 
             
             epoch_loss += loss.item()
