@@ -205,11 +205,13 @@ class LatentConditionerImg(nn.Module):
             multi_scale_predictions.append(scale_pred)
         
         # Aggregate all multi-scale features
-        # Downsample earlier features to match dimensions
+        # Use adaptive pooling to preserve more information
         aggregated_features = [multi_scale_features[-1]]  # Full resolution features
+        target_dim = multi_scale_features[-1].shape[1] // 2
         for feat in multi_scale_features[:-1]:
-            downsampled = feat[:, :feat.shape[1]//4]  # Simple downsampling
-            aggregated_features.append(downsampled)
+            # Use learned projection instead of simple truncation
+            projected = nn.Linear(feat.shape[1], target_dim, device=feat.device, dtype=feat.dtype)(feat)
+            aggregated_features.append(projected)
         
         fused_features = torch.cat(aggregated_features, dim=1)
         fused_features = self.feature_fusion(fused_features)
