@@ -49,10 +49,11 @@ def main():
     
     # Build the torchrun command
     cmd = [
-        sys.executable, '-m', 'torch.distributed.run',
+        'torchrun',
         '--nproc_per_node', str(args.gpus),
         '--master_port', str(args.master_port),
-        'SimulGen-VAE-DDP.py',
+        'SimulGen-VAE.py',
+        '--use_ddp',
         '--preset', str(args.preset),
         '--plot', str(args.plot),
         '--size', args.size,
