@@ -266,7 +266,7 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
             if is_image_data and torch.rand(1, device=x.device) < 0.8:
                 im_size = int(math.sqrt(x.shape[-1]))
                 x_2d = x.reshape(-1, im_size, im_size)
-                #x_2d = apply_outline_preserving_augmentations(x_2d, prob=0.8)
+                x_2d = apply_outline_preserving_augmentations(x_2d, prob=0.8)
                 x = x_2d.reshape(x.shape[0], -1)
                 
                 # Show augmented image
