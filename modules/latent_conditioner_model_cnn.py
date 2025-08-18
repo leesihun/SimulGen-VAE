@@ -93,7 +93,8 @@ class LatentConditionerImg(nn.Module):
         in_channels = latent_conditioner_filter[0]
         
         for i, out_channels in enumerate(latent_conditioner_filter):
-            stride = 2
+            # Only downsample every other layer to preserve spatial information
+            stride = 2 if i % 2 == 0 else 1
             layer = self._make_layer(in_channels, out_channels, 1, stride, True, dropout_rate)
             self.layers.append(layer)
             

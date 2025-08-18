@@ -230,11 +230,6 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
         num_batches = 0
         
         for i, (x, y1, y2) in enumerate(latent_conditioner_dataloader):
-            if i==0 and epoch==0:
-                # Plot the first image
-                plt.imshow(x[0].reshape(img_size, img_size), cmap='gray')
-                plt.show()
-
             if x.device != device:
                 x, y1, y2 = x.to(device, non_blocking=True), y1.to(device, non_blocking=True), y2.to(device, non_blocking=True)
             
@@ -275,6 +270,11 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
                 x = x + noise
             
             latent_conditioner_optimized.zero_grad(set_to_none=True)
+
+            if i==0 and epoch==0:
+                # Plot the first image
+                plt.imshow(x[0].reshape(img_size, img_size), cmap='gray')
+                plt.show()
 
             # Enable multi-scale prediction if available
             if hasattr(latent_conditioner, 'return_dict'):
