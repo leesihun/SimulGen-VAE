@@ -263,7 +263,7 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
                 summary(latent_conditioner, (batch_size, 1, input_features))
                 model_summary_shown = True
             
-            if is_image_data and torch.rand(1, device=x.device) < 0.8:
+            if is_image_data and torch.rand(1, device=x.device) < 0.3:
                 im_size = int(math.sqrt(x.shape[-1]))
                 x_2d = x.reshape(-1, im_size, im_size)
                 x_2d = apply_outline_preserving_augmentations(x_2d, prob=0.8)
@@ -277,7 +277,7 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
                     plt.title('After Augmentation')
                     plt.colorbar()
                 
-            if torch.rand(1, device=x.device) < 0.1 and x.size(0) > 1:
+            if torch.rand(1, device=x.device) < 0.02 and x.size(0) > 1:
                 alpha = 0.2
                 lam = torch.tensor(np.random.beta(alpha, alpha), device=x.device, dtype=x.dtype)
                 batch_size = x.size(0)
@@ -287,7 +287,7 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
                 y1 = lam * y1 + (1 - lam) * y1[index, :]
                 y2 = lam * y2 + (1 - lam) * y2[index, :]
             
-            if torch.rand(1, device=x.device) < 0.1:
+            if torch.rand(1, device=x.device) < 0.05:
                 noise = torch.randn_like(x) * 0.01
                 x = x + noise
             
