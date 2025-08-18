@@ -109,12 +109,18 @@ class LatentConditionerImg(nn.Module):
             )
             self.multi_scale_heads.append(ms_head)
             
+            # Add feature projection layer for multi-scale fusion
+            if i < len(latent_conditioner_filter) - 1:  # Skip for last layer
+                projection = add_sn(nn.Linear(out_channels, latent_conditioner_filter[-1] // 2))
+                self.feature_projections.append(projection)
+            
             in_channels = out_channels
         
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
 
-        # Aggregate multi-scale features
-        total_features = latent_conditioner_filter[-1] + sum(latent_conditioner_filter[:-1]) // 4
+        # Aggregate multi-scale features  
+        # Account for new projection dimensions
+        total_features = latent_conditioner_filter[-1] + (latent_conditioner_filter[-1] // 2) * (len(latent_conditioner_filter) - 1)
         shared_dim = latent_conditioner_filter[-1]
         encoder_dim = latent_dim_end
         
@@ -137,11 +143,17 @@ class LatentConditionerImg(nn.Module):
         )
         
         self.latent_head = nn.Sequential(
-            add_sn(nn.Linear(encoder_dim, latent_dim_end)),
+            add_sn(nn.Linear(encoder_dim, latent_dim_end // 2)),
+            nn.SiLU(inplace=True),
+            nn.Dropout(dropout_rate * 0.5),
+            add_sn(nn.Linear(latent_dim_end // 2, latent_dim_end)),
             nn.Tanh()
         )
         self.xs_head = nn.Sequential(
-            add_sn(nn.Linear(encoder_dim, latent_dim * size2)),
+            add_sn(nn.Linear(encoder_dim, (latent_dim * size2) // 2)),
+            nn.SiLU(inplace=True), 
+            nn.Dropout(dropout_rate * 0.5),
+            add_sn(nn.Linear((latent_dim * size2) // 2, latent_dim * size2)),
             nn.Tanh()
         )
         
@@ -159,7 +171,11 @@ class LatentConditionerImg(nn.Module):
                 nn.init.constant_(m.bias, 0.0)
                 
             elif isinstance(m, nn.Linear):
-                nn.init.xavier_normal_(m.weight, gain=1)
+                if 'head' in name:
+                    # Smaller initialization for output heads to prevent saturation
+                    nn.init.xavier_normal_(m.weight, gain=0.1)
+                else:
+                    nn.init.xavier_normal_(m.weight, gain=1)
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
     
@@ -205,12 +221,11 @@ class LatentConditionerImg(nn.Module):
             multi_scale_predictions.append(scale_pred)
         
         # Aggregate all multi-scale features
-        # Use adaptive pooling to preserve more information
+        # Use pre-defined projection layers
         aggregated_features = [multi_scale_features[-1]]  # Full resolution features
-        target_dim = multi_scale_features[-1].shape[1] // 2
-        for feat in multi_scale_features[:-1]:
-            # Use learned projection instead of simple truncation
-            projected = nn.Linear(feat.shape[1], target_dim, device=feat.device, dtype=feat.dtype)(feat)
+        for i, feat in enumerate(multi_scale_features[:-1]):
+            # Use pre-defined projection layers
+            projected = self.feature_projections[i](feat)
             aggregated_features.append(projected)
         
         fused_features = torch.cat(aggregated_features, dim=1)
