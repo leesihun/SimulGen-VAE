@@ -21,7 +21,7 @@ class SqueezeExcitation(nn.Module):
             add_sn(nn.Linear(channels, channels // reduction, bias=False)),
             nn.SiLU(inplace=True),
             add_sn(nn.Linear(channels // reduction, channels, bias=False)),
-            # nn.Sigmoid()
+            nn.Sigmoid()
         )
 
     def forward(self, x):
@@ -88,8 +88,6 @@ class LatentConditionerImg(nn.Module):
         self.silu = nn.SiLU(inplace=True)
         
         self.layers = nn.ModuleList()
-        self.feature_projections = nn.ModuleList()
-        self.multi_scale_heads = nn.ModuleList()
         in_channels = latent_conditioner_filter[0]
         
         for i, out_channels in enumerate(latent_conditioner_filter):
@@ -97,38 +95,14 @@ class LatentConditionerImg(nn.Module):
             stride = 2 if i % 2 == 0 else 1
             layer = self._make_layer(in_channels, out_channels, 1, stride, True, dropout_rate)
             self.layers.append(layer)
-            
-            # Multi-scale feature heads for intermediate supervision
-            ms_head = nn.Sequential(
-                nn.AdaptiveAvgPool2d((1, 1)),
-                nn.Flatten(),
-                add_sn(nn.Linear(out_channels, latent_dim_end // 2)),
-                nn.SiLU(inplace=True),
-                nn.Dropout(dropout_rate),
-                add_sn(nn.Linear(latent_dim_end // 2, latent_dim_end))
-            )
-            self.multi_scale_heads.append(ms_head)
-            
-            # Add feature projection layer for multi-scale fusion
-            if i < len(latent_conditioner_filter) - 1:  # Skip for last layer
-                projection = add_sn(nn.Linear(out_channels, latent_conditioner_filter[-1] // 2))
-                self.feature_projections.append(projection)
-            
             in_channels = out_channels
         
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
 
-        # Aggregate multi-scale features  
-        # Account for new projection dimensions
-        total_features = latent_conditioner_filter[-1] + (latent_conditioner_filter[-1] // 2) * (len(latent_conditioner_filter) - 1)
+        # Single-scale features
+        final_features = latent_conditioner_filter[-1]
         shared_dim = latent_conditioner_filter[-1]
         encoder_dim = latent_dim_end
-        
-        self.feature_fusion = nn.Sequential(
-            add_sn(nn.Linear(total_features, shared_dim)),
-            nn.SiLU(inplace=True),
-            nn.Dropout(dropout_rate),
-        )
         
         self.latent_encoder = nn.Sequential(
             add_sn(nn.Linear(shared_dim, encoder_dim)),
@@ -146,15 +120,17 @@ class LatentConditionerImg(nn.Module):
             add_sn(nn.Linear(encoder_dim, latent_dim_end // 2)),
             nn.SiLU(inplace=True),
             nn.Dropout(dropout_rate),
-            add_sn(nn.Linear(latent_dim_end // 2, latent_dim_end))
+            add_sn(nn.Linear(latent_dim_end // 2, latent_dim_end)),
+            nn.Tanh()
         )
         self.xs_head = nn.Sequential(
             add_sn(nn.Linear(encoder_dim, (latent_dim * size2) // 2)),
             nn.SiLU(inplace=True), 
             nn.Dropout(dropout_rate),
-            add_sn(nn.Linear((latent_dim * size2) // 2, latent_dim * size2))
+            add_sn(nn.Linear((latent_dim * size2) // 2, latent_dim * size2)),
+            nn.Tanh()   
         )
-        
+
         self._initialize_weights()
     
     def _initialize_weights(self):
@@ -203,34 +179,15 @@ class LatentConditionerImg(nn.Module):
         x = self.gn1(x)
         x = self.silu(x)
         
-        # Multi-scale feature extraction
-        multi_scale_features = []
-        multi_scale_predictions = []
-        
-        for i, layer in enumerate(self.layers):
+        # Simple feature extraction
+        for layer in self.layers:
             x = layer(x)
-            
-            # Extract features at this scale
-            scale_features = self.avgpool(x).flatten(1)
-            multi_scale_features.append(scale_features)
-            
-            # Multi-scale prediction for intermediate supervision
-            scale_pred = self.multi_scale_heads[i](x)
-            multi_scale_predictions.append(scale_pred)
         
-        # Aggregate all multi-scale features
-        # Use pre-defined projection layers
-        aggregated_features = [multi_scale_features[-1]]  # Full resolution features
-        for i, feat in enumerate(multi_scale_features[:-1]):
-            # Use pre-defined projection layers
-            projected = self.feature_projections[i](feat)
-            aggregated_features.append(projected)
+        # Extract final features
+        final_features = self.avgpool(x).flatten(1)
         
-        fused_features = torch.cat(aggregated_features, dim=1)
-        fused_features = self.feature_fusion(fused_features)
-        
-        latent_encoded = self.latent_encoder(fused_features)
-        xs_encoded = self.xs_encoder(fused_features)
+        latent_encoded = self.latent_encoder(final_features)
+        xs_encoded = self.xs_encoder(final_features)
         
         latent_main = self.latent_head(latent_encoded)
         xs_main = self.xs_head(xs_encoded)
@@ -239,8 +196,7 @@ class LatentConditionerImg(nn.Module):
         if self.return_dict:
             return {
                 'latent_main': latent_main,
-                'xs_main': xs_main,
-                'multi_scale_predictions': multi_scale_predictions
+                'xs_main': xs_main
             }
         
         return latent_main, xs_main
