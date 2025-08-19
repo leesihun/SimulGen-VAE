@@ -36,9 +36,9 @@ class ResidualBlock(nn.Module):
     def __init__(self, in_channels, out_channels, stride=1, downsample=None, use_attention=True, drop_rate=0.2):
         super(ResidualBlock, self).__init__()
         
-        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=7, stride=stride, padding=3, bias=False)
+        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1, bias=False)
         self.gn1 = nn.GroupNorm(get_valid_groups(out_channels), out_channels)
-        self.conv2 = add_sn(nn.Conv2d(out_channels, out_channels, kernel_size=7, stride=1, padding=3, bias=False))
+        self.conv2 = add_sn(nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False))
         self.gn2 = nn.GroupNorm(get_valid_groups(out_channels), out_channels)
         
         self.downsample = downsample
@@ -136,6 +136,7 @@ class LatentConditionerImg(nn.Module):
     def _initialize_weights(self):
         for name, m in self.named_modules():
             if isinstance(m, nn.Conv2d):
+                # He initialization for SiLU activation
                 nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
@@ -146,10 +147,11 @@ class LatentConditionerImg(nn.Module):
                 
             elif isinstance(m, nn.Linear):
                 if 'head' in name:
-                    # Normal initialization for linear output heads (no activation)
-                    nn.init.xavier_normal_(m.weight, gain=1)
+                    # Smaller initialization for output heads with Tanh activation
+                    nn.init.xavier_uniform_(m.weight, gain=0.5)
                 else:
-                    nn.init.xavier_normal_(m.weight, gain=1)
+                    # He initialization for SiLU activation in intermediate layers
+                    nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
     
