@@ -36,7 +36,7 @@ class ResidualBlock(nn.Module):
     def __init__(self, in_channels, out_channels, stride=1, downsample=None, use_attention=True, drop_rate=0.2):
         super(ResidualBlock, self).__init__()
         
-        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1, bias=False)
+        self.conv1 = add_sn(nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1, bias=False))
         self.gn1 = nn.GroupNorm(get_valid_groups(out_channels), out_channels)
         self.conv2 = add_sn(nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False))
         self.gn2 = nn.GroupNorm(get_valid_groups(out_channels), out_channels)
@@ -104,30 +104,30 @@ class LatentConditionerImg(nn.Module):
         shared_dim = latent_conditioner_filter[-1]
         encoder_dim = latent_dim_end
         
-        self.latent_encoder = nn.Sequential(
-            add_sn(nn.Linear(shared_dim, encoder_dim)),
-            nn.SiLU(inplace=True),
-            #nn.Dropout(dropout_rate),
-        )
+        # self.latent_encoder = nn.Sequential(
+        #     add_sn(nn.Linear(shared_dim, encoder_dim)),
+        #     nn.SiLU(inplace=True),
+        #     #nn.Dropout(dropout_rate),
+        # )
         
-        self.xs_encoder = nn.Sequential(
-            add_sn(nn.Linear(shared_dim, encoder_dim)),
-            nn.SiLU(inplace=True),
-            #nn.Dropout(dropout_rate),
-        )
+        # self.xs_encoder = nn.Sequential(
+        #     add_sn(nn.Linear(shared_dim, encoder_dim)),
+        #     nn.SiLU(inplace=True),
+        #     #nn.Dropout(dropout_rate),
+        # )
         
         self.latent_head = nn.Sequential(
-            add_sn(nn.Linear(encoder_dim, latent_dim_end // 2)),
+            add_sn(nn.Linear(shared_dim, shared_dim // 2)),
             nn.SiLU(inplace=True),
             #nn.Dropout(dropout_rate),
-            add_sn(nn.Linear(latent_dim_end // 2, latent_dim_end)),
+            add_sn(nn.Linear(shared_dim // 2, latent_dim_end)),
             nn.Tanh()
         )
         self.xs_head = nn.Sequential(
-            add_sn(nn.Linear(encoder_dim, (latent_dim * size2) // 2)),
+            add_sn(nn.Linear(shared_dim, (shared_dim) // 2)),
             nn.SiLU(inplace=True), 
             #nn.Dropout(dropout_rate),
-            add_sn(nn.Linear((latent_dim * size2) // 2, latent_dim * size2)),
+            add_sn(nn.Linear((shared_dim) // 2, latent_dim * size2)),
             nn.Tanh()   
         )
 
@@ -146,12 +146,8 @@ class LatentConditionerImg(nn.Module):
                 nn.init.constant_(m.bias, 0.0)
                 
             elif isinstance(m, nn.Linear):
-                if 'head' in name:
-                    # Very conservative initialization for output heads with Tanh activation and 1000x loss scaling
-                    nn.init.xavier_uniform_(m.weight, gain=0.1)
-                else:
-                    # He initialization for SiLU activation in intermediate layers
-                    nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                # He initialization for SiLU activation in intermediate layers
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
     
@@ -188,11 +184,11 @@ class LatentConditionerImg(nn.Module):
         # Extract final features
         final_features = self.avgpool(x).flatten(1)
         
-        latent_encoded = self.latent_encoder(final_features)
-        xs_encoded = self.xs_encoder(final_features)
+        # latent_encoded = self.latent_encoder(final_features)
+        # xs_encoded = self.xs_encoder(final_features)
         
-        latent_main = self.latent_head(latent_encoded)
-        xs_main = self.xs_head(xs_encoded)
+        latent_main = self.latent_head(final_features)
+        xs_main = self.xs_head(final_features)
         xs_main = xs_main.unflatten(1, (self.size2, self.latent_dim))
         
         if self.return_dict:
