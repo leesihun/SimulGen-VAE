@@ -107,26 +107,26 @@ class LatentConditionerImg(nn.Module):
         self.latent_encoder = nn.Sequential(
             add_sn(nn.Linear(shared_dim, encoder_dim)),
             nn.SiLU(inplace=True),
-            nn.Dropout(dropout_rate),
+            #nn.Dropout(dropout_rate),
         )
         
         self.xs_encoder = nn.Sequential(
             add_sn(nn.Linear(shared_dim, encoder_dim)),
             nn.SiLU(inplace=True),
-            nn.Dropout(dropout_rate),
+            #nn.Dropout(dropout_rate),
         )
         
         self.latent_head = nn.Sequential(
             add_sn(nn.Linear(encoder_dim, latent_dim_end // 2)),
             nn.SiLU(inplace=True),
-            nn.Dropout(dropout_rate),
+            #nn.Dropout(dropout_rate),
             add_sn(nn.Linear(latent_dim_end // 2, latent_dim_end)),
             nn.Tanh()
         )
         self.xs_head = nn.Sequential(
             add_sn(nn.Linear(encoder_dim, (latent_dim * size2) // 2)),
             nn.SiLU(inplace=True), 
-            nn.Dropout(dropout_rate),
+            #nn.Dropout(dropout_rate),
             add_sn(nn.Linear((latent_dim * size2) // 2, latent_dim * size2)),
             nn.Tanh()   
         )

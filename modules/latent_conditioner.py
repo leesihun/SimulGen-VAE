@@ -157,7 +157,7 @@ def safe_initialize_weights_He(m):
         if m.bias is not None:
             nn.init.constant_(m.bias.data, 0)
     elif isinstance(m, nn.Linear):
-        nn.init.kaiming_uniform_(m.weight.data)
+        nn.init.kaiming_uniform_(m.weight.data, nonlinearity='relu')
         if m.bias is not None:
             nn.init.constant_(m.bias.data, 0)
 
@@ -233,19 +233,19 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
             if x.device != device:
                 x, y1, y2 = x.to(device, non_blocking=True), y1.to(device, non_blocking=True), y2.to(device, non_blocking=True)
             
-            # Show ORIGINAL input before any augmentations (first batch, first epoch only)
-            if i == 0 and epoch == 0:
-                input_features = x.shape[-1]
-                img_size = int(math.sqrt(input_features))
-                print(f"ORIGINAL INPUT - Range: [{x.min():.4f}, {x.max():.4f}]")
+            # # Show ORIGINAL input before any augmentations (first batch, first epoch only)
+            # if i == 0 and epoch == 0:
+            #     input_features = x.shape[-1]
+            #     img_size = int(math.sqrt(input_features))
+            #     print(f"ORIGINAL INPUT - Range: [{x.min():.4f}, {x.max():.4f}]")
                 
-                # Show original image
-                x_cpu = x[0].cpu().numpy()
-                plt.figure(figsize=(12, 4))
-                plt.subplot(1, 3, 1)
-                plt.imshow(x_cpu.reshape(img_size, img_size), cmap='gray')
-                plt.title('Original Input')
-                plt.colorbar()
+            #     # Show original image
+            #     x_cpu = x[0].cpu().numpy()
+            #     plt.figure(figsize=(12, 4))
+            #     plt.subplot(1, 3, 1)
+            #     plt.imshow(x_cpu.reshape(img_size, img_size), cmap='gray')
+            #     plt.title('Original Input')
+            #     plt.colorbar()
             
             if not model_summary_shown:
                 batch_size = x.shape[0]
@@ -267,64 +267,51 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
                 summary(latent_conditioner, (batch_size, 1, input_features))
                 model_summary_shown = True
             
-            if is_image_data and torch.rand(1, device=x.device) < 0.3:
+            if is_image_data and torch.rand(1, device=x.device) < 0.5:
                 im_size = int(math.sqrt(x.shape[-1]))
                 x_2d = x.reshape(-1, im_size, im_size)
                 x_2d = apply_outline_preserving_augmentations(x_2d, prob=0.8)
                 x = x_2d.reshape(x.shape[0], -1)
                 
                 # Show augmented image
-                if i == 0 and epoch == 0:
-                    x_aug_cpu = x[0].cpu().numpy()
-                    plt.subplot(1, 3, 2)
-                    plt.imshow(x_aug_cpu.reshape(img_size, img_size), cmap='gray')
-                    plt.title('After Augmentation')
-                    plt.colorbar()
+                # if i == 0 and epoch == 0:
+                #     x_aug_cpu = x[0].cpu().numpy()
+                #     plt.subplot(1, 3, 2)
+                #     plt.imshow(x_aug_cpu.reshape(img_size, img_size), cmap='gray')
+                #     plt.title('After Augmentation')
+                #     plt.colorbar()
                 
-            # if torch.rand(1, device=x.device) < 0.02 and x.size(0) > 1:
-            #     alpha = 0.2
-            #     lam = torch.tensor(np.random.beta(alpha, alpha), device=x.device, dtype=x.dtype)
-            #     batch_size = x.size(0)
-            #     index = torch.randperm(batch_size, device=x.device)
+            if torch.rand(1, device=x.device) < 0.02 and x.size(0) > 1:
+                alpha = 0.2
+                lam = torch.tensor(np.random.beta(alpha, alpha), device=x.device, dtype=x.dtype)
+                batch_size = x.size(0)
+                index = torch.randperm(batch_size, device=x.device)
                 
-            #     x = lam * x + (1 - lam) * x[index, :]
-            #     y1 = lam * y1 + (1 - lam) * y1[index, :]
-            #     y2 = lam * y2 + (1 - lam) * y2[index, :]
+                x = lam * x + (1 - lam) * x[index, :]
+                y1 = lam * y1 + (1 - lam) * y1[index, :]
+                y2 = lam * y2 + (1 - lam) * y2[index, :]
             
-            # if torch.rand(1, device=x.device) < 0.05:
-            #     noise = torch.randn_like(x) * 0.01
-            #     x = x + noise
+            if torch.rand(1, device=x.device) < 0.05:
+                noise = torch.randn_like(x) * 0.01
+                x = x + noise
             
-            # Show final processed image (after mixup + noise)
-            if i == 0 and epoch == 0:
-                x_final_cpu = x[0].cpu().numpy()
-                plt.subplot(1, 3, 3)
-                plt.imshow(x_final_cpu.reshape(img_size, img_size), cmap='gray')
-                plt.title('After Mixup + Noise')
-                plt.colorbar()
+            # # Show final processed image (after mixup + noise)
+            # if i == 0 and epoch == 0:
+            #     x_final_cpu = x[0].cpu().numpy()
+            #     plt.subplot(1, 3, 3)
+            #     plt.imshow(x_final_cpu.reshape(img_size, img_size), cmap='gray')
+            #     plt.title('After Mixup + Noise')
+            #     plt.colorbar()
                 
-                print(f"FINAL INPUT - Range: [{x.min():.4f}, {x.max():.4f}]")
-                plt.tight_layout()
-                plt.show()
+            #     print(f"FINAL INPUT - Range: [{x.min():.4f}, {x.max():.4f}]")
+            #     plt.tight_layout()
+            #     plt.show()
             
             latent_conditioner_optimized.zero_grad(set_to_none=True)
 
-            # Enable multi-scale prediction if available
-            if hasattr(latent_conditioner, 'return_dict'):
-                latent_conditioner.return_dict = True
-                output = latent_conditioner(x)
-                if isinstance(output, dict):
-                    y_pred1, y_pred2 = output['latent_main'], output['xs_main']
-                    multi_scale_preds = output.get('multi_scale_predictions', [])
-                else:
-                    y_pred1, y_pred2 = output
-                    multi_scale_preds = []
-                latent_conditioner.return_dict = False
-            else:
-                y_pred1, y_pred2 = latent_conditioner(x)
-                multi_scale_preds = []
+            # forward pass
+            y_pred1, y_pred2 = latent_conditioner(x)
             
-
             label_smooth = 0.0  # Disabled label smoothing for stable targets
             y1_smooth = y1 * (1 - label_smooth) + torch.randn_like(y1) * label_smooth * 0.1
             y2_smooth = y2 * (1 - label_smooth) + torch.randn_like(y2) * label_smooth * 0.1
@@ -333,18 +320,8 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
             A = nn.MSELoss()(y_pred1, y1_smooth)
             B = nn.MSELoss()(y_pred2, y2_smooth)
             
-            # Multi-scale loss for intermediate supervision
-            ms_loss = 0.0
-            if multi_scale_preds:
-                ms_weight = 0.3  # Weight for multi-scale loss
-                for i, ms_pred in enumerate(multi_scale_preds):
-                    # Progressive weighting: earlier layers get less weight
-                    scale_weight = (i + 1) / len(multi_scale_preds) * ms_weight
-                    ms_loss += scale_weight * nn.MSELoss()(ms_pred, y1_smooth)
+            loss = A*10 + B 
 
-            loss = A*1000 + B + ms_loss 
-
-            
             epoch_loss += loss.item()
             epoch_loss_y1 += A.item()
             epoch_loss_y2 += B.item()
@@ -353,7 +330,7 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
             loss.backward()
             
             # Check gradient norms before clipping
-            total_grad_norm = torch.nn.utils.clip_grad_norm_(latent_conditioner.parameters(), max_norm=1.0)
+            total_grad_norm = torch.nn.utils.clip_grad_norm_(latent_conditioner.parameters(), max_norm=10.0)
             
             # Monitor gradient health
             if epoch % 100 == 0 and i == 0:  # Log every 100 epochs, first batch
@@ -376,7 +353,7 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
         val_loss_y2 = 0
         val_batches = 0
         
-        if epoch % 1 == 0:
+        if epoch % 10 == 0:
             with torch.no_grad():
                 for i, (x_val, y1_val, y2_val) in enumerate(latent_conditioner_validation_dataloader):
                         x_val, y1_val, y2_val = x_val.to(device), y1_val.to(device), y2_val.to(device)
@@ -386,7 +363,7 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
                         A_val = nn.MSELoss()(y_pred1_val, y1_val)
                         B_val = nn.MSELoss()(y_pred2_val, y2_val)
                         
-                        val_loss += (A_val*9 + B_val).item()
+                        val_loss += (A_val*10 + B_val).item()
                         val_loss_y1 += A_val.item()
                         val_loss_y2 += B_val.item()
                         val_batches += 1
