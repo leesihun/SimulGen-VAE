@@ -47,5 +47,5 @@ use_enhanced_loss	1	# 0=disabled, 1=enabled - use enhanced loss functions
 enhancement_preset	balanced	# balanced, robust, semantic, fast, small_dataset
 perceptual_weight	0.1	# weight for perceptual loss component
 consistency_weight	0.1	# weight for consistency regularization
-mae_weight	0.1	# weight for MAE in multi-scale loss
-huber_weight	0.05	# weight for Huber in multi-scale loss
+mae_weight	4.0	# weight for MAE in multi-scale loss
+huber_weight	5.0 # weight for Huber in multi-scale loss

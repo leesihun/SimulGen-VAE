@@ -33,7 +33,7 @@ class MultiScaleRobustLoss(nn.Module):
         hier_weight (float): Weight multiplier for hierarchical latent (default: 1.0)
     """
     
-    def __init__(self, mse_weight=1.0, mae_weight=0.1, huber_weight=0.05, 
+    def __init__(self, mse_weight=0.4, mae_weight=0.1, huber_weight=0.5, 
                  huber_beta=0.1, main_weight=10.0, hier_weight=1.0):
         super().__init__()
         self.mse_weight = mse_weight
