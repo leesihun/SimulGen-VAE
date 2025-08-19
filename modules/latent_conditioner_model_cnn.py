@@ -147,8 +147,8 @@ class LatentConditionerImg(nn.Module):
                 
             elif isinstance(m, nn.Linear):
                 if 'head' in name:
-                    # Smaller initialization for output heads with Tanh activation
-                    nn.init.xavier_uniform_(m.weight, gain=0.5)
+                    # Very conservative initialization for output heads with Tanh activation and 1000x loss scaling
+                    nn.init.xavier_uniform_(m.weight, gain=0.1)
                 else:
                     # He initialization for SiLU activation in intermediate layers
                     nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')

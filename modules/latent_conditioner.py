@@ -353,7 +353,7 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
             loss.backward()
             
             # Check gradient norms before clipping
-            total_grad_norm = torch.nn.utils.clip_grad_norm_(latent_conditioner.parameters(), max_norm=5.0)
+            total_grad_norm = torch.nn.utils.clip_grad_norm_(latent_conditioner.parameters(), max_norm=1.0)
             
             # Monitor gradient health
             if epoch % 100 == 0 and i == 0:  # Log every 100 epochs, first batch
