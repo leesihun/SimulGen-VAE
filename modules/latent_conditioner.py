@@ -281,19 +281,19 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
                     plt.title('After Augmentation')
                     plt.colorbar()
                 
-            if torch.rand(1, device=x.device) < 0.02 and x.size(0) > 1:
-                alpha = 0.2
-                lam = torch.tensor(np.random.beta(alpha, alpha), device=x.device, dtype=x.dtype)
-                batch_size = x.size(0)
-                index = torch.randperm(batch_size, device=x.device)
+            # if torch.rand(1, device=x.device) < 0.02 and x.size(0) > 1:
+            #     alpha = 0.2
+            #     lam = torch.tensor(np.random.beta(alpha, alpha), device=x.device, dtype=x.dtype)
+            #     batch_size = x.size(0)
+            #     index = torch.randperm(batch_size, device=x.device)
                 
-                x = lam * x + (1 - lam) * x[index, :]
-                y1 = lam * y1 + (1 - lam) * y1[index, :]
-                y2 = lam * y2 + (1 - lam) * y2[index, :]
+            #     x = lam * x + (1 - lam) * x[index, :]
+            #     y1 = lam * y1 + (1 - lam) * y1[index, :]
+            #     y2 = lam * y2 + (1 - lam) * y2[index, :]
             
-            if torch.rand(1, device=x.device) < 0.05:
-                noise = torch.randn_like(x) * 0.01
-                x = x + noise
+            # if torch.rand(1, device=x.device) < 0.05:
+            #     noise = torch.randn_like(x) * 0.01
+            #     x = x + noise
             
             # Show final processed image (after mixup + noise)
             if i == 0 and epoch == 0:
@@ -342,7 +342,7 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
                     scale_weight = (i + 1) / len(multi_scale_preds) * ms_weight
                     ms_loss += scale_weight * nn.MSELoss()(ms_pred, y1_smooth)
 
-            loss = A*9 + B + ms_loss 
+            loss = A*1000 + B + ms_loss 
 
             
             epoch_loss += loss.item()

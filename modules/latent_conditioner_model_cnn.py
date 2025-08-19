@@ -21,7 +21,7 @@ class SqueezeExcitation(nn.Module):
             add_sn(nn.Linear(channels, channels // reduction, bias=False)),
             nn.SiLU(inplace=True),
             add_sn(nn.Linear(channels // reduction, channels, bias=False)),
-            nn.Sigmoid()
+            # nn.Sigmoid()
         )
 
     def forward(self, x):
@@ -36,9 +36,9 @@ class ResidualBlock(nn.Module):
     def __init__(self, in_channels, out_channels, stride=1, downsample=None, use_attention=True, drop_rate=0.2):
         super(ResidualBlock, self).__init__()
         
-        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1, bias=False)
+        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=7, stride=stride, padding=3, bias=False)
         self.gn1 = nn.GroupNorm(get_valid_groups(out_channels), out_channels)
-        self.conv2 = add_sn(nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False))
+        self.conv2 = add_sn(nn.Conv2d(out_channels, out_channels, kernel_size=7, stride=1, padding=3, bias=False))
         self.gn2 = nn.GroupNorm(get_valid_groups(out_channels), out_channels)
         
         self.downsample = downsample
@@ -104,9 +104,8 @@ class LatentConditionerImg(nn.Module):
                 nn.Flatten(),
                 add_sn(nn.Linear(out_channels, latent_dim_end // 2)),
                 nn.SiLU(inplace=True),
-                nn.Dropout(dropout_rate * 0.5),
-                add_sn(nn.Linear(latent_dim_end // 2, latent_dim_end)),
-                nn.Tanh()
+                nn.Dropout(dropout_rate),
+                add_sn(nn.Linear(latent_dim_end // 2, latent_dim_end))
             )
             self.multi_scale_heads.append(ms_head)
             
@@ -146,13 +145,13 @@ class LatentConditionerImg(nn.Module):
         self.latent_head = nn.Sequential(
             add_sn(nn.Linear(encoder_dim, latent_dim_end // 2)),
             nn.SiLU(inplace=True),
-            nn.Dropout(dropout_rate * 0.5),
+            nn.Dropout(dropout_rate),
             add_sn(nn.Linear(latent_dim_end // 2, latent_dim_end))
         )
         self.xs_head = nn.Sequential(
             add_sn(nn.Linear(encoder_dim, (latent_dim * size2) // 2)),
             nn.SiLU(inplace=True), 
-            nn.Dropout(dropout_rate * 0.5),
+            nn.Dropout(dropout_rate),
             add_sn(nn.Linear((latent_dim * size2) // 2, latent_dim * size2))
         )
         
@@ -172,7 +171,7 @@ class LatentConditionerImg(nn.Module):
             elif isinstance(m, nn.Linear):
                 if 'head' in name:
                     # Normal initialization for linear output heads (no activation)
-                    nn.init.xavier_normal_(m.weight, gain=1.0)
+                    nn.init.xavier_normal_(m.weight, gain=1)
                 else:
                     nn.init.xavier_normal_(m.weight, gain=1)
                 if m.bias is not None:
@@ -196,9 +195,9 @@ class LatentConditionerImg(nn.Module):
     def forward(self, x):
         x = x.reshape([-1, 1, int(math.sqrt(x.shape[-1])), int(math.sqrt(x.shape[-1]))])
         
-        if self.training:
-            noise = torch.randn_like(x) * 0.02
-            x = x + noise
+        # if self.training:
+        #     noise = torch.randn_like(x) * 0.02
+        #     x = x + noise
         
         x = self.conv1(x)
         x = self.gn1(x)
