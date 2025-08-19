@@ -360,7 +360,7 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
                 print(f"DEBUG: Gradient norm: {total_grad_norm:.4f}, Loss: {loss.item():.4E}")
                 if total_grad_norm > 10.0:
                     print(f"WARNING: Large gradient norm detected: {total_grad_norm:.2f}")
-                elif total_grad_norm < 1e-6:
+                elif total_grad_norm < 1e-4:
                     print(f"WARNING: Very small gradient norm: {total_grad_norm:.2E}")
             
             latent_conditioner_optimized.step()
