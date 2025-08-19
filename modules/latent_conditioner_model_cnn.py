@@ -171,8 +171,8 @@ class LatentConditionerImg(nn.Module):
                 
             elif isinstance(m, nn.Linear):
                 if 'head' in name:
-                    # Smaller initialization for output heads to prevent saturation
-                    nn.init.xavier_normal_(m.weight, gain=0.1)
+                    # Normal initialization for linear output heads (no activation)
+                    nn.init.xavier_normal_(m.weight, gain=1.0)
                 else:
                     nn.init.xavier_normal_(m.weight, gain=1)
                 if m.bias is not None:

@@ -260,6 +260,10 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
                 print(f"DEBUG: Sample image - mean: {sample_img.mean():.4f}, std: {sample_img.std():.4f}")
                 print(f"DEBUG: Non-zero pixels: {(sample_img > 0.01).sum()}/{sample_img.numel()}")
                 
+                # Check target value ranges
+                print(f"DEBUG: Target y1 shape: {y1.shape}, range: [{y1.min():.4f}, {y1.max():.4f}], mean: {y1.mean():.4f}")
+                print(f"DEBUG: Target y2 shape: {y2.shape}, range: [{y2.min():.4f}, {y2.max():.4f}], mean: {y2.mean():.4f}")
+                
                 summary(latent_conditioner, (batch_size, 1, input_features))
                 model_summary_shown = True
             
@@ -321,7 +325,7 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
                 multi_scale_preds = []
             
 
-            label_smooth = 0.1
+            label_smooth = 0.0  # Disabled label smoothing for stable targets
             y1_smooth = y1 * (1 - label_smooth) + torch.randn_like(y1) * label_smooth * 0.1
             y2_smooth = y2 * (1 - label_smooth) + torch.randn_like(y2) * label_smooth * 0.1
             
