@@ -41,3 +41,11 @@ param_data_type .png
 use_pca	0	# 0=off, 1=on - apply PCA preprocessing to images
 pca_components	0	# number of PCA components to keep, must be < Dim1
 pca_patch_size	0	# 0=full image PCA, >0=patch-based PCA with specified patch size
+'
+%Enhanced Loss Configuration
+use_enhanced_loss	1	# 0=disabled, 1=enabled - use enhanced loss functions
+enhancement_preset	balanced	# balanced, robust, semantic, fast, small_dataset
+perceptual_weight	0.1	# weight for perceptual loss component
+consistency_weight	0.1	# weight for consistency regularization
+mae_weight	0.1	# weight for MAE in multi-scale loss
+huber_weight	0.05	# weight for Huber in multi-scale loss

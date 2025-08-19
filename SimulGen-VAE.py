@@ -94,6 +94,7 @@ def main():
         read_latent_conditioner_dataset, read_latent_conditioner_dataset_img_pca,
         safe_cuda_initialization
     )
+    from modules.enhanced_latent_conditioner_training import train_latent_conditioner_with_enhancements
     from modules.reconstruction_evaluator import ReconstructionEvaluator
     
     # Utilities and data handling
@@ -544,11 +545,37 @@ def main():
 
 
     print("Starting LatentConditioner training...")
-    LatentConditioner_loss = train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_dataloader, latent_conditioner_validation_dataloader, latent_conditioner, latent_conditioner_lr, weight_decay=latent_conditioner_weight_decay, is_image_data=image, image_size=256)
+    
+    # Use enhanced training if enabled for CNN models, otherwise use original training
+    if latent_conditioner_data_type == "image" and config.get('use_enhanced_loss', 0):
+        print(f"Using enhanced CNN latent conditioner training with preset: {config.get('enhancement_preset', 'balanced')}")
+        LatentConditioner_loss = train_latent_conditioner_with_enhancements(
+            latent_conditioner_epoch=latent_conditioner_epoch,
+            latent_conditioner_dataloader=latent_conditioner_dataloader,
+            latent_conditioner_validation_dataloader=latent_conditioner_validation_dataloader,
+            latent_conditioner=latent_conditioner,
+            latent_conditioner_lr=latent_conditioner_lr,
+            weight_decay=latent_conditioner_weight_decay,
+            is_image_data=image,
+            image_size=256,
+            enhancement_preset=config.get('enhancement_preset', 'balanced'),
+            use_enhanced_loss=True
+        )
+    else:
+        # Use original training (for non-CNN models or when enhanced loss is disabled)
+        if latent_conditioner_data_type == "image" and not config.get('use_enhanced_loss', 0):
+            print("Enhanced loss disabled - using original CNN training")
+        else:
+            print(f"Using original training for {latent_conditioner_data_type} model")
+        
+        LatentConditioner_loss = train_latent_conditioner(
+            latent_conditioner_epoch, latent_conditioner_dataloader, 
+            latent_conditioner_validation_dataloader, latent_conditioner, 
+            latent_conditioner_lr, weight_decay=latent_conditioner_weight_decay, 
+            is_image_data=image, image_size=256
+        )
+    
     print("LatentConditioner training completed successfully")
-
-    latent_x = np.linspace(0, latent_dim_end-1, latent_dim_end)
-    latent_hierarchical_x = np.linspace(0, latent_dim-1, latent_dim)
 
     eval_device = "cuda:0" if torch.cuda.is_available() else "cpu"
     latent_conditioner = latent_conditioner.to(eval_device)

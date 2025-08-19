@@ -336,6 +336,14 @@ def parse_training_parameters(params):
     config['pca_components'] = int(params['pca_components'])
     config['pca_patch_size'] = int(params['pca_patch_size'])
     
+    # Enhanced loss parameters (with defaults for backward compatibility)
+    config['use_enhanced_loss'] = int(params.get('use_enhanced_loss', 0))
+    config['enhancement_preset'] = params.get('enhancement_preset', 'balanced')
+    config['perceptual_weight'] = float(params.get('perceptual_weight', 0.1))
+    config['consistency_weight'] = float(params.get('consistency_weight', 0.1))
+    config['mae_weight'] = float(params.get('mae_weight', 0.1))
+    config['huber_weight'] = float(params.get('huber_weight', 0.05))
+    
     return config
 
 
