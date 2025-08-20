@@ -284,11 +284,19 @@ def parse_condition_file(filepath):
 def parse_training_parameters(params):
     """Parse raw parameter dictionary into structured training configuration.
     
+    Extracts and converts all training parameters from the condition.txt file,
+    including VAE parameters, latent conditioner settings, enhanced loss
+    configuration, and end-to-end training options.
+    
     Args:
         params (dict): Raw parameters from condition.txt file
         
     Returns:
-        dict: Structured configuration dictionary with typed values
+        dict: Structured configuration dictionary with typed values including:
+            - Basic VAE parameters (epochs, batch_size, learning rates, etc.)
+            - Latent conditioner configuration (architecture, dropout, etc.)
+            - Enhanced loss settings (multiscale, perceptual, consistency)
+            - End-to-end training options (use_e2e_training, loss functions, etc.)
     """
     config = {}
     
@@ -331,28 +339,15 @@ def parse_training_parameters(params):
     config['latent_conditioner_dropout_rate'] = float(params.get('latent_conditioner_dropout_rate', 0.3))
     config['use_spatial_attention'] = int(params.get('use_spatial_attention', 1))
     
-    # PCA parameters
-    config['use_pca'] = int(params['use_pca'])
-    config['pca_components'] = int(params['pca_components'])
-    config['pca_patch_size'] = int(params['pca_patch_size'])
-    
-    # Enhanced loss parameters (with defaults for backward compatibility)
-    config['use_enhanced_loss'] = int(params.get('use_enhanced_loss', 0))
-    config['use_multiscale_loss'] = int(params.get('use_multiscale_loss', 1))
-    config['use_perceptual_loss'] = int(params.get('use_perceptual_loss', 1))
-    config['use_consistency_loss'] = int(params.get('use_consistency_loss', 1))
-    config['mse_weight'] = float(params.get('mse_weight', 1.0))
-    config['mae_weight'] = float(params.get('mae_weight', 0.1))
-    config['huber_weight'] = float(params.get('huber_weight', 0.05))
-    config['huber_beta'] = float(params.get('huber_beta', 0.1))
-    config['main_weight'] = float(params.get('main_weight', 10.0))
-    config['hier_weight'] = float(params.get('hier_weight', 1.0))
-    config['perceptual_weight'] = float(params.get('perceptual_weight', 0.1))
-    config['perceptual_feature_layers'] = params.get('perceptual_feature_layers', '16,8')
-    config['perceptual_similarity'] = params.get('perceptual_similarity', 'cosine')
-    config['consistency_weight'] = float(params.get('consistency_weight', 0.1))
-    config['consistency_temperature'] = float(params.get('consistency_temperature', 1.0))
-    config['consistency_detach_original'] = int(params.get('consistency_detach_original', 1))
+    # End-to-End Training Configuration (with defaults for backward compatibility)
+    config['use_e2e_training'] = int(params.get('use_e2e_training', 0))
+    config['e2e_loss_function'] = params.get('e2e_loss_function', 'MSE')
+    config['e2e_vae_model_path'] = params.get('e2e_vae_model_path', 'model_save/SimulGen-VAE')
+    config['use_latent_regularization'] = int(params.get('use_latent_regularization', 0))
+    config['latent_reg_weight'] = float(params.get('latent_reg_weight', 0.1))
+    config['e2e_memory_efficient'] = int(params.get('e2e_memory_efficient', 1))
+    config['e2e_gradient_checkpointing'] = int(params.get('e2e_gradient_checkpointing', 0))
+    config['e2e_batch_reduction_factor'] = float(params.get('e2e_batch_reduction_factor', 0.5))
     
     return config
 

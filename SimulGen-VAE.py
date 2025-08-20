@@ -85,8 +85,7 @@ def main():
     from modules.train import train
     from modules.latent_conditioner import (
         train_latent_conditioner, read_latent_conditioner_dataset_img,
-        read_latent_conditioner_dataset, read_latent_conditioner_dataset_img_pca,
-        safe_cuda_initialization
+        read_latent_conditioner_dataset, safe_cuda_initialization
     )
     from modules.latent_conditioner_e2e import train_latent_conditioner_e2e
     from modules.enhanced_latent_conditioner_training import train_latent_conditioner_with_enhancements
@@ -100,9 +99,6 @@ def main():
     )
     from modules.augmentation import create_augmented_dataloaders
     from modules.plotter import temporal_plotter, dual_view_plotter
-    
-    # Model inspection
-    from torchinfo import summary
 
     from modules.utils import initialize_folder
 
