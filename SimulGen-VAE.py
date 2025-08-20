@@ -535,96 +535,100 @@ def main():
         # CRITICAL: Delete new_x_train to free ~25GB VRAM (biggest memory hog!)
         del new_x_train
         
-        # Debug: Find what's still using VRAM
-        print("=== VRAM DEBUG: Finding memory hogs ===")
-        total_tensors = 0
-        total_memory = 0
+        # COMPREHENSIVE VRAM AUDIT - Find ALL variables using VRAM
+        def comprehensive_vram_audit():
+            print("=== COMPREHENSIVE VRAM AUDIT ===")
+            total_vram = 0
+            vram_objects = []
+            
+            # Check all local variables
+            for name, obj in locals().items():
+                if name.startswith('_'):  # Skip private variables
+                    continue
+                    
+                size_mb = 0
+                details = ""
+                
+                # Direct CUDA tensors
+                if torch.is_tensor(obj) and obj.is_cuda:
+                    size_mb = obj.numel() * obj.element_size() / (1024**2)
+                    details = f"Tensor {obj.shape}, dtype={obj.dtype}"
+                
+                # Models with CUDA parameters
+                elif hasattr(obj, 'parameters') and callable(getattr(obj, 'parameters')):
+                    try:
+                        cuda_params = [p for p in obj.parameters() if p.is_cuda]
+                        if cuda_params:
+                            size_mb = sum(p.numel() * p.element_size() for p in cuda_params) / (1024**2)
+                            details = f"Model with {len(cuda_params)} CUDA parameters"
+                    except:
+                        pass
+                
+                # Datasets (check if they have CUDA data)
+                elif hasattr(obj, '__len__') and hasattr(obj, '__getitem__'):
+                    try:
+                        if hasattr(obj, 'data') and torch.is_tensor(obj.data) and obj.data.is_cuda:
+                            size_mb = obj.data.numel() * obj.data.element_size() / (1024**2)
+                            details = f"Dataset with CUDA data {obj.data.shape}"
+                        elif hasattr(obj, 'tensors'):
+                            cuda_tensors = [t for t in obj.tensors if torch.is_tensor(t) and t.is_cuda]
+                            if cuda_tensors:
+                                size_mb = sum(t.numel() * t.element_size() for t in cuda_tensors) / (1024**2)
+                                details = f"TensorDataset with {len(cuda_tensors)} CUDA tensors"
+                    except:
+                        pass
+                
+                # DataLoaders (check underlying dataset)
+                elif hasattr(obj, 'dataset'):
+                    try:
+                        dataset = obj.dataset
+                        if hasattr(dataset, 'data') and torch.is_tensor(dataset.data) and dataset.data.is_cuda:
+                            size_mb = dataset.data.numel() * dataset.data.element_size() / (1024**2)
+                            details = f"DataLoader->Dataset with CUDA data {dataset.data.shape}"
+                    except:
+                        pass
+                
+                # Lists/tuples containing CUDA tensors
+                elif isinstance(obj, (list, tuple)):
+                    try:
+                        cuda_tensors = [item for item in obj if torch.is_tensor(item) and item.is_cuda]
+                        if cuda_tensors:
+                            size_mb = sum(t.numel() * t.element_size() for t in cuda_tensors) / (1024**2)
+                            details = f"List/tuple with {len(cuda_tensors)} CUDA tensors"
+                    except:
+                        pass
+                
+                # Numpy arrays (shouldn't be on CUDA but check anyway)
+                elif hasattr(obj, 'nbytes') and hasattr(obj, 'dtype'):
+                    try:
+                        if hasattr(obj, '__cuda_array_interface__'):
+                            size_mb = obj.nbytes / (1024**2)
+                            details = f"Numpy array {obj.shape} on CUDA"
+                    except:
+                        pass
+                
+                if size_mb > 1:  # Only show objects > 1MB
+                    vram_objects.append((name, size_mb, details))
+                    total_vram += size_mb
+            
+            # Sort by size descending
+            vram_objects.sort(key=lambda x: x[1], reverse=True)
+            
+            print(f"Found {len(vram_objects)} VRAM-using objects:")
+            for name, size_mb, details in vram_objects:
+                print(f"  {name}: {size_mb:.1f}MB - {details}")
+            
+            print(f"Total found: {total_vram:.1f}MB ({total_vram/1024:.2f}GB)")
+            
+            # Compare with actual VRAM usage
+            if torch.cuda.is_available():
+                actual_used = torch.cuda.memory_allocated() / (1024**2)
+                print(f"Actual VRAM used: {actual_used:.1f}MB ({actual_used/1024:.2f}GB)")
+                print(f"Difference: {actual_used - total_vram:.1f}MB (hidden/fragmented)")
+            
+            print("================================")
         
-        # Check all objects in current scope for CUDA tensors
-        for name, obj in list(locals().items()):
-            if torch.is_tensor(obj) and obj.is_cuda:
-                size_mb = obj.numel() * obj.element_size() / (1024**2)
-                if size_mb > 100:  # Only show tensors > 100MB
-                    print(f"CUDA Tensor '{name}': {size_mb:.1f}MB, shape: {obj.shape}")
-                    total_memory += size_mb
-                    total_tensors += 1
-        
-        # Check objects with CUDA tensors inside (like models, datasets)
-        for name, obj in list(locals().items()):
-            if hasattr(obj, 'parameters') and callable(getattr(obj, 'parameters')):
-                try:
-                    param_memory = sum(p.numel() * p.element_size() for p in obj.parameters() if p.is_cuda) / (1024**2)
-                    if param_memory > 50:
-                        print(f"Model '{name}': {param_memory:.1f}MB parameters on CUDA")
-                        total_memory += param_memory
-                except:
-                    pass
-        
-        print(f"Found {total_tensors} large CUDA tensors using {total_memory:.1f}MB total")
-        print("========================================")
-        
-        # ULTIMATE FIX: Force memory defragmentation by switching to CPU and back
-        print("Applying memory defragmentation fix...")
-        
-        # Move latent_conditioner to CPU temporarily
-        if 'latent_conditioner' in locals():
-            latent_conditioner = latent_conditioner.cpu()
-            print("Moved latent_conditioner to CPU")
-        
-        # Force PyTorch to release all GPU memory
-        torch.cuda.empty_cache()
-        torch.cuda.synchronize()
-        
-        # Set memory fraction to force reallocation
-        torch.cuda.set_per_process_memory_fraction(0.1)  # Limit to 10% temporarily
-        torch.cuda.empty_cache()
-        
-        # Reset to full memory
-        torch.cuda.set_per_process_memory_fraction(1.0)
-        torch.cuda.empty_cache()
-        
-        # Move model back to GPU
-        if 'latent_conditioner' in locals():
-            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-            latent_conditioner = latent_conditioner.to(device)
-            print("Moved latent_conditioner back to GPU")
-        
-        # Final memory check
-        if torch.cuda.is_available():
-            current_memory = torch.cuda.memory_allocated() / 1024**3
-            reserved_memory = torch.cuda.memory_reserved() / 1024**3
-            print(f"After defragmentation - Used: {current_memory:.2f}GB | Reserved: {reserved_memory:.2f}GB")
-        
-        # NUCLEAR OPTION: Delete ALL datasets and dataloaders that might be holding memory
-        print("NUCLEAR: Deleting all datasets and dataloaders...")
-        objects_to_delete = [
-            'latent_conditioner_dataset', 'latent_conditioner_train_dataset', 'latent_conditioner_validation_dataset',
-            'latent_conditioner_dataloader', 'latent_conditioner_validation_dataloader',
-            'target_dataset', 'target_dataloader',
-            'physical_param_input', 'out_latent_vectors', 'out_hierarchical_latent_vectors',
-            'latent_vectors', 'hierarchical_latent_vectors', 'xs_vectors'
-        ]
-        
-        deleted_count = 0
-        for obj_name in objects_to_delete:
-            if obj_name in locals():
-                del locals()[obj_name]
-                deleted_count += 1
-                print(f"Deleted {obj_name}")
-        
-        print(f"Deleted {deleted_count} objects")
-        
-        # Force garbage collection again
-        import gc
-        for _ in range(5):
-            gc.collect()
-        torch.cuda.empty_cache()
-        torch.cuda.synchronize()
-        
-        if torch.cuda.is_available():
-            current_memory = torch.cuda.memory_allocated() / 1024**3
-            reserved_memory = torch.cuda.memory_reserved() / 1024**3
-            print(f"After NUCLEAR deletion - Used: {current_memory:.2f}GB | Reserved: {reserved_memory:.2f}GB")
+        comprehensive_vram_audit()
         
         LatentConditioner_loss = train_latent_conditioner_e2e(
             latent_conditioner_epoch=latent_conditioner_epoch,
