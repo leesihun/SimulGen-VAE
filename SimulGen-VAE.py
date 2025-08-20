@@ -319,10 +319,6 @@ def main():
     print(f"Augmented dataloaders created - Training: {int(len(new_x_train) * 0.8)}, Validation: {int(len(new_x_train) * 0.2)} samples")
     print("Dataloader initialization complete")
 
-    from modules.decoder import reparameterize
-    from modules.reconstruction_evaluator import ReconstructionEvaluator
-    loss_total=0
-
     # VAE training
     if train_latent_conditioner_only ==0:
 
@@ -463,7 +459,11 @@ def main():
 
     device = safe_cuda_initialization()
     
-    if latent_conditioner_data_type == 'image_vit':
+    if latent_conditioner_data_type == 'image':
+        print("Initializing LatentConditioner CNN image model...")
+        latent_conditioner = LatentConditionerImg(latent_conditioner_filter, latent_dim_end, input_shape, latent_dim, size2, latent_conditioner_data_shape, dropout_rate=latent_conditioner_dropout_rate, use_attention=bool(use_spatial_attention)).to(device)
+
+    elif latent_conditioner_data_type == 'image_vit':
         print("Initializing LatentConditioner ViT image model...")
         img_size = int(latent_conditioner_data_shape[0])
         patch_size = 16

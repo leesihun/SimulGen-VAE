@@ -431,8 +431,8 @@ def initialize_model(config: TrainingConfig, device: torch.device) -> VAE:
         model.apply(initialize_weights_He)
         model.apply(add_sn)
         
-        # Move to device
-        model = model.to(device)
+        # Move to device and ensure correct dtype
+        model = model.to(device, dtype=torch.float32)
         
         return model
         
@@ -519,9 +519,12 @@ def train_single_epoch(
     
     try:
         for batch_idx, batch_data in enumerate(dataloader):
-            # Move data to device if needed
+            # Move data to device if needed and ensure correct dtype
             if not config.load_all:
-                batch_data = batch_data.to(device, non_blocking=True)
+                batch_data = batch_data.to(device, dtype=torch.float32, non_blocking=True)
+            else:
+                # Ensure dtype consistency even for pre-loaded data
+                batch_data = batch_data.to(dtype=torch.float32)
             
             # Zero gradients
             optimizer.zero_grad(set_to_none=True)
@@ -620,9 +623,12 @@ def validate_model(
     try:
         with torch.no_grad():
             for batch_idx, batch_data in enumerate(dataloader):
-                # Move data to device if needed
+                # Move data to device if needed and ensure correct dtype
                 if not config.load_all:
-                    batch_data = batch_data.to(device, non_blocking=True)
+                    batch_data = batch_data.to(device, dtype=torch.float32, non_blocking=True)
+                else:
+                    # Ensure dtype consistency even for pre-loaded data
+                    batch_data = batch_data.to(dtype=torch.float32)
                 
                 # Forward pass
                 reconstruction, recon_loss, kl_losses, recon_mse_loss = model(batch_data)
