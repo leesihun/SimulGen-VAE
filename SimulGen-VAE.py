@@ -537,6 +537,7 @@ def main():
         
         # CROSS-FUNCTION VRAM CLEANUP - Find memory from other functions
         def cross_function_vram_cleanup():
+            import torch
             print("=== CROSS-FUNCTION VRAM CLEANUP ===")
             
             # Method 1: Use garbage collector to find all CUDA tensors system-wide
