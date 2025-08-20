@@ -206,7 +206,6 @@ def main():
         use_pca = False
         num_pca = pca_components
 
-
     print(f"Latent conditioner data type: {latent_conditioner_data_type}")
     print(f"Parameter data type: {param_data_type}")
 
@@ -293,8 +292,6 @@ def main():
 
     train_latent_conditioner_only = int(args.train_latent_conditioner)
 
-    
-
     if train_latent_conditioner_only == 0:
         # Initialize folder contents
         initialize_folder('model_save')
@@ -324,7 +321,6 @@ def main():
     new_x_train = np.float32(new_x_train)
 
     print(f"Dataset value range: [{np.min(new_x_train):.4f}, {np.max(new_x_train):.4f}]")
-    
     print("Creating augmented dataset with on-the-fly data augmentation...")
     
     # Create dataloaders with error handling (uses default augmentation config)
@@ -342,11 +338,7 @@ def main():
     dataset = dataloader.dataset
     
     print(f"Augmented dataloaders created - Training: {int(len(new_x_train) * 0.8)}, Validation: {int(len(new_x_train) * 0.2)} samples")
-        
-
     print("Dataloader initialization complete")
-
-
 
     from modules.decoder import reparameterize
     from modules.reconstruction_evaluator import ReconstructionEvaluator
@@ -355,8 +347,7 @@ def main():
     # VAE training
     if train_latent_conditioner_only ==0:
 
-        VAE_loss, reconstruction_error, KL_divergence, loss_val_print = train(n_epochs, batch_size, dataloader, val_dataloader, LR, num_filter_enc, num_filter_dec, num_node, latent_dim_end, latent_dim, num_time, alpha, loss, small, load_all)
-
+        _ = train(n_epochs, batch_size, dataloader, val_dataloader, LR, num_filter_enc, num_filter_dec, num_node, latent_dim_end, latent_dim, num_time, alpha, loss, small, load_all)
         device = "cuda:0" if torch.cuda.is_available() else "cpu"
         VAE_trained = torch.load('./model_save/SimulGen-VAE', map_location= device, weights_only=False)
         VAE = VAE_trained.eval()
@@ -366,7 +357,6 @@ def main():
             VAE, dataloader, device, len(dataloader.dataset), num_filter_enc, latent_dim, 
             latent_dim_end, recon_iter, "Training Reconstruction"
         )
-
         
         # Evaluate validation loss
         _ = evaluate_vae_reconstruction(
@@ -393,7 +383,6 @@ def main():
         temp5 = './SimulGen-VAE_L2_loss.txt'
         np.savetxt(temp5, reconstruction_loss, fmt = '%e')
 
-
     elif train_latent_conditioner_only == 1:
         print("Training LatentConditioner only...")
         latent_vectors = np.load('model_save/latent_vectors.npy')
@@ -401,18 +390,10 @@ def main():
         device = "cuda:0" if torch.cuda.is_available() else "cpu"
         VAE_trained = torch.load('model_save/SimulGen-VAE', map_location=device, weights_only=False)
         VAE = VAE_trained.eval()
-        
-        #_ = evaluate_vae_simple(VAE, val_dataloader, device, "Validation (LatentConditioner Mode)")
-        #print("LatentConditioner mode validation complete")
-        
-
-       
-
 
     # LatentConditioner training (runs for both train_latent_conditioner_only == 0 and train_latent_conditioner_only == 1)
     out_latent_vectors = latent_vectors.reshape([num_param, latent_dim_end])
     xs_vectors = hierarchical_latent_vectors.reshape([num_param, -1])
-
 
     # Check for PCA_MLP mode
     if latent_conditioner_data_type == 'image' and use_pca:
@@ -435,7 +416,6 @@ def main():
         raise NotImplementedError(f'Unrecognized latent_conditioner_data_type: {latent_conditioner_data_type}. Supported options: "image" (CNN), "image_vit" (ViT), "csv" (MLP)')
 
     physical_param_input = latent_conditioner_data
-
 
     #physical_param_input, param_input_scaler = latent_conditioner_scaler(physical_param_input, './model_save/latent_conditioner_input_scaler.pkl')
     if latent_conditioner_data_type == 'image':
@@ -548,7 +528,7 @@ def main():
     
     # Use enhanced training if enabled for CNN models, otherwise use original training
     if latent_conditioner_data_type == "image" and config.get('use_enhanced_loss', 0):
-        print(f"Using enhanced CNN latent conditioner training with preset: {config.get('enhancement_preset', 'balanced')}")
+        print(f"Using enhanced CNN latent conditioner training")
         LatentConditioner_loss = train_latent_conditioner_with_enhancements(
             latent_conditioner_epoch=latent_conditioner_epoch,
             latent_conditioner_dataloader=latent_conditioner_dataloader,
@@ -558,7 +538,7 @@ def main():
             weight_decay=latent_conditioner_weight_decay,
             is_image_data=image,
             image_size=256,
-            enhancement_preset=config.get('enhancement_preset', 'balanced'),
+            config=config,
             use_enhanced_loss=True
         )
 

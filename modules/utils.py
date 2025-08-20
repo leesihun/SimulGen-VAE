@@ -338,11 +338,21 @@ def parse_training_parameters(params):
     
     # Enhanced loss parameters (with defaults for backward compatibility)
     config['use_enhanced_loss'] = int(params.get('use_enhanced_loss', 0))
-    config['enhancement_preset'] = params.get('enhancement_preset', 'balanced')
-    config['perceptual_weight'] = float(params.get('perceptual_weight', 0.1))
-    config['consistency_weight'] = float(params.get('consistency_weight', 0.1))
+    config['use_multiscale_loss'] = int(params.get('use_multiscale_loss', 1))
+    config['use_perceptual_loss'] = int(params.get('use_perceptual_loss', 1))
+    config['use_consistency_loss'] = int(params.get('use_consistency_loss', 1))
+    config['mse_weight'] = float(params.get('mse_weight', 1.0))
     config['mae_weight'] = float(params.get('mae_weight', 0.1))
     config['huber_weight'] = float(params.get('huber_weight', 0.05))
+    config['huber_beta'] = float(params.get('huber_beta', 0.1))
+    config['main_weight'] = float(params.get('main_weight', 10.0))
+    config['hier_weight'] = float(params.get('hier_weight', 1.0))
+    config['perceptual_weight'] = float(params.get('perceptual_weight', 0.1))
+    config['perceptual_feature_layers'] = params.get('perceptual_feature_layers', '16,8')
+    config['perceptual_similarity'] = params.get('perceptual_similarity', 'cosine')
+    config['consistency_weight'] = float(params.get('consistency_weight', 0.1))
+    config['consistency_temperature'] = float(params.get('consistency_temperature', 1.0))
+    config['consistency_detach_original'] = int(params.get('consistency_detach_original', 1))
     
     return config
 
