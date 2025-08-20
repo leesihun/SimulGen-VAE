@@ -508,8 +508,20 @@ def main():
             current_memory = torch.cuda.memory_allocated() / 1024**3
             max_memory = torch.cuda.max_memory_allocated() / 1024**3
             total_memory = torch.cuda.get_device_properties(0).total_memory / 1024**3
-            print(f"VRAM before E2E: {current_memory:.2f}GB current, {max_memory:.2f}GB max, {total_memory:.2f}GB total")
+            print(f"VRAM before cleanup: {current_memory:.2f}GB current, {max_memory:.2f}GB max, {total_memory:.2f}GB total")
             print(f"VRAM available: {total_memory - current_memory:.2f}GB")
+        
+        # CRITICAL: Delete VAE model temporarily to free ~5GB VRAM
+        print("Freeing VRAM by temporarily deleting VAE model...")
+        if 'VAE' in locals():
+            del VAE
+        if 'VAE_trained' in locals():
+            del VAE_trained
+        torch.cuda.empty_cache()
+        
+        if torch.cuda.is_available():
+            current_memory = torch.cuda.memory_allocated() / 1024**3
+            print(f"VRAM after VAE deletion: {current_memory:.2f}GB")
         
         # Create target dataloader for end-to-end training
         # Use the same VAE training data as target for reconstruction
@@ -530,9 +542,14 @@ def main():
             drop_last=True
         )
         
+        # CRITICAL: Delete new_x_train to free ~25GB VRAM (biggest memory hog!)
+        print("Freeing VRAM by deleting new_x_train dataset...")
+        del new_x_train
+        torch.cuda.empty_cache()
+        
         if torch.cuda.is_available():
             current_memory = torch.cuda.memory_allocated() / 1024**3
-            print(f"VRAM after target dataloader creation: {current_memory:.2f}GB")
+            print(f"VRAM after target dataloader + new_x_train deletion: {current_memory:.2f}GB")
         
         print(f"About to start E2E training with batch_size={latent_conditioner_batch_size}")
         if torch.cuda.is_available():

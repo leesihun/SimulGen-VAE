@@ -44,7 +44,7 @@ def load_vae_model(vae_model_path, device):
     try:
         # Try loading complete model first
         if os.path.exists(vae_model_path):
-            vae_model = torch.load(vae_model_path, map_location=device)
+            vae_model = torch.load(vae_model_path, map_location=device, weights_only=False)
             print(f"Loaded VAE model from {vae_model_path}")
         else:
             # Try loading checkpoint
