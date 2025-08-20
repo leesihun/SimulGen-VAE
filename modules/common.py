@@ -122,6 +122,8 @@ class EncoderResidualBlock(nn.Module):
             )
 
     def forward(self, x):
+        # Ensure input tensor has correct dtype
+        x = x.to(dtype=torch.float32)
         return x+0.1*self.seq(x)
     
 class DecoderResidualBlock(nn.Module):

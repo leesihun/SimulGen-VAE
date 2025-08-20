@@ -460,8 +460,6 @@ def main():
     device = safe_cuda_initialization()
     
     if latent_conditioner_data_type == 'image':
-        print("Initializing LatentConditioner CNN image model...")
-        latent_conditioner = LatentConditionerImg(latent_conditioner_filter, latent_dim_end, input_shape, latent_dim, size2, latent_conditioner_data_shape, dropout_rate=latent_conditioner_dropout_rate, use_attention=bool(use_spatial_attention)).to(device)
 
     elif latent_conditioner_data_type == 'image_vit':
         print("Initializing LatentConditioner ViT image model...")
@@ -499,7 +497,7 @@ def main():
         
         # Create target dataloader for end-to-end training
         # Use the same VAE training data as target for reconstruction
-        target_dataset = MyBaseDataset(FOM_data, load_all, transform=None)
+        target_dataset = MyBaseDataset(new_x_train, load_all, transform=None)
         target_dataloader = torch.utils.data.DataLoader(
             target_dataset,
             batch_size=latent_conditioner_batch_size,
