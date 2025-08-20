@@ -366,8 +366,10 @@ def main():
         VAE_trained = torch.load('model_save/SimulGen-VAE', map_location=device, weights_only=False)
         VAE = VAE_trained.eval()
 
+        del dataloader_whole
+
     # Free all dataloaders
-    del dataloader, val_dataloader, dataloader_whole
+    del dataloader, val_dataloader
 
     # LatentConditioner training (runs for both train_latent_conditioner_only == 0 and train_latent_conditioner_only == 1)
     out_latent_vectors = latent_vectors.reshape([num_param, latent_dim_end])
