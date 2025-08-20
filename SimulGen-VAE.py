@@ -370,6 +370,7 @@ def main():
 
     # Free all dataloaders
     del dataloader, val_dataloader
+    torch.cuda.empty_cache()
 
     # LatentConditioner training (runs for both train_latent_conditioner_only == 0 and train_latent_conditioner_only == 1)
     out_latent_vectors = latent_vectors.reshape([num_param, latent_dim_end])
