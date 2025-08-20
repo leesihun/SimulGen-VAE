@@ -456,7 +456,6 @@ def train(
         # Adaptive validation scheduling - less frequent early in training
         validation_frequency = max(1, min(25, epochs // 40)) if epoch < epochs * 0.7 else 5
         if epoch % validation_frequency == 0 or epoch == epochs - 1:
-            logger.info(f"Running validation at epoch {epoch+1}...")
             model.eval()
             
             val_metrics = {
@@ -563,18 +562,17 @@ def train(
         avg_epoch_time = elapsed_time / (epoch + 1)
         eta_hours = (epochs - epoch - 1) * avg_epoch_time / 3600
         
-        # Reduced logging frequency - only log every 10 epochs or significant milestones
-        if epoch % 10 == 0 or epoch == epochs - 1 or epoch < 5:
-            log_message = (
-                f"[Epoch {epoch+1:4d}/{epochs}] "
-                f"Loss: {loss_print[epoch]:.4e} "
-                f"Val: {loss_val_print[epoch]:.4e} "
-                f"Recon: {recon_print[epoch]:.4e} "
-                f"KL: {kl_print[epoch]:.4e} "
-                f"Time: {epoch_duration:.1f}s "
-                f"ETA: {eta_hours:.1f}h"
-            )
-            logger.info(log_message)
+        # Output results for every epoch
+        log_message = (
+            f"[Epoch {epoch+1:4d}/{epochs}] "
+            f"Loss: {loss_print[epoch]:.4e} "
+            f"Val: {loss_val_print[epoch]:.4e} "
+            f"Recon: {recon_print[epoch]:.4e} "
+            f"KL: {kl_print[epoch]:.4e} "
+            f"Time: {epoch_duration:.1f}s "
+            f"ETA: {eta_hours:.1f}h"
+        )
+        logger.info(log_message)
         
         # Reduced TensorBoard logging frequency
         if epoch % 5 == 0 or epoch == epochs - 1:

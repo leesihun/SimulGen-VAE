@@ -132,6 +132,10 @@ def enhanced_train_latent_conditioner(
         'learning_rates': []
     }
     
+    # Initialize validation MSE tracking
+    last_mse_main_val = 0.0
+    last_mse_hier_val = 0.0
+    
     print(f"Starting enhanced training for {latent_conditioner_epoch} epochs...")
     
     for epoch in range(latent_conditioner_epoch):
@@ -142,7 +146,10 @@ def enhanced_train_latent_conditioner(
         epoch_metrics = {
             'total_loss': 0.0,
             'num_batches': 0,
-            'enhanced_components': {comp: 0.0 for comp in loss_system['active_components']}
+            'enhanced_components': {comp: 0.0 for comp in loss_system['active_components']},
+            # Track pure MSE losses for display (like original training)
+            'mse_main': 0.0,
+            'mse_hier': 0.0
         }
         
         for i, (x, y1, y2) in enumerate(latent_conditioner_dataloader):
@@ -200,6 +207,12 @@ def enhanced_train_latent_conditioner(
             # Forward pass
             y_pred1, y_pred2 = latent_conditioner(x)
             
+            # Track pure MSE losses for display (like original training)
+            mse_main_train = F.mse_loss(y_pred1, y1)
+            mse_hier_train = F.mse_loss(y_pred2, y2)
+            epoch_metrics['mse_main'] += mse_main_train.item()
+            epoch_metrics['mse_hier'] += mse_hier_train.item()
+            
             # Enhanced loss computation
             losses = []
             all_loss_info = {}
@@ -249,18 +262,13 @@ def enhanced_train_latent_conditioner(
                 latent_conditioner.parameters(), max_norm=10.0
             )
             
-            # Gradient monitoring (every 100 epochs, first batch)
+            # Gradient monitoring (every 100 epochs, first batch) - match original format
             if epoch % 100 == 0 and i == 0:
-                print(f"Enhanced DEBUG: Epoch {epoch}, Gradient norm: {total_grad_norm:.4f}")
-                print(f"Enhanced DEBUG: Total loss: {total_loss.item():.4E}")
-                for key, value in all_loss_info.items():
-                    if isinstance(value, (int, float)):
-                        print(f"Enhanced DEBUG: {key}: {value:.4E}")
-                
+                print(f"DEBUG: Gradient norm: {total_grad_norm:.4f}, Loss: {total_loss.item():.4E}")
                 if total_grad_norm > 10.0:
-                    print(f"Enhanced WARNING: Large gradient norm: {total_grad_norm:.2f}")
+                    print(f"WARNING: Large gradient norm detected: {total_grad_norm:.2f}")
                 elif total_grad_norm < 1e-4:
-                    print(f"Enhanced WARNING: Very small gradient norm: {total_grad_norm:.2E}")
+                    print(f"WARNING: Very small gradient norm: {total_grad_norm:.2E}")
             
             optimizer.step()
             
@@ -276,10 +284,15 @@ def enhanced_train_latent_conditioner(
         # Calculate average training metrics
         if epoch_metrics['num_batches'] > 0:
             avg_train_loss = epoch_metrics['total_loss'] / epoch_metrics['num_batches']
+            # Calculate pure MSE averages (like original training)
+            avg_mse_main_train = epoch_metrics['mse_main'] / epoch_metrics['num_batches']
+            avg_mse_hier_train = epoch_metrics['mse_hier'] / epoch_metrics['num_batches']
             for comp in epoch_metrics['enhanced_components']:
                 epoch_metrics['enhanced_components'][comp] /= epoch_metrics['num_batches']
         else:
             avg_train_loss = 0.0
+            avg_mse_main_train = 0.0
+            avg_mse_hier_train = 0.0
         
         training_metrics['epoch_losses'].append(avg_train_loss)
         for comp in loss_system['active_components']:
@@ -289,9 +302,11 @@ def enhanced_train_latent_conditioner(
         
         # Validation every 10 epochs
         avg_val_loss = 0.0
+        avg_mse_main_val = 0.0
+        avg_mse_hier_val = 0.0
         if epoch % 10 == 0:
             latent_conditioner.eval()
-            val_metrics = {'total_loss': 0.0, 'num_batches': 0}
+            val_metrics = {'total_loss': 0.0, 'num_batches': 0, 'mse_main': 0.0, 'mse_hier': 0.0}
             
             try:
                 with torch.no_grad():
@@ -299,6 +314,12 @@ def enhanced_train_latent_conditioner(
                         x_val, y1_val, y2_val = x_val.to(device), y1_val.to(device), y2_val.to(device)
                         
                         y_pred1_val, y_pred2_val = latent_conditioner(x_val)
+                        
+                        # Track pure MSE for validation (like original training)
+                        mse_main_val = F.mse_loss(y_pred1_val, y1_val)
+                        mse_hier_val = F.mse_loss(y_pred2_val, y2_val)
+                        val_metrics['mse_main'] += mse_main_val.item()
+                        val_metrics['mse_hier'] += mse_hier_val.item()
                         
                         # Use same enhanced loss for validation
                         val_losses = []
@@ -329,6 +350,12 @@ def enhanced_train_latent_conditioner(
                 
                 if val_metrics['num_batches'] > 0:
                     avg_val_loss = val_metrics['total_loss'] / val_metrics['num_batches']
+                    avg_mse_main_val = val_metrics['mse_main'] / val_metrics['num_batches']
+                    avg_mse_hier_val = val_metrics['mse_hier'] / val_metrics['num_batches']
+                
+                # Store current validation MSE values for reuse
+                last_mse_main_val = avg_mse_main_val
+                last_mse_hier_val = avg_mse_hier_val
                 
                 # Check for overfitting
                 overfitting_ratio = avg_val_loss / max(avg_train_loss, 1e-8)
@@ -352,6 +379,9 @@ def enhanced_train_latent_conditioner(
             # Use previous validation loss for non-validation epochs
             if training_metrics['validation_losses']:
                 avg_val_loss = training_metrics['validation_losses'][-1]
+                # Use last known validation MSE values
+                avg_mse_main_val = last_mse_main_val
+                avg_mse_hier_val = last_mse_hier_val
         
         training_metrics['validation_losses'].append(avg_val_loss)
         
@@ -368,24 +398,29 @@ def enhanced_train_latent_conditioner(
         end_time = time.time()
         epoch_duration = end_time - start_time
         
-        # Console output every 100 epochs or final epoch
-        if epoch % 100 == 0 or epoch == latent_conditioner_epoch - 1:
-            scheduler_info = "Warmup" if epoch < warmup_epochs else "Cosine"
-            
-            # Build enhanced loss info string
-            loss_components = []
+        # Console output - match original latent_conditioner.py format exactly
+        scheduler_info = "Warmup" if epoch < warmup_epochs else "Cosine"
+        
+        # Calculate total MSE losses (weighted like original: main*10 + hier*1)
+        total_mse_train = avg_mse_main_train * 10 + avg_mse_hier_train
+        total_mse_val = avg_mse_main_val * 10 + avg_mse_hier_val
+        
+        print('[%d/%d]\tTrain: %.4E (y1:%.4E, y2:%.4E), Val: %.4E (y1:%.4E, y2:%.4E), LR: %.2E (%s), ETA: %.2f h, Patience: %d/%d' % 
+              (epoch, latent_conditioner_epoch, 
+               total_mse_train, avg_mse_main_train, avg_mse_hier_train,
+               total_mse_val, avg_mse_main_val, avg_mse_hier_val,
+               current_lr, scheduler_info,
+               (latent_conditioner_epoch-epoch)*epoch_duration/3600, patience_counter, patience))
+        
+        # Enhanced debug output (every 100 epochs only)
+        if epoch % 100 == 0:
+            print(f'Enhanced DEBUG: Multi-scale total loss: {avg_train_loss:.4E}')
+            enhanced_components = []
             for comp in loss_system['active_components']:
                 comp_value = epoch_metrics['enhanced_components'].get(comp, 0.0)
-                loss_components.append(f"{comp[:4]}:{comp_value:.3E}")
-            
-            loss_info_str = " | ".join(loss_components)
-            
-            print(f'Enhanced [{epoch:4d}/{latent_conditioner_epoch}] '
-                  f'Total: {avg_train_loss:.4E} | Val: {avg_val_loss:.4E} | '
-                  f'{loss_info_str} | '
-                  f'LR: {current_lr:.2E} ({scheduler_info}) | '
-                  f'Time: {epoch_duration:.1f}s | '
-                  f'Patience: {patience_counter}/{patience}')
+                enhanced_components.append(f"{comp}: {comp_value:.4E}")
+            if enhanced_components:
+                print(f'Enhanced DEBUG: {" | ".join(enhanced_components)}')
         
         # Enhanced TensorBoard logging
         if epoch % 100 == 0:
