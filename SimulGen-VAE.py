@@ -460,6 +460,8 @@ def main():
     device = safe_cuda_initialization()
     
     if latent_conditioner_data_type == 'image':
+        print("Initializing LatentConditioner CNN image model...")
+        latent_conditioner = LatentConditionerImg(latent_conditioner_filter, latent_dim_end, input_shape, latent_dim, size2, latent_conditioner_data_shape, dropout_rate=latent_conditioner_dropout_rate, use_attention=bool(use_spatial_attention)).to(device)
 
     elif latent_conditioner_data_type == 'image_vit':
         print("Initializing LatentConditioner ViT image model...")
