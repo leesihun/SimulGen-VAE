@@ -691,9 +691,18 @@ def main():
         # FINAL NUCLEAR OPTION: RESTART CUDA CONTEXT
         print("ATTEMPTING CUDA CONTEXT RESET...")
         try:
-            # This will fail if there are active CUDA operations, but worth trying
-            torch.cuda.reset()
-            print("CUDA context reset successful!")
+            # Try different CUDA reset methods depending on PyTorch version
+            if hasattr(torch.cuda, 'reset'):
+                torch.cuda.reset()
+                print("CUDA context reset with torch.cuda.reset()")
+            elif hasattr(torch.cuda, 'reset_accumulated_memory_stats'):
+                torch.cuda.reset_accumulated_memory_stats()
+                torch.cuda.reset_peak_memory_stats()
+                torch.cuda.empty_cache()
+                print("CUDA memory stats reset")
+            else:
+                torch.cuda.empty_cache()
+                print("Only cache clearing available")
             
             if torch.cuda.is_available():
                 current_memory = torch.cuda.memory_allocated() / 1024**3
@@ -702,6 +711,101 @@ def main():
         except Exception as e:
             print(f"CUDA context reset failed: {e}")
             print("This confirms there are active references preventing cleanup.")
+        
+        # AGGRESSIVE CLEANUP OF HIDDEN MEMORIES
+        def aggressive_hidden_cleanup():
+            print("=== AGGRESSIVE HIDDEN MEMORY CLEANUP ===")
+            
+            # 1. Clear all global CUDA tensors
+            print("Clearing global CUDA tensors...")
+            globals_cleared = 0
+            global_names_to_delete = []
+            
+            for name, obj in list(globals().items()):
+                if not name.startswith('_') and not callable(obj):
+                    if torch.is_tensor(obj) and obj.is_cuda:
+                        global_names_to_delete.append(name)
+                        globals_cleared += 1
+            
+            for name in global_names_to_delete:
+                del globals()[name]
+                print(f"  Deleted global: {name}")
+            
+            # 2. Clear module caches and CUDA objects
+            print("Clearing module CUDA caches...")
+            import sys
+            modules_cleared = 0
+            
+            for module_name, module in list(sys.modules.items()):
+                if module is None or module_name.startswith('_'):
+                    continue
+                try:
+                    if hasattr(module, '__dict__'):
+                        attrs_to_delete = []
+                        for attr_name, attr_value in module.__dict__.items():
+                            if torch.is_tensor(attr_value) and attr_value.is_cuda:
+                                attrs_to_delete.append(attr_name)
+                        
+                        for attr_name in attrs_to_delete:
+                            delattr(module, attr_name)
+                            print(f"  Deleted {module_name}.{attr_name}")
+                            modules_cleared += 1
+                except:
+                    pass
+            
+            # 3. Clear PyTorch's internal caches
+            print("Clearing PyTorch internal caches...")
+            try:
+                # Clear autograd computation graph
+                torch.cuda.empty_cache()
+                
+                # Clear cuDNN workspace
+                if hasattr(torch.backends.cudnn, 'clear_cuda_memory'):
+                    torch.backends.cudnn.clear_cuda_memory()
+                
+                # Clear any JIT compilation cache
+                if hasattr(torch.jit, '_clear_class_registry'):
+                    torch.jit._clear_class_registry()
+                
+                print("  Cleared internal caches")
+            except Exception as e:
+                print(f"  Internal cache clearing failed: {e}")
+            
+            # 4. Force garbage collection of all generations
+            import gc
+            print("Forcing deep garbage collection...")
+            # Disable GC temporarily to force immediate cleanup
+            gc.disable()
+            for generation in range(3):
+                collected = gc.collect(generation)
+                print(f"  Generation {generation}: collected {collected} objects")
+            gc.enable()
+            
+            # 5. Try to clear CUDA memory allocator pool
+            print("Clearing CUDA memory pool...")
+            try:
+                # PyTorch 1.6+ has memory pool clearing
+                if hasattr(torch.cuda, 'empty_cache'):
+                    torch.cuda.empty_cache()
+                if hasattr(torch.cuda, 'reset_cached_memory_stats'):
+                    torch.cuda.reset_cached_memory_stats()
+                if hasattr(torch.cuda, 'synchronize'):
+                    torch.cuda.synchronize()
+                print("  Memory pool cleared")
+            except Exception as e:
+                print(f"  Memory pool clearing failed: {e}")
+            
+            print(f"Cleanup completed: {globals_cleared} globals, {modules_cleared} module objects cleared")
+            
+            # Final memory check
+            if torch.cuda.is_available():
+                current_memory = torch.cuda.memory_allocated() / 1024**3
+                reserved_memory = torch.cuda.memory_reserved() / 1024**3
+                print(f"After aggressive cleanup - Used: {current_memory:.2f}GB | Reserved: {reserved_memory:.2f}GB")
+            
+            print("========================================")
+        
+        aggressive_hidden_cleanup()
         
         LatentConditioner_loss = train_latent_conditioner_e2e(
             latent_conditioner_epoch=latent_conditioner_epoch,
