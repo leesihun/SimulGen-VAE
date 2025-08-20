@@ -223,14 +223,35 @@ config):
                 y_pred1, y_pred2 = latent_conditioner(x)
 
                 # Convert y_pred2 to proper list format for VAE decoder
-                # y_pred2 should be a list of length 3, with 8 latent vectors each
+                # Debug: Check the actual structure
+                print(f"DEBUG: y_pred1 shape: {y_pred1.shape}")
+                print(f"DEBUG: y_pred2 type: {type(y_pred2)}")
                 if torch.is_tensor(y_pred2):
-                    # If y_pred2 is a single tensor, split it into list format
-                    # Assuming shape is [batch_size, num_layers, latent_dim]
-                    y_pred2 = [y_pred2[:, i, :] for i in range(y_pred2.shape[1])]
+                    print(f"DEBUG: y_pred2 shape: {y_pred2.shape}")
+                else:
+                    print(f"DEBUG: y_pred2 length: {len(y_pred2) if hasattr(y_pred2, '__len__') else 'no len'}")
+                    if hasattr(y_pred2, '__len__') and len(y_pred2) > 0:
+                        print(f"DEBUG: y_pred2[0] shape: {y_pred2[0].shape if torch.is_tensor(y_pred2[0]) else type(y_pred2[0])}")
+                
+                # The VAE decoder expects xs as a list where each element corresponds to a decoder layer
+                # Based on the error, we need to restructure y_pred2 correctly
+                if torch.is_tensor(y_pred2):
+                    # If y_pred2 is [batch_size, 3, 8] then split along dim 1
+                    if y_pred2.dim() == 3 and y_pred2.shape[1] == 3:
+                        y_pred2 = [y_pred2[:, i, :] for i in range(y_pred2.shape[1])]
+                    # If y_pred2 is [batch_size, num_layers * latent_dim], reshape and split
+                    elif y_pred2.dim() == 2:
+                        # Assume it needs to be reshaped to [batch_size, num_layers, latent_dim]
+                        num_layers = 3  # Based on decoder structure
+                        latent_dim = y_pred2.shape[1] // num_layers
+                        y_pred2 = y_pred2.view(y_pred2.shape[0], num_layers, latent_dim)
+                        y_pred2 = [y_pred2[:, i, :] for i in range(num_layers)]
                 elif isinstance(y_pred2, (list, tuple)):
-                    # If already a list/tuple, ensure it's a proper list
                     y_pred2 = list(y_pred2)
+                
+                print(f"DEBUG: After conversion, y_pred2 type: {type(y_pred2)}, length: {len(y_pred2) if hasattr(y_pred2, '__len__') else 'no len'}")
+                if hasattr(y_pred2, '__len__') and len(y_pred2) > 0:
+                    print(f"DEBUG: y_pred2[0] shape: {y_pred2[0].shape if torch.is_tensor(y_pred2[0]) else type(y_pred2[0])}")
                 
                 # ==== KEY DIFFERENCE: Use VAE decoder to reconstruct data ====
                 with torch.no_grad():
