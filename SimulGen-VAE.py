@@ -630,6 +630,79 @@ def main():
         
         comprehensive_vram_audit()
         
+        # EXTENDED AUDIT: Check globals and module caches
+        def extended_vram_audit():
+            print("=== EXTENDED VRAM AUDIT (Globals & Modules) ===")
+            total_global_vram = 0
+            
+            # Check global variables
+            print("Checking global variables...")
+            for name, obj in globals().items():
+                if name.startswith('_'):
+                    continue
+                size_mb = 0
+                if torch.is_tensor(obj) and obj.is_cuda:
+                    size_mb = obj.numel() * obj.element_size() / (1024**2)
+                    if size_mb > 1:
+                        print(f"  Global {name}: {size_mb:.1f}MB")
+                        total_global_vram += size_mb
+            
+            # Check imported modules for cached data
+            import sys
+            print("Checking loaded modules for CUDA objects...")
+            module_count = 0
+            for module_name, module in sys.modules.items():
+                if module is None:
+                    continue
+                try:
+                    if hasattr(module, '__dict__'):
+                        for attr_name, attr_value in module.__dict__.items():
+                            if torch.is_tensor(attr_value) and attr_value.is_cuda:
+                                size_mb = attr_value.numel() * attr_value.element_size() / (1024**2)
+                                if size_mb > 1:
+                                    print(f"  Module {module_name}.{attr_name}: {size_mb:.1f}MB")
+                                    total_global_vram += size_mb
+                                    module_count += 1
+                except:
+                    pass
+            
+            print(f"Global/module VRAM: {total_global_vram:.1f}MB from {module_count} objects")
+            
+            # Try to get PyTorch's internal memory info
+            print("\nPyTorch memory summary:")
+            try:
+                print(torch.cuda.memory_summary())
+            except:
+                print("Cannot get memory summary")
+            
+            # Try to get detailed memory info
+            try:
+                memory_stats = torch.cuda.memory_stats()
+                allocated_current = memory_stats.get('allocated_bytes.all.current', 0) / (1024**3)
+                reserved_current = memory_stats.get('reserved_bytes.all.current', 0) / (1024**3)
+                print(f"\nDetailed stats - Allocated: {allocated_current:.2f}GB, Reserved: {reserved_current:.2f}GB")
+            except:
+                print("Cannot get memory stats")
+                
+            print("=========================================")
+        
+        extended_vram_audit()
+        
+        # FINAL NUCLEAR OPTION: RESTART CUDA CONTEXT
+        print("ATTEMPTING CUDA CONTEXT RESET...")
+        try:
+            # This will fail if there are active CUDA operations, but worth trying
+            torch.cuda.reset()
+            print("CUDA context reset successful!")
+            
+            if torch.cuda.is_available():
+                current_memory = torch.cuda.memory_allocated() / 1024**3
+                reserved_memory = torch.cuda.memory_reserved() / 1024**3
+                print(f"After CUDA reset - Used: {current_memory:.2f}GB | Reserved: {reserved_memory:.2f}GB")
+        except Exception as e:
+            print(f"CUDA context reset failed: {e}")
+            print("This confirms there are active references preventing cleanup.")
+        
         LatentConditioner_loss = train_latent_conditioner_e2e(
             latent_conditioner_epoch=latent_conditioner_epoch,
             latent_conditioner_dataloader=latent_conditioner_dataloader,
