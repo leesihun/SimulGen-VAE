@@ -534,8 +534,37 @@ def main():
         
         # CRITICAL: Delete new_x_train to free ~25GB VRAM (biggest memory hog!)
         del new_x_train
-        gc.collect()
-        torch.cuda.empty_cache()
+        
+        # Nuclear VRAM clearing function
+        def nuclear_vram_clear():
+            """Nuclear option to free all possible VRAM"""
+            import gc
+            
+            # Synchronize all CUDA operations
+            torch.cuda.synchronize()
+            
+            # Force garbage collection multiple times
+            for _ in range(3):
+                gc.collect()
+            
+            # Clear PyTorch cache
+            torch.cuda.empty_cache()
+            
+            # Reset memory stats
+            torch.cuda.reset_peak_memory_stats()
+            torch.cuda.reset_accumulated_memory_stats()
+            
+            # Force another sync and cache clear
+            torch.cuda.synchronize()
+            torch.cuda.empty_cache()
+            
+            if torch.cuda.is_available():
+                current_memory = torch.cuda.memory_allocated() / 1024**3
+                reserved_memory = torch.cuda.memory_reserved() / 1024**3
+                print(f"After nuclear clear - Used: {current_memory:.2f}GB | Reserved: {reserved_memory:.2f}GB")
+        
+        print("Applying nuclear VRAM clearing...")
+        nuclear_vram_clear()
         
         LatentConditioner_loss = train_latent_conditioner_e2e(
             latent_conditioner_epoch=latent_conditioner_epoch,
