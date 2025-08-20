@@ -535,36 +535,33 @@ def main():
         # CRITICAL: Delete new_x_train to free ~25GB VRAM (biggest memory hog!)
         del new_x_train
         
-        # Nuclear VRAM clearing function
-        def nuclear_vram_clear():
-            """Nuclear option to free all possible VRAM"""
-            import gc
-            
-            # Synchronize all CUDA operations
-            torch.cuda.synchronize()
-            
-            # Force garbage collection multiple times
-            for _ in range(3):
-                gc.collect()
-            
-            # Clear PyTorch cache
-            torch.cuda.empty_cache()
-            
-            # Reset memory stats
-            torch.cuda.reset_peak_memory_stats()
-            torch.cuda.reset_accumulated_memory_stats()
-            
-            # Force another sync and cache clear
-            torch.cuda.synchronize()
-            torch.cuda.empty_cache()
-            
-            if torch.cuda.is_available():
-                current_memory = torch.cuda.memory_allocated() / 1024**3
-                reserved_memory = torch.cuda.memory_reserved() / 1024**3
-                print(f"After nuclear clear - Used: {current_memory:.2f}GB | Reserved: {reserved_memory:.2f}GB")
+        # Debug: Find what's still using VRAM
+        print("=== VRAM DEBUG: Finding memory hogs ===")
+        total_tensors = 0
+        total_memory = 0
         
-        print("Applying nuclear VRAM clearing...")
-        nuclear_vram_clear()
+        # Check all objects in current scope for CUDA tensors
+        for name, obj in list(locals().items()):
+            if torch.is_tensor(obj) and obj.is_cuda:
+                size_mb = obj.numel() * obj.element_size() / (1024**2)
+                if size_mb > 100:  # Only show tensors > 100MB
+                    print(f"CUDA Tensor '{name}': {size_mb:.1f}MB, shape: {obj.shape}")
+                    total_memory += size_mb
+                    total_tensors += 1
+        
+        # Check objects with CUDA tensors inside (like models, datasets)
+        for name, obj in list(locals().items()):
+            if hasattr(obj, 'parameters') and callable(getattr(obj, 'parameters')):
+                try:
+                    param_memory = sum(p.numel() * p.element_size() for p in obj.parameters() if p.is_cuda) / (1024**2)
+                    if param_memory > 50:
+                        print(f"Model '{name}': {param_memory:.1f}MB parameters on CUDA")
+                        total_memory += param_memory
+                except:
+                    pass
+        
+        print(f"Found {total_tensors} large CUDA tensors using {total_memory:.1f}MB total")
+        print("========================================")
         
         LatentConditioner_loss = train_latent_conditioner_e2e(
             latent_conditioner_epoch=latent_conditioner_epoch,
