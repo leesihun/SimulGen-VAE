@@ -595,6 +595,37 @@ def main():
             reserved_memory = torch.cuda.memory_reserved() / 1024**3
             print(f"After defragmentation - Used: {current_memory:.2f}GB | Reserved: {reserved_memory:.2f}GB")
         
+        # NUCLEAR OPTION: Delete ALL datasets and dataloaders that might be holding memory
+        print("NUCLEAR: Deleting all datasets and dataloaders...")
+        objects_to_delete = [
+            'latent_conditioner_dataset', 'latent_conditioner_train_dataset', 'latent_conditioner_validation_dataset',
+            'latent_conditioner_dataloader', 'latent_conditioner_validation_dataloader',
+            'target_dataset', 'target_dataloader',
+            'physical_param_input', 'out_latent_vectors', 'out_hierarchical_latent_vectors',
+            'latent_vectors', 'hierarchical_latent_vectors', 'xs_vectors'
+        ]
+        
+        deleted_count = 0
+        for obj_name in objects_to_delete:
+            if obj_name in locals():
+                del locals()[obj_name]
+                deleted_count += 1
+                print(f"Deleted {obj_name}")
+        
+        print(f"Deleted {deleted_count} objects")
+        
+        # Force garbage collection again
+        import gc
+        for _ in range(5):
+            gc.collect()
+        torch.cuda.empty_cache()
+        torch.cuda.synchronize()
+        
+        if torch.cuda.is_available():
+            current_memory = torch.cuda.memory_allocated() / 1024**3
+            reserved_memory = torch.cuda.memory_reserved() / 1024**3
+            print(f"After NUCLEAR deletion - Used: {current_memory:.2f}GB | Reserved: {reserved_memory:.2f}GB")
+        
         LatentConditioner_loss = train_latent_conditioner_e2e(
             latent_conditioner_epoch=latent_conditioner_epoch,
             latent_conditioner_dataloader=latent_conditioner_dataloader,
