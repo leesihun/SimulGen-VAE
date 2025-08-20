@@ -509,6 +509,8 @@ def main():
             del VAE
         if 'VAE_trained' in locals():
             del VAE_trained
+        import gc
+        gc.collect()
         torch.cuda.empty_cache()
         
         # Create target dataloader for end-to-end training
