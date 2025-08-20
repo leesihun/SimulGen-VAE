@@ -151,6 +151,16 @@ config):
     print(f"Starting end-to-end latent conditioner training for {latent_conditioner_epoch} epochs")
     print(f"Reconstruction loss function: {loss_function_type}")
     print(f"Latent regularization: {'Enabled' if use_latent_regularization else 'Disabled'}")
+    
+    # Display current VRAM usage at start of E2E training
+    if torch.cuda.is_available():
+        current_memory = torch.cuda.memory_allocated() / 1024**3
+        reserved_memory = torch.cuda.memory_reserved() / 1024**3
+        total_memory = torch.cuda.get_device_properties(0).total_memory / 1024**3
+        free_memory = total_memory - reserved_memory
+        print(f"=== VRAM Status at E2E Training Start ===")
+        print(f"Used: {current_memory:.2f}GB | Reserved: {reserved_memory:.2f}GB | Free: {free_memory:.2f}GB | Total: {total_memory:.2f}GB")
+        print(f"==========================================")
 
     for epoch in range(latent_conditioner_epoch):
         start_time = time.time()
