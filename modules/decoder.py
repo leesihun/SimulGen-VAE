@@ -41,6 +41,9 @@ class UpsampleBlock(nn.Module):
         Returns:
             torch.Tensor: Output tensor of shape [batch, out_channel, sequence_length]
         """
+        # Ensure both input and model weights have consistent dtype
+        if x.dtype != next(self._seq.parameters()).dtype:
+            x = x.to(dtype=next(self._seq.parameters()).dtype)
         return self._seq(x)
 
 class DecoderBlock(nn.Module):

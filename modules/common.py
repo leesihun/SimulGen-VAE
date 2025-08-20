@@ -122,8 +122,9 @@ class EncoderResidualBlock(nn.Module):
             )
 
     def forward(self, x):
-        # Ensure input tensor has correct dtype
-        x = x.to(dtype=torch.float32)
+        # Ensure both input and model weights have consistent dtype
+        if x.dtype != next(self.seq.parameters()).dtype:
+            x = x.to(dtype=next(self.seq.parameters()).dtype)
         return x+0.1*self.seq(x)
     
 class DecoderResidualBlock(nn.Module):
@@ -161,4 +162,7 @@ class DecoderResidualBlock(nn.Module):
             )
 
     def forward(self, x):
+        # Ensure both input and model weights have consistent dtype
+        if x.dtype != next(self.seq.parameters()).dtype:
+            x = x.to(dtype=next(self.seq.parameters()).dtype)
         return x+0.1*self.seq(x)
