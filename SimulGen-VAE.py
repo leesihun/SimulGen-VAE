@@ -502,10 +502,22 @@ def main():
         print("Using end-to-end latent conditioner training")
         print("Architecture: Input Conditions → Latent Conditioner → VAE Decoder → Reconstructed Data")
         
+        # Print VRAM info before E2E training
+        if torch.cuda.is_available():
+            current_memory = torch.cuda.memory_allocated() / 1024**3
+            max_memory = torch.cuda.max_memory_allocated() / 1024**3
+            total_memory = torch.cuda.get_device_properties(0).total_memory / 1024**3
+            print(f"VRAM before E2E: {current_memory:.2f}GB current, {max_memory:.2f}GB max, {total_memory:.2f}GB total")
+            print(f"VRAM available: {total_memory - current_memory:.2f}GB")
+        
         # Create target dataloader for end-to-end training
         # Use the same VAE training data as target for reconstruction
 
         target_dataset = MyBaseDataset(new_x_train, load_all)
+        print(f"Target dataset size: {len(target_dataset)} samples")
+        print(f"Target data shape per sample: {new_x_train.shape[1:]} = {np.prod(new_x_train.shape[1:])} elements")
+        print(f"Target batch memory estimate: {latent_conditioner_batch_size * np.prod(new_x_train.shape[1:]) * 4 / 1024**3:.3f}GB")
+        
         target_dataloader = torch.utils.data.DataLoader(
             target_dataset,
             batch_size=latent_conditioner_batch_size,
@@ -516,6 +528,15 @@ def main():
             prefetch_factor=2 if latent_conditioner_optimal_workers > 0 else None,
             drop_last=True
         )
+        
+        if torch.cuda.is_available():
+            current_memory = torch.cuda.memory_allocated() / 1024**3
+            print(f"VRAM after target dataloader creation: {current_memory:.2f}GB")
+        
+        print(f"About to start E2E training with batch_size={latent_conditioner_batch_size}")
+        if torch.cuda.is_available():
+            current_memory = torch.cuda.memory_allocated() / 1024**3
+            print(f"VRAM before calling train_latent_conditioner_e2e: {current_memory:.2f}GB")
         
         LatentConditioner_loss = train_latent_conditioner_e2e(
             latent_conditioner_epoch=latent_conditioner_epoch,
