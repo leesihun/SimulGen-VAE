@@ -101,11 +101,11 @@ def train_latent_conditioner_enhanced(latent_conditioner_epoch, latent_condition
                 loss = A * 10 + B
             
             # Track pure MSE for display (same as original)
-            mse_main = F.mse_loss(y_pred1, y1)
-            mse_hier = F.mse_loss(y_pred2, y2)
-            epoch_loss += (mse_main * 10 + mse_hier).item()
-            epoch_loss_y1 += mse_main.item()
-            epoch_loss_y2 += mse_hier.item()
+            mae_main = F.l1_loss(y_pred1, y1)
+            mae_hier = F.l1_loss(y_pred2, y2)
+            epoch_loss += (mae_main * 0.9 + mae_hier * 0.1).item()
+            epoch_loss_y1 += mae_main.item()
+            epoch_loss_y2 += mae_hier.item()
             num_batches += 1
             
             loss.backward()
@@ -141,10 +141,10 @@ def train_latent_conditioner_enhanced(latent_conditioner_epoch, latent_condition
                     
                     y_pred1_val, y_pred2_val = latent_conditioner(x_val)
                     
-                    A_val = nn.MSELoss()(y_pred1_val, y1_val)
-                    B_val = nn.MSELoss()(y_pred2_val, y2_val)
+                    A_val = nn.l1_loss()(y_pred1_val, y1_val)
+                    B_val = nn.l1_loss()(y_pred2_val, y2_val)
                     
-                    val_loss += (A_val * 10 + B_val).item()
+                    val_loss += (A_val * 0.9 + B_val * 0.1).item()
                     val_loss_y1 += A_val.item()
                     val_loss_y2 += B_val.item()
                     val_batches += 1
@@ -179,7 +179,7 @@ def train_latent_conditioner_enhanced(latent_conditioner_epoch, latent_condition
         current_lr = optimizer.param_groups[0]['lr']
         scheduler_info = "Warmup" if epoch < warmup_epochs else "Cosine"
         
-        print('[%d/%d]\tTrain: %.4E (y1:%.4E, y2:%.4E), Val: %.4E (y1:%.4E, y2:%.4E), LR: %.2E (%s), ETA: %.2f h, Patience: %d/%d' % 
+        print('[%d/%d]\t L1 losses: Train: %.4E (y1:%.4E, y2:%.4E), Val: %.4E (y1:%.4E, y2:%.4E), LR: %.2E (%s), ETA: %.2f h, Patience: %d/%d' % 
               (epoch, latent_conditioner_epoch, avg_train_loss, avg_train_loss_y1, avg_train_loss_y2,
                avg_val_loss, avg_val_loss_y1, avg_val_loss_y2,
                current_lr, scheduler_info,
