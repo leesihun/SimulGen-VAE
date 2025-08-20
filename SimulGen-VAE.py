@@ -534,6 +534,7 @@ def main():
         
         # CRITICAL: Delete new_x_train to free ~25GB VRAM (biggest memory hog!)
         del new_x_train
+        gc.collect()
         torch.cuda.empty_cache()
         
         LatentConditioner_loss = train_latent_conditioner_e2e(
