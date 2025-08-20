@@ -563,6 +563,38 @@ def main():
         print(f"Found {total_tensors} large CUDA tensors using {total_memory:.1f}MB total")
         print("========================================")
         
+        # ULTIMATE FIX: Force memory defragmentation by switching to CPU and back
+        print("Applying memory defragmentation fix...")
+        
+        # Move latent_conditioner to CPU temporarily
+        if 'latent_conditioner' in locals():
+            latent_conditioner = latent_conditioner.cpu()
+            print("Moved latent_conditioner to CPU")
+        
+        # Force PyTorch to release all GPU memory
+        torch.cuda.empty_cache()
+        torch.cuda.synchronize()
+        
+        # Set memory fraction to force reallocation
+        torch.cuda.set_per_process_memory_fraction(0.1)  # Limit to 10% temporarily
+        torch.cuda.empty_cache()
+        
+        # Reset to full memory
+        torch.cuda.set_per_process_memory_fraction(1.0)
+        torch.cuda.empty_cache()
+        
+        # Move model back to GPU
+        if 'latent_conditioner' in locals():
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            latent_conditioner = latent_conditioner.to(device)
+            print("Moved latent_conditioner back to GPU")
+        
+        # Final memory check
+        if torch.cuda.is_available():
+            current_memory = torch.cuda.memory_allocated() / 1024**3
+            reserved_memory = torch.cuda.memory_reserved() / 1024**3
+            print(f"After defragmentation - Used: {current_memory:.2f}GB | Reserved: {reserved_memory:.2f}GB")
+        
         LatentConditioner_loss = train_latent_conditioner_e2e(
             latent_conditioner_epoch=latent_conditioner_epoch,
             latent_conditioner_dataloader=latent_conditioner_dataloader,
