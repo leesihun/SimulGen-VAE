@@ -411,7 +411,7 @@ def enhanced_train_latent_conditioner(
     # Save enhanced model
     print("Saving enhanced latent conditioner model...")
     torch.save(latent_conditioner.state_dict(), 'checkpoints/enhanced_latent_conditioner.pth')
-    torch.save(latent_conditioner, 'model_save/EnhancedLatentConditioner')
+    torch.save(latent_conditioner, 'model_save/LatentConditioner')
     
     # Save training metrics
     np.savez('output/enhanced_training_metrics.npz', 
