@@ -62,14 +62,6 @@ def load_vae_model(vae_model_path, device):
         
     except Exception as e:
         print(f"Error loading VAE model: {e}")
-        print("Using dummy VAE model")
-        class DummyVAE:
-            def __init__(self):
-                pass
-            def decoder(self, latent_main, latent_hier):
-                batch_size = latent_main.shape[0]
-                return torch.randn(batch_size, 95008, 200, device=device), []
-        return DummyVAE()
 
 def train_latent_conditioner_e2e(latent_conditioner_epoch, 
 latent_conditioner_dataloader, 
@@ -254,8 +246,8 @@ config):
                     print(f"DEBUG: y_pred2[0] shape: {y_pred2[0].shape if torch.is_tensor(y_pred2[0]) else type(y_pred2[0])}")
                 
                 # ==== KEY DIFFERENCE: Use VAE decoder to reconstruct data ====
-                with torch.no_grad():
-                    reconstructed_data, _ = vae_model.decoder(y_pred1, y_pred2)
+                # NOTE: VAE parameters are frozen (requires_grad=False) but we need gradient flow for E2E training
+                reconstructed_data, _ = vae_model.decoder(y_pred1, y_pred2)
                 
                 # Primary loss: reconstruction quality
                 recon_loss = reconstruction_loss_fn(reconstructed_data, target_data)
@@ -334,8 +326,9 @@ config):
                     elif isinstance(y_pred2_val, (list, tuple)):
                         y_pred2_val = list(y_pred2_val)
                     
-                    # Validate with same end-to-end approach
-                    reconstructed_val_data, _ = vae_model.decoder(y_pred1_val, y_pred2_val)
+                    # Validate with same end-to-end approach (gradients not needed for validation)
+                    with torch.no_grad():
+                        reconstructed_val_data, _ = vae_model.decoder(y_pred1_val, y_pred2_val)
                     recon_loss_val = reconstruction_loss_fn(reconstructed_val_data, target_val_data)
                     
                     if use_latent_regularization:
