@@ -122,9 +122,10 @@ class EncoderResidualBlock(nn.Module):
             )
 
     def forward(self, x):
-        # Ensure both input and model weights have consistent dtype
-        if x.dtype != next(self.seq.parameters()).dtype:
-            x = x.to(dtype=next(self.seq.parameters()).dtype)
+        # Ensure both input and model weights have consistent dtype and device
+        model_param = next(self.seq.parameters())
+        if x.device != model_param.device or x.dtype != model_param.dtype:
+            x = x.to(device=model_param.device, dtype=model_param.dtype)
         return x+0.1*self.seq(x)
     
 class DecoderResidualBlock(nn.Module):
@@ -162,7 +163,8 @@ class DecoderResidualBlock(nn.Module):
             )
 
     def forward(self, x):
-        # Ensure both input and model weights have consistent dtype
-        if x.dtype != next(self.seq.parameters()).dtype:
-            x = x.to(dtype=next(self.seq.parameters()).dtype)
+        # Ensure both input and model weights have consistent dtype and device
+        model_param = next(self.seq.parameters())
+        if x.device != model_param.device or x.dtype != model_param.dtype:
+            x = x.to(device=model_param.device, dtype=model_param.dtype)
         return x+0.1*self.seq(x)

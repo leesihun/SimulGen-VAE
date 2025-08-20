@@ -358,6 +358,8 @@ def main():
         temp5 = './SimulGen-VAE_L2_loss.txt'
         np.savetxt(temp5, reconstruction_loss, fmt = '%e')
 
+        del dataloader_whole
+
     elif train_latent_conditioner_only == 1:
         print("Training LatentConditioner only...")
         latent_vectors = np.load('model_save/latent_vectors.npy')
@@ -365,8 +367,6 @@ def main():
         device = "cuda:0" if torch.cuda.is_available() else "cpu"
         VAE_trained = torch.load('model_save/SimulGen-VAE', map_location=device, weights_only=False)
         VAE = VAE_trained.eval()
-
-        del dataloader_whole
 
     # Free all dataloaders
     del dataloader, val_dataloader
