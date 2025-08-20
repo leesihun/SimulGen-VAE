@@ -46,6 +46,7 @@ def main():
     Training Modes:
         Full VAE (lc_only=0): Train VAE encoder/decoder + LatentConditioner
         LC Only (lc_only=1): Train only LatentConditioner using pre-trained VAE
+        End-to-End: Set use_e2e_training=1 in condition.txt for direct data reconstruction optimization
     
     Examples:
         python SimulGen-VAE.py --preset=1 --plot=2 --lc_only=0 --size=small
@@ -87,6 +88,7 @@ def main():
         read_latent_conditioner_dataset, read_latent_conditioner_dataset_img_pca,
         safe_cuda_initialization
     )
+    from modules.latent_conditioner_e2e import train_latent_conditioner_e2e
     from modules.enhanced_latent_conditioner_training import train_latent_conditioner_with_enhancements
     from modules.reconstruction_evaluator import ReconstructionEvaluator
     
@@ -186,18 +188,6 @@ def main():
     latent_conditioner_weight_decay = config['latent_conditioner_weight_decay']
     latent_conditioner_dropout_rate = config['latent_conditioner_dropout_rate']
     use_spatial_attention = config['use_spatial_attention']
-    
-    # PCA parameters for efficient image processing
-    use_pca = config['use_pca']
-    pca_components = config['pca_components']
-    pca_patch_size = config['pca_patch_size']
-
-    if use_pca ==1:
-        use_pca = True
-        num_pca = pca_components
-    else:
-        use_pca = False
-        num_pca = pca_components
 
     print(f"Latent conditioner data type: {latent_conditioner_data_type}")
     print(f"Parameter data type: {param_data_type}")
@@ -389,11 +379,7 @@ def main():
     xs_vectors = hierarchical_latent_vectors.reshape([num_param, -1])
 
     # Check for PCA_MLP mode
-    if latent_conditioner_data_type == 'image' and use_pca:
-        print('Loading image data for PCA_MLP mode...')
-        image = False  # Use MLP architecture for PCA coefficients
-        latent_conditioner_data, latent_conditioner_data_shape = read_latent_conditioner_dataset_img_pca(param_dir, param_data_type, num_pca, pca_patch_size)
-    elif latent_conditioner_data_type=='image':
+    if latent_conditioner_data_type=='image':
         print('Loading image data for CNN...')
         image=True
         latent_conditioner_data, latent_conditioner_data_shape = read_latent_conditioner_dataset_img(param_dir, param_data_type)
@@ -481,16 +467,7 @@ def main():
 
     device = safe_cuda_initialization()
     
-    if latent_conditioner_data_type == 'image' and use_pca == False:
-        print("Initializing LatentConditioner CNN image model...")
-        latent_conditioner = LatentConditionerImg(latent_conditioner_filter, latent_dim_end, input_shape, latent_dim, size2, latent_conditioner_data_shape, dropout_rate=latent_conditioner_dropout_rate, use_attention=bool(use_spatial_attention)).to(device)
-
-    elif use_pca:
-        print("Initializing LatentConditioner MLP model for PCA...")
-        input_shape = num_pca
-        latent_conditioner = LatentConditioner(latent_conditioner_filter, latent_dim_end, input_shape, latent_dim, size2, dropout_rate=latent_conditioner_dropout_rate).to(device)
-
-    elif latent_conditioner_data_type == 'image_vit':
+    if latent_conditioner_data_type == 'image_vit':
         print("Initializing LatentConditioner ViT image model...")
         img_size = int(latent_conditioner_data_shape[0])
         patch_size = 16
@@ -519,8 +496,40 @@ def main():
 
     print("Starting LatentConditioner training...")
     
+    # Check for end-to-end training mode
+    if config.get('use_e2e_training', 0) == 1:
+        print("Using end-to-end latent conditioner training")
+        print("Architecture: Input Conditions → Latent Conditioner → VAE Decoder → Reconstructed Data")
+        
+        # Create target dataloader for end-to-end training
+        # Use the same VAE training data as target for reconstruction
+        target_dataset = MyBaseDataset(FOM_data, load_all, transform=None)
+        target_dataloader = torch.utils.data.DataLoader(
+            target_dataset,
+            batch_size=latent_conditioner_batch_size,
+            shuffle=True,
+            num_workers=latent_conditioner_optimal_workers,
+            pin_memory=False,
+            persistent_workers=latent_conditioner_optimal_workers > 0,
+            prefetch_factor=2 if latent_conditioner_optimal_workers > 0 else None,
+            drop_last=True
+        )
+        
+        LatentConditioner_loss = train_latent_conditioner_e2e(
+            latent_conditioner_epoch=latent_conditioner_epoch,
+            latent_conditioner_dataloader=latent_conditioner_dataloader,
+            latent_conditioner_validation_dataloader=latent_conditioner_validation_dataloader,
+            latent_conditioner=latent_conditioner,
+            target_dataloader=target_dataloader,
+            latent_conditioner_lr=latent_conditioner_lr,
+            weight_decay=latent_conditioner_weight_decay,
+            is_image_data=image,
+            image_size=256,
+            config=config
+        )
+    
     # Use enhanced training if enabled for CNN models, otherwise use original training
-    if latent_conditioner_data_type == "image" and config.get('use_enhanced_loss', 0):
+    elif latent_conditioner_data_type == "image" and config.get('use_enhanced_loss', 0):
         print(f"Using enhanced CNN latent conditioner training")
         LatentConditioner_loss = train_latent_conditioner_with_enhancements(
             latent_conditioner_epoch=latent_conditioner_epoch,
