@@ -5,7 +5,7 @@ import numpy as np
 import time
 import math
 from torchinfo import summary
-from modules.enhanced_loss_functions import compute_enhanced_loss
+from modules.enhanced_loss_functions import compute_enhanced_loss, compute_perceptual_loss
 from modules.latent_conditioner import (
     apply_outline_preserving_augmentations,
     setup_device_and_model,
@@ -95,6 +95,10 @@ def train_latent_conditioner_enhanced(latent_conditioner_epoch, latent_condition
             # Use enhanced loss if config provided, otherwise fallback to original MSE
             if config and config.get('use_enhanced_loss', 0):
                 loss = compute_enhanced_loss(y_pred1, y_pred2, y1, y2, config)
+                
+                # Add perceptual loss if enabled
+                if config.get('use_perceptual_loss', 0):
+                    loss += compute_perceptual_loss(y_pred1, y_pred2, y1, y2, config)
             else:
                 A = nn.MSELoss()(y_pred1, y1)
                 B = nn.MSELoss()(y_pred2, y2)
