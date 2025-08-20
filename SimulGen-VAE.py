@@ -535,7 +535,9 @@ def main():
         # CRITICAL: Delete new_x_train to free ~25GB VRAM (biggest memory hog!)
         del new_x_train
         
-        device.reset()
+        from numba import cuda
+        gpu = cuda.get_current_device()
+        gpu.reset()
         
         LatentConditioner_loss = train_latent_conditioner_e2e(
             latent_conditioner_epoch=latent_conditioner_epoch,
