@@ -105,8 +105,8 @@ def train_latent_conditioner_enhanced(latent_conditioner_epoch, latent_condition
                 loss = A * 10 + B
             
             # Track pure MSE for display (same as original)
-            mae_main = F.L1Loss()(y_pred1, y1)
-            mae_hier = F.L1Loss()(y_pred2, y2)
+            mae_main = nn.L1Loss()(y_pred1, y1)
+            mae_hier = nn.L1Loss()(y_pred2, y2)
             epoch_loss += (mae_main * 0.9 + mae_hier * 0.1).item()
             epoch_loss_y1 += mae_main.item()
             epoch_loss_y2 += mae_hier.item()
