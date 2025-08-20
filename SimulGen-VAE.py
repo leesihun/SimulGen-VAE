@@ -561,6 +561,8 @@ def main():
             enhancement_preset=config.get('enhancement_preset', 'balanced'),
             use_enhanced_loss=True
         )
+
+        
     else:
         # Use original training (for non-CNN models or when enhanced loss is disabled)
         if latent_conditioner_data_type == "image" and not config.get('use_enhanced_loss', 0):
