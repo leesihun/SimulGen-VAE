@@ -222,7 +222,15 @@ config):
                 # Forward pass through latent conditioner
                 y_pred1, y_pred2 = latent_conditioner(x)
 
-                y_pred2 = list(list(y_pred2))
+                # Convert y_pred2 to proper list format for VAE decoder
+                # y_pred2 should be a list of length 3, with 8 latent vectors each
+                if torch.is_tensor(y_pred2):
+                    # If y_pred2 is a single tensor, split it into list format
+                    # Assuming shape is [batch_size, num_layers, latent_dim]
+                    y_pred2 = [y_pred2[:, i, :] for i in range(y_pred2.shape[1])]
+                elif isinstance(y_pred2, (list, tuple)):
+                    # If already a list/tuple, ensure it's a proper list
+                    y_pred2 = list(y_pred2)
                 
                 # ==== KEY DIFFERENCE: Use VAE decoder to reconstruct data ====
                 with torch.no_grad():
@@ -298,6 +306,12 @@ config):
                     target_val_data = target_val_data.to(device)
                     
                     y_pred1_val, y_pred2_val = latent_conditioner(x_val)
+                    
+                    # Convert y_pred2_val to proper list format for VAE decoder
+                    if torch.is_tensor(y_pred2_val):
+                        y_pred2_val = [y_pred2_val[:, i, :] for i in range(y_pred2_val.shape[1])]
+                    elif isinstance(y_pred2_val, (list, tuple)):
+                        y_pred2_val = list(y_pred2_val)
                     
                     # Validate with same end-to-end approach
                     reconstructed_val_data, _ = vae_model.decoder(y_pred1_val, y_pred2_val)
