@@ -38,6 +38,27 @@ latent_conditioner_dropout_rate	0.2
 use_spatial_attention	0	# 0=off, 1=on - spatial attention in CNN
 input_type	image	#image, csvs, image_vit
 param_data_type .png
+use_pca	0	# 0=off, 1=on - apply PCA preprocessing to images
+pca_components	0	# number of PCA components to keep, must be < Dim1
+pca_patch_size	0	# 0=full image PCA, >0=patch-based PCA with specified patch size
+'
+%Enhanced Loss Configuration
+use_enhanced_loss	0	# 0=disabled, 1=enabled - use enhanced loss functions
+use_multiscale_loss	0	# 0=disabled, 1=enabled - use multi-scale robust loss
+use_perceptual_loss	0	# 0=disabled, 1=enabled - use perceptual loss
+use_consistency_loss	1	# 0=disabled, 1=enabled - use consistency loss
+mse_weight	0.1	# weight for MSE in multi-scale loss
+mae_weight	0.5	# weight for MAE in multi-scale loss
+huber_weight	0.4	# weight for Huber in multi-scale loss
+huber_beta	0.1	# Huber loss transition point
+main_weight	0.9	# weight multiplier for main latent
+hier_weight	0.1	# weight multiplier for hierarchical latent
+perceptual_weight	0.1	# weight for perceptual loss component
+perceptual_feature_layers	16,8	# hidden dimensions for perceptual feature networks
+perceptual_similarity	cosine	# similarity type: cosine or mse
+consistency_weight	0.1	# weight for consistency regularization
+consistency_temperature	1.0	# temperature scaling for consistency loss
+consistency_detach_original	1	# 0=false, 1=true - detach original predictions
 '
 %End-to-End Training Configuration
 use_e2e_training	1	# 0=disabled, 1=enabled - use end-to-end training
@@ -45,6 +66,6 @@ e2e_loss_function	MSE	# MSE, MAE, Huber, SmoothL1 - loss function for reconstruc
 e2e_vae_model_path	model_save/SimulGen-VAE	# path to pre-trained VAE model
 use_latent_regularization	0	# 0=disabled, 1=enabled - add latent space regularization
 latent_reg_weight	0.1	# weight for latent regularization term
-e2e_memory_efficient	0	# 0=disabled, 1=enabled - use memory optimizations
+e2e_memory_efficient	1	# 0=disabled, 1=enabled - use memory optimizations
 e2e_gradient_checkpointing	0	# 0=disabled, 1=enabled - use gradient checkpointing
 e2e_batch_reduction_factor	0.5	# factor to reduce batch size on OOM (0.1-1.0)

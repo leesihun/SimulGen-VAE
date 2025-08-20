@@ -59,22 +59,15 @@ def main():
     import torch
     import torch.nn as nn
     import torch.distributed as dist
-    from torch.nn.parallel import DistributedDataParallel as DDP
-    from torch.utils.data.distributed import DistributedSampler
-    from torch.utils.data import DataLoader, Dataset, random_split
+    from torch.utils.data import random_split
     
     # Scientific computing and visualization
     import numpy as np
-    import pandas as pd
-    import matplotlib.pyplot as plt
     
     # System utilities
-    import os
     import argparse
-    import torch.multiprocessing
 
     # SimulGenVAE core modules
-    from modules.common import add_sn
     from modules.input_variables import input_user_variables, input_dataset
     from modules.data_preprocess import (
         reduce_dataset, data_augmentation, data_scaler, 
@@ -101,10 +94,10 @@ def main():
     from modules.utils import (
         MyBaseDataset, LatentConditionerDataset, get_optimal_workers,
         setup_distributed_training, parse_condition_file, parse_training_parameters,
-        evaluate_vae_reconstruction, evaluate_vae_simple
+        evaluate_vae_reconstruction
     )
     from modules.augmentation import create_augmented_dataloaders
-    from modules.plotter import temporal_plotter, nodal_plotter, dual_view_plotter
+    from modules.plotter import temporal_plotter, dual_view_plotter
     
     # Model inspection
     from torchinfo import summary
