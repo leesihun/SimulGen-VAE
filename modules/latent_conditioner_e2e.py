@@ -47,29 +47,9 @@ def load_vae_model(vae_model_path, device):
             vae_model = torch.load(vae_model_path, map_location=device, weights_only=False)
             print(f"Loaded VAE model from {vae_model_path}")
         else:
-            # Try loading checkpoint
-            checkpoint_path = 'checkpoints/SimulGen-VAE.pth'
-            if os.path.exists(checkpoint_path):
-                checkpoint = torch.load(checkpoint_path, map_location=device)
-                print(f"Found checkpoint at {checkpoint_path}")
-                # For now, create a dummy model - this would need proper VAE initialization
-                print("Warning: Using dummy VAE model - implement proper VAE loading")
-                class DummyVAE:
-                    def __init__(self):
-                        pass
-                    def decoder(self, latent_main, latent_hier):
-                        batch_size = latent_main.shape[0]
-                        return torch.randn(batch_size, 95008, 200, device=device), []
-                vae_model = DummyVAE()
-            else:
-                print("VAE model not found, using dummy model")
-                class DummyVAE:
-                    def __init__(self):
-                        pass
-                    def decoder(self, latent_main, latent_hier):
-                        batch_size = latent_main.shape[0]
-                        return torch.randn(batch_size, 95008, 200, device=device), []
-                vae_model = DummyVAE()
+            # output error message
+            print(f"VAE model not found at {vae_model_path}")
+            raise FileNotFoundError(f"VAE model not found at {vae_model_path}")
         
         # Freeze VAE weights if it's a real model
         if hasattr(vae_model, 'parameters'):
@@ -241,6 +221,8 @@ config):
             try:
                 # Forward pass through latent conditioner
                 y_pred1, y_pred2 = latent_conditioner(x)
+
+                y_pred2 = list(y_pred2)
                 
                 # ==== KEY DIFFERENCE: Use VAE decoder to reconstruct data ====
                 with torch.no_grad():
