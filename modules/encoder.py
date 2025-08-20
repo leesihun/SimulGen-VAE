@@ -8,7 +8,6 @@ Author: SiHun Lee, Ph.D.
 Email: kevin1007kr@gmail.com
 """
 
-import torch
 import torch.nn as nn
 from modules.common import *
 
@@ -55,10 +54,6 @@ class ConvBlock(nn.Module):
         Returns:
             torch.Tensor: Output tensor of shape [batch, out_channel, sequence_length]
         """
-        # Ensure both input and model weights have consistent dtype and device
-        model_param = next(self._seq.parameters())
-        if x.device != model_param.device or x.dtype != model_param.dtype:
-            x = x.to(device=model_param.device, dtype=model_param.dtype)
         return self._seq(x)
 
 class EncoderBlock(nn.Module):
