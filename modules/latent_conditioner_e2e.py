@@ -222,7 +222,7 @@ config):
                 # Forward pass through latent conditioner
                 y_pred1, y_pred2 = latent_conditioner(x)
 
-                y_pred2 = list(y_pred2)
+                y_pred2 = list(list(y_pred2))
                 
                 # ==== KEY DIFFERENCE: Use VAE decoder to reconstruct data ====
                 with torch.no_grad():
