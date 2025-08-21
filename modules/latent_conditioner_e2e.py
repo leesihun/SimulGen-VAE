@@ -228,9 +228,11 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
         
         data_loader_start_time = time.time()
         # Use unified E2E dataloader
+
+        
         for i, (x, y1, y2, target_data) in enumerate(e2e_dataloader):
+            epoch_latent_reg_loss = 0
             data_loader_end_time = time.time()
-            
             dataloader_time = data_loader_end_time - data_loader_start_time
             
             if not model_summary_shown:
