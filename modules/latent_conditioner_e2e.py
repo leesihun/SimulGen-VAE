@@ -226,74 +226,12 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
         epoch_start_time = time.time()
         latent_conditioner.train(True)
         
-        # Initialize timing tracking for this epoch
-        total_dataloader_time = 0  # NEW: Actual DataLoader fetch time
-        total_data_time = 0        # Data transfer/preprocessing time
-        total_forward_time = 0
-        total_backward_time = 0
-        total_optimization_time = 0
-        
-        # Detailed forward pass timing
-        total_lc_forward_time = 0
-        total_tensor_prep_time = 0
-        total_vae_decoder_time = 0
-        total_loss_comp_time = 0
-        total_gpu_mem_used = 0
-        
-        # CPU monitoring for this epoch
-        epoch_cpu_measurements = []
-        cpu_spike_count = 0
-        gc_events_count = 0
-        
-        epoch_loss = 0
-        epoch_recon_loss = 0
-        epoch_latent_reg_loss = 0
-        num_batches = 0
-        
-        # Use unified E2E dataloader - no need for separate iterators
-        dataloader_iter = iter(e2e_dataloader)
-        
-        for i in range(len(e2e_dataloader)):
-            # REAL data acquisition timing starts here (DataLoader fetch)
-            batch_start_time = time.time()
-            dataloader_start = time.time()
+        data_loader_start_time = time.time()
+        # Use unified E2E dataloader
+        for i, (x, y1, y2, target_data) in enumerate(e2e_dataloader):
+            data_loader_end_time = time.time()
             
-            try:
-                x, y1, y2, target_data = next(dataloader_iter)
-            except StopIteration:
-                break
-                
-            dataloader_end = time.time()
-            dataloader_time = dataloader_end - dataloader_start
-            
-            # === STAGE 1: DATA TRANSFER AND PREPROCESSING ===
-            data_start_time = time.time()
-            # cpu_before_data = cpu_monitor.get_current_cpu_usage()  # Disabled for performance
-            
-            # Optimized data transfer (skip device check when load_all=True)
-            if x.device != device:
-                x, y1, y2 = x.to(device, non_blocking=True), y1.to(device, non_blocking=True), y2.to(device, non_blocking=True)
-                target_data = target_data.to(device, non_blocking=True)
-            elif target_data.device != device:
-                target_data = target_data.to(device, non_blocking=True)
-            
-            # Tensor device verification (disabled for performance with load_all=True)
-            # tensor_check = verify_tensor_devices({
-            #     'input_x': x, 'target_y1': y1, 'target_y2': y2, 'target_data': target_data
-            # }, device)
-            
-            data_end_time = time.time()
-            # cpu_after_data = cpu_monitor.get_current_cpu_usage()  # Disabled for performance
-            
-            batch_data_time = data_end_time - data_start_time
-            total_dataloader_time += dataloader_time  # Track actual DataLoader time
-            total_data_time += batch_data_time
-            
-            # CPU spike tracking disabled for performance
-            # data_cpu_spike = cpu_after_data - cpu_before_data
-            # if data_cpu_spike > 20:  # Significant CPU increase
-            #     print(f"⚠️ CPU spike during data loading: +{data_cpu_spike:.1f}% (batch {i})")
-            #     cpu_spike_count += 1
+            dataloader_time = data_loader_end_time - data_loader_start_time
             
             if not model_summary_shown:
                 batch_size = x.shape[0]
@@ -336,7 +274,7 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
                     y1 = lam * y1 + (1 - lam) * y1[index, :]
                     y2 = lam * y2 + (1 - lam) * y2[index, :]
             
-            if torch.rand(1, device=x.device) < 0.05:
+            if torch.rand(1, device=x.device) < 0.2:
                 noise = torch.randn_like(x) * 0.01
                 x = x + noise
             
@@ -376,38 +314,12 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
                 
                 # === SUBSTAGE 2C: VAE DECODER (MAIN BOTTLENECK SUSPECT) ===
                 vae_decoder_start = time.time()
-                # cpu_before_vae = cpu_monitor.get_current_cpu_usage()  # Disabled for performance
-                
-                # Check GPU memory before VAE decoder
-                if torch.cuda.is_available():
-                    gpu_mem_before = torch.cuda.memory_allocated() / 1024**2  # MB
-                
-                # VAE input tensor verification (disabled for performance with load_all=True)
-                # vae_tensor_check = verify_tensor_devices({
-                #     'vae_input_y_pred1': y_pred1, 'vae_input_y_pred2': y_pred2
-                # }, device)
                 
                 # NOTE: VAE parameters are frozen (requires_grad=False) but we need gradient flow for E2E training
                 reconstructed_data, _ = vae_model.decoder(y_pred1, y_pred2)
                 
-                # Verify VAE output is on GPU
-                if reconstructed_data.device != device:
-                    print(f"⚠️ VAE decoder output on wrong device: {reconstructed_data.device} (expected {device})")
-                
-                # Check GPU memory after VAE decoder
-                if torch.cuda.is_available():
-                    gpu_mem_after = torch.cuda.memory_allocated() / 1024**2  # MB
-                    gpu_mem_used = gpu_mem_after - gpu_mem_before
-                
                 vae_decoder_end = time.time()
-                # cpu_after_vae = cpu_monitor.get_current_cpu_usage()  # Disabled for performance
                 vae_decoder_time = vae_decoder_end - vae_decoder_start
-                
-                # VAE decoder CPU spike tracking disabled for performance
-                # vae_cpu_spike = cpu_after_vae - cpu_before_vae
-                # if vae_cpu_spike > 15:  # VAE decoder causing CPU spike
-                #     print(f"🚨 VAE decoder CPU spike: +{vae_cpu_spike:.1f}% (batch {i}, {vae_decoder_time*1000:.1f}ms)")
-                #     cpu_spike_count += 1
                 
                 # === SUBSTAGE 2D: LOSS COMPUTATION ===
                 loss_comp_start = time.time()
@@ -425,7 +337,6 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
                     loss = recon_loss + latent_reg_weight * latent_reg_total
                     epoch_latent_reg_loss += (latent_reg_weight * latent_reg_total).item()
                 else:
-                    # Pure end-to-end loss: only reconstruction quality matters
                     loss = recon_loss
 
                 forward_end_time = time.time()
@@ -437,8 +348,6 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
                 total_tensor_prep_time += tensor_prep_time
                 total_vae_decoder_time += vae_decoder_time
                 total_loss_comp_time += loss_comp_time
-                if torch.cuda.is_available():
-                    total_gpu_mem_used += gpu_mem_used
 
                 epoch_loss += loss.item()
                 epoch_recon_loss += recon_loss.item()
@@ -457,33 +366,17 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
             
             # === STAGE 4: OPTIMIZATION ===
             optimization_start_time = time.time()
-            # cpu_before_opt = cpu_monitor.get_current_cpu_usage()  # Disabled for performance
-            
-            # Check for garbage collection before optimization
-            gc_before = gc.get_count()
             
             # Check gradient norms before clipping
             total_grad_norm = torch.nn.utils.clip_grad_norm_(latent_conditioner.parameters(), max_norm=10.0)
             latent_conditioner_optimized.step()
             
-            # Check for garbage collection after optimization
-            gc_after = gc.get_count()
-            if any(gc_after[i] < gc_before[i] for i in range(len(gc_before))):
-                gc_events_count += 1
-                if gc_events_count <= 3:  # Only warn for first few GC events per epoch
-                    print(f"🗑️ Garbage collection occurred during optimization (batch {i})")
             
             optimization_end_time = time.time()
             # cpu_after_opt = cpu_monitor.get_current_cpu_usage()  # Disabled for performance
             batch_optimization_time = optimization_end_time - optimization_start_time
             total_optimization_time += batch_optimization_time
             
-            # Optimization CPU spike tracking disabled for performance
-            # opt_cpu_spike = cpu_after_opt - cpu_before_opt
-            # if opt_cpu_spike > 10:
-            #     print(f"⚡ Optimization CPU spike: +{opt_cpu_spike:.1f}% (batch {i})")
-            #     cpu_spike_count += 1
-            # Monitor gradient health
             if epoch % 100 == 0 and i == 0:  # Log every 100 epochs, first batch
                 print(f"DEBUG: Gradient norm: {total_grad_norm:.4f}, Recon Loss: {recon_loss.item():.4E}, Total Loss: {loss.item():.4E}")
                 if total_grad_norm > 10.0:
@@ -553,12 +446,6 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
             avg_val_loss = avg_val_recon_loss = avg_val_latent_reg_loss = 0.0
             validation_duration = 0.0
             avg_val_batch_time = 0.0
-
-        overfitting_ratio = avg_val_loss / max(avg_train_loss, 1e-8)
-        if overfitting_ratio > overfitting_threshold:
-            print(f'Severe overfitting detected! Val/Train ratio: {overfitting_ratio:.1f}')
-            print(f'Stopping early at epoch {epoch}')
-            break
             
         if avg_val_loss < best_val_loss - min_delta:
             best_val_loss = avg_val_loss
@@ -576,8 +463,7 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
         
         # === ELAPSED TIME SUMMARY FOR THIS EPOCH ===
         avg_batch_time = epoch_duration / max(num_batches, 1)
-        avg_dataloader_time = total_dataloader_time / max(num_batches, 1)  # NEW
-        avg_data_time = total_data_time / max(num_batches, 1)
+        avg_dataloader_time = dataloader_time
         avg_forward_time = total_forward_time / max(num_batches, 1)
         avg_backward_time = total_backward_time / max(num_batches, 1)
         avg_optimization_time = total_optimization_time / max(num_batches, 1)
@@ -587,31 +473,19 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
         avg_tensor_prep_time = total_tensor_prep_time / max(num_batches, 1)
         avg_vae_decoder_time = total_vae_decoder_time / max(num_batches, 1)
         avg_loss_comp_time = total_loss_comp_time / max(num_batches, 1)
-        avg_gpu_mem_used = total_gpu_mem_used / max(num_batches, 1)
         
         # Calculate percentages
-        dataloader_percent = (total_dataloader_time / epoch_duration) * 100 if epoch_duration > 0 else 0  # NEW
-        data_percent = (total_data_time / epoch_duration) * 100 if epoch_duration > 0 else 0
+        dataloader_percent = (dataloader_time / epoch_duration) * 100 if epoch_duration > 0 else 0  # NEW
         forward_percent = (total_forward_time / epoch_duration) * 100 if epoch_duration > 0 else 0
         backward_percent = (total_backward_time / epoch_duration) * 100 if epoch_duration > 0 else 0
         optimization_percent = (total_optimization_time / epoch_duration) * 100 if epoch_duration > 0 else 0
-        other_percent = 100 - (dataloader_percent + data_percent + forward_percent + backward_percent + optimization_percent)
+        other_percent = 100 - (dataloader_percent + forward_percent + backward_percent + optimization_percent)
         
         # Detailed forward pass percentages (of total forward time)
         lc_forward_percent = (total_lc_forward_time / max(total_forward_time, 1e-8)) * 100
         tensor_prep_percent = (total_tensor_prep_time / max(total_forward_time, 1e-8)) * 100
         vae_decoder_percent = (total_vae_decoder_time / max(total_forward_time, 1e-8)) * 100
         loss_comp_percent = (total_loss_comp_time / max(total_forward_time, 1e-8)) * 100
-
-        if epoch % 100 == 0:
-            writer.add_scalar('LatentConditioner Loss/train_total', avg_train_loss, epoch)
-            writer.add_scalar('LatentConditioner Loss/train_reconstruction', avg_train_recon_loss, epoch)
-            writer.add_scalar('LatentConditioner Loss/val_total', avg_val_loss, epoch)
-            writer.add_scalar('LatentConditioner Loss/val_reconstruction', avg_val_recon_loss, epoch)
-            if use_latent_regularization:
-                writer.add_scalar('LatentConditioner Loss/train_latent_reg', avg_train_latent_reg_loss, epoch)
-                writer.add_scalar('LatentConditioner Loss/val_latent_reg', avg_val_latent_reg_loss, epoch)
-            writer.add_scalar('Learning Rate', latent_conditioner_optimized.param_groups[0]['lr'], epoch)
 
         current_lr = latent_conditioner_optimized.param_groups[0]['lr']
         scheduler_info = f"Warmup" if epoch < warmup_epochs else f"Cosine"
@@ -627,7 +501,6 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
         if epoch % 100 == 0 or epoch < 5:
             print(f'    ⏱️  TIMING BREAKDOWN - Epoch {epoch}:')
             print(f'        📡 DataLoader Fetch: {avg_dataloader_time*1000:.1f}ms/batch ({dataloader_percent:.1f}%) 🚨')
-            print(f'        📥 Data Transfer:    {avg_data_time*1000:.1f}ms/batch ({data_percent:.1f}%)')
             print(f'        🔄 Forward Pass:     {avg_forward_time*1000:.1f}ms/batch ({forward_percent:.1f}%)')
             print(f'            🧠 Latent Cond:     {avg_lc_forward_time*1000:.1f}ms ({lc_forward_percent:.1f}% of forward)')
             print(f'            🔧 Tensor Prep:     {avg_tensor_prep_time*1000:.1f}ms ({tensor_prep_percent:.1f}% of forward)')
@@ -638,25 +511,13 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
             print(f'        🔧 Other/Overhead:   {other_percent:.1f}%')
             print(f'        🧠 GPU Memory/batch: {avg_gpu_mem_used:.1f}MB (VAE decoder usage)')
             
-            # CPU monitoring disabled for performance
-            # current_cpu = cpu_monitor.get_current_cpu_usage()
-            # cpu_spike_summary = cpu_monitor.get_cpu_spike_summary()
-            # print(f'        🖥️ CPU Status:       {current_cpu:.1f}% current, {cpu_spike_count} spikes this epoch')
-            print(f'        🗑️ Memory Mgmt:      {gc_events_count} garbage collections this epoch')
-            # if cpu_spike_count > 0:
-            #     print(f'            💡 Spike Analysis: {cpu_spike_summary}')
-            
             print(f'        📊 Total Training:   {epoch_duration:.2f}s ({num_batches} batches, {avg_batch_time*1000:.1f}ms/batch avg)')
             if validation_duration > 0:
                 print(f'        ✅ Validation:       {validation_duration:.2f}s ({val_batches} batches, {avg_val_batch_time*1000:.1f}ms/batch avg)')
-               
-        if patience_counter >= patience:
-            print(f'Early stopping at epoch {epoch}. Best validation loss: {best_val_loss:.4E}')
-            break
+            
+            # dataloader_time
+            data_loader_start_time = time.time()
 
-    # CPU monitoring disabled for performance
-    # cpu_monitor.stop_monitoring()
-    
     torch.save(latent_conditioner.state_dict(), 'checkpoints/latent_conditioner_e2e.pth')
     torch.save(latent_conditioner, 'model_save/LatentConditioner_E2E')
 
@@ -673,7 +534,6 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
     print(f"\n🔍 VAE DECODER PERFORMANCE ANALYSIS:")
     print(f"   🏭 VAE Decoder Time:     {avg_vae_decoder_time*1000:.1f}ms/batch ({vae_decoder_percent:.1f}% of forward pass)")
     print(f"   🧠 Latent Conditioner:  {avg_lc_forward_time*1000:.1f}ms/batch ({lc_forward_percent:.1f}% of forward pass)")
-    print(f"   🧠 GPU Memory Usage:     {avg_gpu_mem_used:.1f}MB/batch (VAE decoder)")
     
     print(f"\n📊 PERFORMANCE OPTIMIZATION RECOMMENDATIONS:")
     
@@ -690,29 +550,17 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
         print(f"      • Consider reducing VAE model complexity if possible")
         print(f"      • Check for CPU-GPU memory transfers in VAE decoder")
         
-    if avg_gpu_mem_used > 1000:  # >1GB per batch
-        print(f"   💾 High GPU memory usage ({avg_gpu_mem_used:.1f}MB/batch)")
-        print(f"      • VAE decoder may be creating large intermediate tensors")
-        print(f"      • Consider gradient checkpointing for VAE decoder")
-        
     # DataLoader and data loading analysis
     if dataloader_percent > 20:
         print(f"   🚨 CRITICAL: DataLoader fetch is slow ({dataloader_percent:.1f}%) - major bottleneck!")
         print(f"      • E2ELatentConditionerDataset.__getitem__ optimization needed")
         print(f"      • Large tensor indexing overhead with batch size {64}")
         print(f"      • Consider tensor batching optimization or memory layout changes")
-    if data_percent > 10:
-        print(f"   📥 Data transfer overhead ({data_percent:.1f}%) - optimize device transfers")
     if forward_percent < 40:
         print(f"   🔄 GPU utilization may be low - forward pass only {forward_percent:.1f}% of time")
     if other_percent > 20:
         print(f"   🔧 High overhead ({other_percent:.1f}%) - check for CPU bottlenecks")
         
-    print(f"\n🖥️ CPU UTILIZATION ANALYSIS:")
-    # final_cpu_summary = cpu_monitor.get_cpu_spike_summary()  # Disabled for performance
-    # print(f"   📊 Overall CPU spikes: {final_cpu_summary}")
-    print(f"   📊 CPU monitoring: Disabled for optimal performance")
-    print(f"   🗑️ Total GC events: {gc_events_count} across all epochs")
     
     # CPU spike analysis disabled for performance
     print(f"\n🔍 PERFORMANCE OPTIMIZATION STATUS:")
