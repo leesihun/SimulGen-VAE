@@ -184,10 +184,6 @@ config):
     vae_model.decoder = torch.compile(vae_model.decoder)
     print("✅ VAE decoder compiled for optimized performance")
     
-    # Optimize memory format for modern GPUs
-    vae_model.to(memory_format=torch.channels_last)
-    print("✅ VAE model set to channels_last memory format")
-    
     # Setup reconstruction loss function
     loss_function_type = config.get('e2e_loss_function', 'MSE') if config else 'MSE'
     if loss_function_type == 'MSE':
@@ -205,14 +201,6 @@ config):
     latent_conditioner_optimized, warmup_scheduler, main_scheduler, warmup_epochs = setup_optimizer_and_scheduler_e2e(
         latent_conditioner, latent_conditioner_lr, weight_decay, latent_conditioner_epoch
     )
-    
-    # Mixed precision disabled as requested - using full FP32 precision
-    print("Mixed precision training: Disabled (using full FP32 precision)")
-    
-    # CPU monitoring disabled for performance (was causing 36% overhead)
-    # cpu_monitor = CPUMonitor(spike_threshold=80.0, monitoring_interval=0.1)
-    # cpu_monitor.start_monitoring()
-    print("🖥️ CPU monitoring: Disabled for optimal performance")
     
     best_val_loss = float('inf')
     patience = 100000
