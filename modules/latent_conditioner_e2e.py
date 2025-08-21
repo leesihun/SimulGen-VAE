@@ -273,7 +273,7 @@ config):
                 # Optional latent regularization (same as original but weighted)
                 if use_latent_regularization:
                     latent_reg_main = nn.MSELoss()(y_pred1, y1)
-                    latent_reg_hier = nn.MSELoss()(y_pred2, y2)
+                    latent_reg_hier = nn.MSELoss()(y_pred2.reshape(-1), y2.reshape(-1))
                     latent_reg_total = latent_reg_main + latent_reg_hier
                     
                     # Combine reconstruction loss with latent regularization
