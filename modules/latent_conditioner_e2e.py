@@ -359,6 +359,9 @@ config):
                     
                     y_pred1_val, y_pred2_val = latent_conditioner(x_val)
                     
+                    # Keep original tensor for latent regularization
+                    y_pred2_val_tensor = y_pred2_val
+                    
                     # Convert y_pred2_val to proper list format for VAE decoder
                     if torch.is_tensor(y_pred2_val):
                         y_pred2_val = [y_pred2_val[:, i, :] for i in range(y_pred2_val.shape[1])]
@@ -372,7 +375,7 @@ config):
                     
                     if use_latent_regularization:
                         latent_reg_main_val = nn.MSELoss()(y_pred1_val, y1_val)
-                        latent_reg_hier_val = nn.MSELoss()(y_pred2_val, y2_val)
+                        latent_reg_hier_val = nn.MSELoss()(y_pred2_val_tensor.reshape(-1), y2_val.reshape(-1))
                         latent_reg_total_val = latent_reg_main_val + latent_reg_hier_val
                         
                         total_val_loss = recon_loss_val + latent_reg_weight * latent_reg_total_val
