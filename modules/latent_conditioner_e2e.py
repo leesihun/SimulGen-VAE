@@ -12,7 +12,7 @@ from torch.utils.tensorboard import SummaryWriter
 from torchinfo import summary
 from modules.pca_preprocessor import PCAPreprocessor
 import matplotlib.pyplot as plt
-from torch.cuda.amp import autocast, GradScaler
+# Removed mixed precision as requested
 
 # Import shared utilities from original module
 from modules.latent_conditioner import (
@@ -106,10 +106,8 @@ config):
         latent_conditioner, latent_conditioner_lr, weight_decay, latent_conditioner_epoch
     )
     
-    # Initialize mixed precision scaler for performance optimization
-    scaler = GradScaler()
-    use_mixed_precision = torch.cuda.is_available() and config.get('use_mixed_precision', 1)
-    print(f"Mixed precision training: {'Enabled' if use_mixed_precision else 'Disabled'}")
+    # Mixed precision disabled as requested - using full FP32 precision
+    print("Mixed precision training: Disabled (using full FP32 precision)")
     
     best_val_loss = float('inf')
     patience = 100000
@@ -140,9 +138,14 @@ config):
         print(f"==========================================")
 
     for epoch in range(latent_conditioner_epoch):
-        start_time = time.time()
+        epoch_start_time = time.time()
         latent_conditioner.train(True)
         
+        # Initialize timing tracking for this epoch
+        total_data_time = 0
+        total_forward_time = 0
+        total_backward_time = 0
+        total_optimization_time = 0
         
         epoch_loss = 0
         epoch_recon_loss = 0
@@ -151,10 +154,16 @@ config):
         
         # Use unified E2E dataloader - no need for separate iterators
         for i, (x, y1, y2, target_data) in enumerate(e2e_dataloader):
+            batch_start_time = time.time()
             
+            # === STAGE 1: DATA ACQUISITION AND TRANSFER ===
+            data_start_time = time.time()
             if x.device != device:
                 x, y1, y2 = x.to(device, non_blocking=True), y1.to(device, non_blocking=True), y2.to(device, non_blocking=True)
             target_data = target_data.to(device, non_blocking=True)
+            data_end_time = time.time()
+            batch_data_time = data_end_time - data_start_time
+            total_data_time += batch_data_time
             
             if not model_summary_shown:
                 batch_size = x.shape[0]
@@ -201,50 +210,55 @@ config):
                 noise = torch.randn_like(x) * 0.01
                 x = x + noise
             
+            # === STAGE 2: FORWARD PASS ===
+            forward_start_time = time.time()
             latent_conditioner_optimized.zero_grad(set_to_none=True)
 
             try:
-                # Mixed precision forward pass
-                with autocast(enabled=use_mixed_precision):
-                    y_pred1, y_pred2 = latent_conditioner(x)
+                # Forward pass without mixed precision (as requested)
+                y_pred1, y_pred2 = latent_conditioner(x)
 
-                    # Keep original tensor for latent regularization
-                    y_pred2_tensor = y_pred2
+                # Keep original tensor for latent regularization
+                y_pred2_tensor = y_pred2
+                
+                # The VAE decoder expects xs as a list where each element corresponds to a decoder layer
+                # Based on the error, we need to restructure y_pred2 correctly
+                if torch.is_tensor(y_pred2):
+                    # If y_pred2 is [batch_size, 3, 8] then split along dim 1
+                    if y_pred2.dim() == 3 and y_pred2.shape[1] == 3:
+                        y_pred2 = [y_pred2[:, i, :] for i in range(y_pred2.shape[1])]
+                    # If y_pred2 is [batch_size, num_layers * latent_dim], reshape and split
+                    elif y_pred2.dim() == 2:
+                        # Assume it needs to be reshaped to [batch_size, num_layers, latent_dim]
+                        num_layers = 3  # Based on decoder structure
+                        latent_dim = y_pred2.shape[1] // num_layers
+                        y_pred2 = y_pred2.view(y_pred2.shape[0], num_layers, latent_dim)
+                        y_pred2 = [y_pred2[:, i, :] for i in range(num_layers)]
+                elif isinstance(y_pred2, (list, tuple)):
+                    y_pred2 = list(y_pred2)
+                # ==== KEY DIFFERENCE: Use VAE decoder to reconstruct data ====
+                # NOTE: VAE parameters are frozen (requires_grad=False) but we need gradient flow for E2E training
+                
+                reconstructed_data, _ = vae_model.decoder(y_pred1, y_pred2)
+                
+                recon_loss = reconstruction_loss_fn(reconstructed_data, target_data)
+                
+                # Optional latent regularization (same as original but weighted)
+                if use_latent_regularization:
+                    latent_reg_main = nn.MSELoss()(y_pred1, y1)
+                    latent_reg_hier = nn.MSELoss()(y_pred2_tensor.reshape(-1), y2.reshape(-1))
+                    latent_reg_total = latent_reg_main + latent_reg_hier
                     
-                    # The VAE decoder expects xs as a list where each element corresponds to a decoder layer
-                    # Based on the error, we need to restructure y_pred2 correctly
-                    if torch.is_tensor(y_pred2):
-                        # If y_pred2 is [batch_size, 3, 8] then split along dim 1
-                        if y_pred2.dim() == 3 and y_pred2.shape[1] == 3:
-                            y_pred2 = [y_pred2[:, i, :] for i in range(y_pred2.shape[1])]
-                        # If y_pred2 is [batch_size, num_layers * latent_dim], reshape and split
-                        elif y_pred2.dim() == 2:
-                            # Assume it needs to be reshaped to [batch_size, num_layers, latent_dim]
-                            num_layers = 3  # Based on decoder structure
-                            latent_dim = y_pred2.shape[1] // num_layers
-                            y_pred2 = y_pred2.view(y_pred2.shape[0], num_layers, latent_dim)
-                            y_pred2 = [y_pred2[:, i, :] for i in range(num_layers)]
-                    elif isinstance(y_pred2, (list, tuple)):
-                        y_pred2 = list(y_pred2)
-                    # ==== KEY DIFFERENCE: Use VAE decoder to reconstruct data ====
-                    # NOTE: VAE parameters are frozen (requires_grad=False) but we need gradient flow for E2E training
-                    
-                    reconstructed_data, _ = vae_model.decoder(y_pred1, y_pred2)
-                    
-                    recon_loss = reconstruction_loss_fn(reconstructed_data, target_data)
-                    
-                    # Optional latent regularization (same as original but weighted)
-                    if use_latent_regularization:
-                        latent_reg_main = nn.MSELoss()(y_pred1, y1)
-                        latent_reg_hier = nn.MSELoss()(y_pred2_tensor.reshape(-1), y2.reshape(-1))
-                        latent_reg_total = latent_reg_main + latent_reg_hier
-                        
-                        # Combine reconstruction loss with latent regularization
-                        loss = recon_loss + latent_reg_weight * latent_reg_total
-                        epoch_latent_reg_loss += (latent_reg_weight * latent_reg_total).item()
-                    else:
-                        # Pure end-to-end loss: only reconstruction quality matters
-                        loss = recon_loss
+                    # Combine reconstruction loss with latent regularization
+                    loss = recon_loss + latent_reg_weight * latent_reg_total
+                    epoch_latent_reg_loss += (latent_reg_weight * latent_reg_total).item()
+                else:
+                    # Pure end-to-end loss: only reconstruction quality matters
+                    loss = recon_loss
+
+                forward_end_time = time.time()
+                batch_forward_time = forward_end_time - forward_start_time
+                total_forward_time += batch_forward_time
 
                 epoch_loss += loss.item()
                 epoch_recon_loss += recon_loss.item()
@@ -254,19 +268,21 @@ config):
                 print(f"Error during training at epoch {epoch+1}, batch {i+1}: {e}")
                 raise
             
-            # Mixed precision backward pass
-            if use_mixed_precision:
-                scaler.scale(loss).backward()
-                # Check gradient norms before clipping
-                scaler.unscale_(latent_conditioner_optimized)
-                total_grad_norm = torch.nn.utils.clip_grad_norm_(latent_conditioner.parameters(), max_norm=10.0)
-                scaler.step(latent_conditioner_optimized)
-                scaler.update()
-            else:
-                loss.backward()
-                # Check gradient norms before clipping
-                total_grad_norm = torch.nn.utils.clip_grad_norm_(latent_conditioner.parameters(), max_norm=10.0)
-                latent_conditioner_optimized.step()
+            # === STAGE 3: BACKWARD PASS ===
+            backward_start_time = time.time()
+            loss.backward()
+            backward_end_time = time.time()
+            batch_backward_time = backward_end_time - backward_start_time
+            total_backward_time += batch_backward_time
+            
+            # === STAGE 4: OPTIMIZATION ===
+            optimization_start_time = time.time()
+            # Check gradient norms before clipping
+            total_grad_norm = torch.nn.utils.clip_grad_norm_(latent_conditioner.parameters(), max_norm=10.0)
+            latent_conditioner_optimized.step()
+            optimization_end_time = time.time()
+            batch_optimization_time = optimization_end_time - optimization_start_time
+            total_optimization_time += batch_optimization_time
             # Monitor gradient health
             if epoch % 100 == 0 and i == 0:  # Log every 100 epochs, first batch
                 print(f"DEBUG: Gradient norm: {total_grad_norm:.4f}, Recon Loss: {recon_loss.item():.4E}, Total Loss: {loss.item():.4E}")
@@ -287,6 +303,7 @@ config):
         val_batches = 0
         
         if epoch % 10 == 0:
+            validation_start_time = time.time()
             with torch.no_grad():
                 for i, (x_val, y1_val, y2_val, target_val_data) in enumerate(e2e_validation_dataloader):
                     
@@ -327,8 +344,14 @@ config):
                 avg_val_loss = val_loss / val_batches
                 avg_val_recon_loss = val_recon_loss / val_batches
                 avg_val_latent_reg_loss = val_latent_reg_loss / val_batches
+                
+                validation_end_time = time.time()
+                validation_duration = validation_end_time - validation_start_time
+                avg_val_batch_time = validation_duration / max(val_batches, 1)
             else:
                 avg_val_loss = avg_val_recon_loss = avg_val_latent_reg_loss = 0.0
+                validation_duration = 0.0
+                avg_val_batch_time = 0.0
 
             overfitting_ratio = avg_val_loss / max(avg_train_loss, 1e-8)
             if overfitting_ratio > overfitting_threshold:
@@ -349,8 +372,22 @@ config):
         else:
             main_scheduler.step()
 
-        end_time = time.time()
-        epoch_duration = end_time - start_time
+        epoch_end_time = time.time()
+        epoch_duration = epoch_end_time - epoch_start_time
+        
+        # === ELAPSED TIME SUMMARY FOR THIS EPOCH ===
+        avg_batch_time = epoch_duration / max(num_batches, 1)
+        avg_data_time = total_data_time / max(num_batches, 1)
+        avg_forward_time = total_forward_time / max(num_batches, 1)
+        avg_backward_time = total_backward_time / max(num_batches, 1)
+        avg_optimization_time = total_optimization_time / max(num_batches, 1)
+        
+        # Calculate percentages
+        data_percent = (total_data_time / epoch_duration) * 100 if epoch_duration > 0 else 0
+        forward_percent = (total_forward_time / epoch_duration) * 100 if epoch_duration > 0 else 0
+        backward_percent = (total_backward_time / epoch_duration) * 100 if epoch_duration > 0 else 0
+        optimization_percent = (total_optimization_time / epoch_duration) * 100 if epoch_duration > 0 else 0
+        other_percent = 100 - (data_percent + forward_percent + backward_percent + optimization_percent)
 
         if epoch % 100 == 0:
             writer.add_scalar('LatentConditioner Loss/train_total', avg_train_loss, epoch)
@@ -365,11 +402,24 @@ config):
         current_lr = latent_conditioner_optimized.param_groups[0]['lr']
         scheduler_info = f"Warmup" if epoch < warmup_epochs else f"Cosine"
         
+        # Enhanced progress display with detailed timing breakdown
         print('[%d/%d]\tTrain: %.4E (recon:%.4E, reg:%.4E), Val: %.4E (recon:%.4E, reg:%.4E), LR: %.2E (%s), ETA: %.2f h, Patience: %d/%d' % 
               (epoch, latent_conditioner_epoch, avg_train_loss, avg_train_recon_loss, avg_train_latent_reg_loss, 
                avg_val_loss, avg_val_recon_loss, avg_val_latent_reg_loss,
                current_lr, scheduler_info,
                (latent_conditioner_epoch-epoch)*epoch_duration/3600, patience_counter, patience))
+        
+        # Detailed timing breakdown every 10 epochs or first 5 epochs
+        if epoch % 10 == 0 or epoch < 5:
+            print(f'    ⏱️  TIMING BREAKDOWN - Epoch {epoch}:')
+            print(f'        📥 Data Acquisition: {avg_data_time*1000:.1f}ms/batch ({data_percent:.1f}%)')
+            print(f'        🔄 Forward Pass:     {avg_forward_time*1000:.1f}ms/batch ({forward_percent:.1f}%)')
+            print(f'        ⬅️  Backward Pass:    {avg_backward_time*1000:.1f}ms/batch ({backward_percent:.1f}%)')
+            print(f'        ⚡ Optimization:     {avg_optimization_time*1000:.1f}ms/batch ({optimization_percent:.1f}%)')
+            print(f'        🔧 Other/Overhead:   {other_percent:.1f}%')
+            print(f'        📊 Total Training:   {epoch_duration:.2f}s ({num_batches} batches, {avg_batch_time*1000:.1f}ms/batch avg)')
+            if epoch % 10 == 0 and validation_duration > 0:
+                print(f'        ✅ Validation:       {validation_duration:.2f}s ({val_batches} batches, {avg_val_batch_time*1000:.1f}ms/batch avg)')
                
         if patience_counter >= patience:
             print(f'Early stopping at epoch {epoch}. Best validation loss: {best_val_loss:.4E}')
@@ -379,6 +429,21 @@ config):
     torch.save(latent_conditioner, 'model_save/LatentConditioner_E2E')
 
     writer.close()
-    print(f"End-to-end training completed. Final validation loss: {best_val_loss:.4E}")
+    
+    # Final timing summary
+    total_training_time = time.time() - epoch_start_time  # Use the last epoch start time as reference
+    print("\n" + "="*60)
+    print("🏁 END-TO-END TRAINING COMPLETED")
+    print("="*60)
+    print(f"📈 Final validation loss: {best_val_loss:.4E}")
+    print(f"⏱️  Training completed in {total_training_time/3600:.2f} hours")
+    print(f"📊 Performance optimization recommendations:")
+    if data_percent > 15:
+        print(f"   • Data loading is slow ({data_percent:.1f}%) - consider increasing num_workers or using load_all=1")
+    if forward_percent < 40:
+        print(f"   • GPU utilization may be low - forward pass only {forward_percent:.1f}% of time")
+    if other_percent > 20:
+        print(f"   • High overhead ({other_percent:.1f}%) - check for CPU bottlenecks")
+    print("="*60)
 
     return avg_val_loss
