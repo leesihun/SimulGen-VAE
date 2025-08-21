@@ -222,18 +222,24 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
         print(f"Used: {current_memory:.2f}GB | Reserved: {reserved_memory:.2f}GB | Free: {free_memory:.2f}GB | Total: {total_memory:.2f}GB")
         print(f"==========================================")
 
+    
+    total_forward_time = 0
+    total_lc_forward_time = 0
+    total_tensor_prep_time = 0
+    total_vae_decoder_time = 0
+    total_loss_comp_time = 0
+
     for epoch in range(latent_conditioner_epoch):
         epoch_start_time = time.time()
         latent_conditioner.train(True)
         
         data_loader_start_time = time.time()
-        # Use unified E2E dataloader
-
         
         for i, (x, y1, y2, target_data) in enumerate(e2e_dataloader):
-            epoch_latent_reg_loss = 0
+
             data_loader_end_time = time.time()
             dataloader_time = data_loader_end_time - data_loader_start_time
+            epoch_latent_reg_loss = 0
             
             if not model_summary_shown:
                 batch_size = x.shape[0]
@@ -284,81 +290,76 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
             forward_start_time = time.time()
             latent_conditioner_optimized.zero_grad(set_to_none=True)
 
-            try:
-                # === SUBSTAGE 2A: LATENT CONDITIONER FORWARD ===
-                lc_forward_start = time.time()
-                y_pred1, y_pred2 = latent_conditioner(x)
-                lc_forward_end = time.time()
-                lc_forward_time = lc_forward_end - lc_forward_start
+            # === SUBSTAGE 2A: LATENT CONDITIONER FORWARD ===
+            lc_forward_start = time.time()
+            y_pred1, y_pred2 = latent_conditioner(x)
+            lc_forward_end = time.time()
+            lc_forward_time = lc_forward_end - lc_forward_start
 
-                # === SUBSTAGE 2B: TENSOR PREPROCESSING ===
-                tensor_prep_start = time.time()
-                # Keep original tensor for latent regularization
-                y_pred2_tensor = y_pred2
-                
-                # The VAE decoder expects xs as a list where each element corresponds to a decoder layer
-                # Based on the error, we need to restructure y_pred2 correctly
-                if torch.is_tensor(y_pred2):
-                    # If y_pred2 is [batch_size, 3, 8] then split along dim 1
-                    if y_pred2.dim() == 3 and y_pred2.shape[1] == 3:
-                        y_pred2 = [y_pred2[:, i, :] for i in range(y_pred2.shape[1])]
-                    # If y_pred2 is [batch_size, num_layers * latent_dim], reshape and split
-                    elif y_pred2.dim() == 2:
-                        # Assume it needs to be reshaped to [batch_size, num_layers, latent_dim]
-                        num_layers = 3  # Based on decoder structure
-                        latent_dim = y_pred2.shape[1] // num_layers
-                        y_pred2 = y_pred2.view(y_pred2.shape[0], num_layers, latent_dim)
-                        y_pred2 = [y_pred2[:, i, :] for i in range(num_layers)]
-                elif isinstance(y_pred2, (list, tuple)):
-                    y_pred2 = list(y_pred2)
-                tensor_prep_end = time.time()
-                tensor_prep_time = tensor_prep_end - tensor_prep_start
-                
-                # === SUBSTAGE 2C: VAE DECODER (MAIN BOTTLENECK SUSPECT) ===
-                vae_decoder_start = time.time()
-                
-                # NOTE: VAE parameters are frozen (requires_grad=False) but we need gradient flow for E2E training
-                reconstructed_data, _ = vae_model.decoder(y_pred1, y_pred2)
-                
-                vae_decoder_end = time.time()
-                vae_decoder_time = vae_decoder_end - vae_decoder_start
-                
-                # === SUBSTAGE 2D: LOSS COMPUTATION ===
-                loss_comp_start = time.time()
-                recon_loss = reconstruction_loss_fn(reconstructed_data, target_data)
-                loss_comp_end = time.time()
-                loss_comp_time = loss_comp_end - loss_comp_start
-                
-                # Optional latent regularization (same as original but weighted)
-                if use_latent_regularization:
-                    latent_reg_main = nn.MSELoss()(y_pred1, y1)
-                    latent_reg_hier = nn.MSELoss()(y_pred2_tensor.reshape(-1), y2.reshape(-1))
-                    latent_reg_total = latent_reg_main + latent_reg_hier
-                    
-                    # Combine reconstruction loss with latent regularization
-                    loss = recon_loss + latent_reg_weight * latent_reg_total
-                    epoch_latent_reg_loss += (latent_reg_weight * latent_reg_total).item()
-                else:
-                    loss = recon_loss
-
-                forward_end_time = time.time()
-                batch_forward_time = forward_end_time - forward_start_time
-                total_forward_time += batch_forward_time
-                
-                # Accumulate detailed forward pass timings
-                total_lc_forward_time += lc_forward_time
-                total_tensor_prep_time += tensor_prep_time
-                total_vae_decoder_time += vae_decoder_time
-                total_loss_comp_time += loss_comp_time
-
-                epoch_loss += loss.item()
-                epoch_recon_loss += recon_loss.item()
-                num_batches += 1
-                
-            except RuntimeError as e:
-                print(f"Error during training at epoch {epoch+1}, batch {i+1}: {e}")
-                raise
+            # === SUBSTAGE 2B: TENSOR PREPROCESSING ===
+            tensor_prep_start = time.time()
+            # Keep original tensor for latent regularization
+            y_pred2_tensor = y_pred2
             
+            # The VAE decoder expects xs as a list where each element corresponds to a decoder layer
+            # Based on the error, we need to restructure y_pred2 correctly
+            if torch.is_tensor(y_pred2):
+                # If y_pred2 is [batch_size, 3, 8] then split along dim 1
+                if y_pred2.dim() == 3 and y_pred2.shape[1] == 3:
+                    y_pred2 = [y_pred2[:, i, :] for i in range(y_pred2.shape[1])]
+                # If y_pred2 is [batch_size, num_layers * latent_dim], reshape and split
+                elif y_pred2.dim() == 2:
+                    # Assume it needs to be reshaped to [batch_size, num_layers, latent_dim]
+                    num_layers = 3  # Based on decoder structure
+                    latent_dim = y_pred2.shape[1] // num_layers
+                    y_pred2 = y_pred2.view(y_pred2.shape[0], num_layers, latent_dim)
+                    y_pred2 = [y_pred2[:, i, :] for i in range(num_layers)]
+            elif isinstance(y_pred2, (list, tuple)):
+                y_pred2 = list(y_pred2)
+            tensor_prep_end = time.time()
+            tensor_prep_time = tensor_prep_end - tensor_prep_start
+            
+            # === SUBSTAGE 2C: VAE DECODER (MAIN BOTTLENECK SUSPECT) ===
+            vae_decoder_start = time.time()
+            
+            # NOTE: VAE parameters are frozen (requires_grad=False) but we need gradient flow for E2E training
+            reconstructed_data, _ = vae_model.decoder(y_pred1, y_pred2)
+            
+            vae_decoder_end = time.time()
+            vae_decoder_time = vae_decoder_end - vae_decoder_start
+            
+            # === SUBSTAGE 2D: LOSS COMPUTATION ===
+            loss_comp_start = time.time()
+            recon_loss = reconstruction_loss_fn(reconstructed_data, target_data)
+            loss_comp_end = time.time()
+            loss_comp_time = loss_comp_end - loss_comp_start
+            
+            # Optional latent regularization (same as original but weighted)
+            if use_latent_regularization:
+                latent_reg_main = nn.MSELoss()(y_pred1, y1)
+                latent_reg_hier = nn.MSELoss()(y_pred2_tensor.reshape(-1), y2.reshape(-1))
+                latent_reg_total = latent_reg_main + latent_reg_hier
+                
+                # Combine reconstruction loss with latent regularization
+                loss = recon_loss + latent_reg_weight * latent_reg_total
+                epoch_latent_reg_loss += (latent_reg_weight * latent_reg_total).item()
+            else:
+                loss = recon_loss
+
+            forward_end_time = time.time()
+            batch_forward_time = forward_end_time - forward_start_time
+            total_forward_time += batch_forward_time
+            
+            # Accumulate detailed forward pass timings
+            total_lc_forward_time += lc_forward_time
+            total_tensor_prep_time += tensor_prep_time
+            total_vae_decoder_time += vae_decoder_time
+            total_loss_comp_time += loss_comp_time
+
+            epoch_loss += loss.item()
+            epoch_recon_loss += recon_loss.item()
+            num_batches += 1
+                
             # === STAGE 3: BACKWARD PASS ===
             backward_start_time = time.time()
             loss.backward()
