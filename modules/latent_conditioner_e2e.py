@@ -489,6 +489,22 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
 
         current_lr = latent_conditioner_optimized.param_groups[0]['lr']
         scheduler_info = f"Warmup" if epoch < warmup_epochs else f"Cosine"
+
+        if epoch % 100 == 0:
+            print(f'    ⏱️  TIMING BREAKDOWN - Epoch {epoch}:')
+            print(f'        📡 DataLoader Fetch: {avg_dataloader_time*1000:.1f}ms/batch ({dataloader_percent:.1f}%) 🚨')
+            print(f'        🔄 Forward Pass:     {avg_forward_time*1000:.1f}ms/batch ({forward_percent:.1f}%)')
+            print(f'            🧠 Latent Cond:     {avg_lc_forward_time*1000:.1f}ms ({lc_forward_percent:.1f}% of forward)')
+            print(f'            🔧 Tensor Prep:     {avg_tensor_prep_time*1000:.1f}ms ({tensor_prep_percent:.1f}% of forward)')
+            print(f'            🏭 VAE Decoder:     {avg_vae_decoder_time*1000:.1f}ms ({vae_decoder_percent:.1f}% of forward) ⚠️')
+            print(f'            📏 Loss Compute:    {avg_loss_comp_time*1000:.1f}ms ({loss_comp_percent:.1f}% of forward)')
+            print(f'        ⬅️  Backward Pass:    {avg_backward_time*1000:.1f}ms/batch ({backward_percent:.1f}%)')
+            print(f'        ⚡ Optimization:     {avg_optimization_time*1000:.1f}ms/batch ({optimization_percent:.1f}%)')
+            print(f'        🔧 Other/Overhead:   {other_percent:.1f}%')
+            
+            print(f'        📊 Total Training:   {epoch_duration:.2f}s ({num_batches} batches, {avg_batch_time*1000:.1f}ms/batch avg)')
+            if validation_duration > 0:
+                print(f'        ✅ Validation:       {validation_duration:.2f}s ({val_batches} batches, {avg_val_batch_time*1000:.1f}ms/batch avg)')
         
         # Enhanced progress display with detailed timing breakdown
         print('[%d/%d]\tTrain: %.4E (recon:%.4E, reg:%.4E), Val: %.4E (recon:%.4E, reg:%.4E), LR: %.2E (%s), ETA: %.2f h, Patience: %d/%d' % 
