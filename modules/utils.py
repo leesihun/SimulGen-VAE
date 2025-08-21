@@ -363,7 +363,7 @@ def cross_function_vram_cleanup():
         try:
             if torch.is_tensor(obj) and obj.is_cuda:
                 size_mb = obj.numel() * obj.element_size() / (1024**2)
-                if size_mb > 1:  # Only show tensors > 10MB
+                if size_mb > 1000:  # Only show tensors > 10MB
                     cuda_tensors_found.append((type(obj).__name__, size_mb, obj.shape, id(obj)))
                     total_size += size_mb
         except:
