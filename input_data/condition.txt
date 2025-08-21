@@ -32,7 +32,7 @@ n_sample	484
 param_dir	/images
 n_epoch	1000
 latent_conditioner_lr	0.0001
-latent_conditioner_batch	128
+latent_conditioner_batch	64
 latent_conditioner_weight_decay	1e-5
 latent_conditioner_dropout_rate	0.2
 use_spatial_attention	0	# 0=off, 1=on - spatial attention in CNN
