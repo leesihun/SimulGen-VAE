@@ -8,11 +8,103 @@ import pandas as pd
 import natsort
 import time
 import math
+import psutil
+import gc
+import threading
 from torch.utils.tensorboard import SummaryWriter
 from torchinfo import summary
 from modules.pca_preprocessor import PCAPreprocessor
 import matplotlib.pyplot as plt
 # Removed mixed precision as requested
+
+class CPUMonitor:
+    """Real-time CPU monitoring for detecting spikes during training."""
+    
+    def __init__(self, spike_threshold=80.0, monitoring_interval=0.1):
+        self.spike_threshold = spike_threshold
+        self.monitoring_interval = monitoring_interval
+        self.cpu_usage_history = []
+        self.spike_events = []
+        self.monitoring = False
+        self.monitor_thread = None
+        
+    def start_monitoring(self):
+        """Start background CPU monitoring."""
+        self.monitoring = True
+        self.monitor_thread = threading.Thread(target=self._monitor_cpu, daemon=True)
+        self.monitor_thread.start()
+        
+    def stop_monitoring(self):
+        """Stop background CPU monitoring."""
+        self.monitoring = False
+        if self.monitor_thread:
+            self.monitor_thread.join(timeout=1.0)
+            
+    def _monitor_cpu(self):
+        """Background thread for continuous CPU monitoring."""
+        while self.monitoring:
+            try:
+                cpu_percent = psutil.cpu_percent(interval=self.monitoring_interval)
+                timestamp = time.time()
+                
+                self.cpu_usage_history.append((timestamp, cpu_percent))
+                
+                # Detect CPU spikes
+                if cpu_percent > self.spike_threshold:
+                    self.spike_events.append({
+                        'timestamp': timestamp,
+                        'cpu_percent': cpu_percent,
+                        'memory_percent': psutil.virtual_memory().percent,
+                        'active_threads': threading.active_count()
+                    })
+                    
+                # Keep only last 1000 measurements to prevent memory buildup
+                if len(self.cpu_usage_history) > 1000:
+                    self.cpu_usage_history = self.cpu_usage_history[-1000:]
+                    
+            except Exception as e:
+                print(f"CPU monitoring error: {e}")
+                break
+                
+    def get_current_cpu_usage(self):
+        """Get instantaneous CPU usage."""
+        return psutil.cpu_percent(interval=0.1)
+        
+    def get_cpu_spike_summary(self):
+        """Get summary of CPU spikes detected."""
+        if not self.spike_events:
+            return "No CPU spikes detected"
+            
+        total_spikes = len(self.spike_events)
+        max_spike = max(spike['cpu_percent'] for spike in self.spike_events)
+        avg_spike = sum(spike['cpu_percent'] for spike in self.spike_events) / total_spikes
+        
+        return f"CPU Spikes: {total_spikes} events, Max: {max_spike:.1f}%, Avg: {avg_spike:.1f}%"
+        
+    def clear_history(self):
+        """Clear monitoring history."""
+        self.cpu_usage_history.clear()
+        self.spike_events.clear()
+
+def verify_tensor_devices(tensors_dict, expected_device):
+    """Verify all tensors are on expected device and warn about mismatches."""
+    device_issues = []
+    
+    for name, tensor in tensors_dict.items():
+        if torch.is_tensor(tensor):
+            if tensor.device != expected_device:
+                device_issues.append(f"{name}: {tensor.device} (expected {expected_device})")
+        elif isinstance(tensor, (list, tuple)):
+            for i, t in enumerate(tensor):
+                if torch.is_tensor(t) and t.device != expected_device:
+                    device_issues.append(f"{name}[{i}]: {t.device} (expected {expected_device})")
+    
+    if device_issues:
+        print(f"⚠️ DEVICE MISMATCH DETECTED:")
+        for issue in device_issues:
+            print(f"   • {issue}")
+        return False
+    return True
 
 # Import shared utilities from original module
 from modules.latent_conditioner import (
@@ -109,6 +201,11 @@ config):
     # Mixed precision disabled as requested - using full FP32 precision
     print("Mixed precision training: Disabled (using full FP32 precision)")
     
+    # Initialize CPU monitoring
+    cpu_monitor = CPUMonitor(spike_threshold=80.0, monitoring_interval=0.1)
+    cpu_monitor.start_monitoring()
+    print("🖥️ CPU monitoring started (spike threshold: 80%)")
+    
     best_val_loss = float('inf')
     patience = 100000
     patience_counter = 0
@@ -154,6 +251,11 @@ config):
         total_loss_comp_time = 0
         total_gpu_mem_used = 0
         
+        # CPU monitoring for this epoch
+        epoch_cpu_measurements = []
+        cpu_spike_count = 0
+        gc_events_count = 0
+        
         epoch_loss = 0
         epoch_recon_loss = 0
         epoch_latent_reg_loss = 0
@@ -165,12 +267,28 @@ config):
             
             # === STAGE 1: DATA ACQUISITION AND TRANSFER ===
             data_start_time = time.time()
+            cpu_before_data = cpu_monitor.get_current_cpu_usage()
+            
             if x.device != device:
                 x, y1, y2 = x.to(device, non_blocking=True), y1.to(device, non_blocking=True), y2.to(device, non_blocking=True)
             target_data = target_data.to(device, non_blocking=True)
+            
+            # Verify all tensors are on correct device
+            tensor_check = verify_tensor_devices({
+                'input_x': x, 'target_y1': y1, 'target_y2': y2, 'target_data': target_data
+            }, device)
+            
             data_end_time = time.time()
+            cpu_after_data = cpu_monitor.get_current_cpu_usage()
+            
             batch_data_time = data_end_time - data_start_time
             total_data_time += batch_data_time
+            
+            # Track CPU usage during data stage
+            data_cpu_spike = cpu_after_data - cpu_before_data
+            if data_cpu_spike > 20:  # Significant CPU increase
+                print(f"⚠️ CPU spike during data loading: +{data_cpu_spike:.1f}% (batch {i})")
+                cpu_spike_count += 1
             
             if not model_summary_shown:
                 batch_size = x.shape[0]
@@ -253,13 +371,23 @@ config):
                 
                 # === SUBSTAGE 2C: VAE DECODER (MAIN BOTTLENECK SUSPECT) ===
                 vae_decoder_start = time.time()
+                cpu_before_vae = cpu_monitor.get_current_cpu_usage()
                 
                 # Check GPU memory before VAE decoder
                 if torch.cuda.is_available():
                     gpu_mem_before = torch.cuda.memory_allocated() / 1024**2  # MB
                 
+                # Verify VAE input tensors are on GPU
+                vae_tensor_check = verify_tensor_devices({
+                    'vae_input_y_pred1': y_pred1, 'vae_input_y_pred2': y_pred2
+                }, device)
+                
                 # NOTE: VAE parameters are frozen (requires_grad=False) but we need gradient flow for E2E training
                 reconstructed_data, _ = vae_model.decoder(y_pred1, y_pred2)
+                
+                # Verify VAE output is on GPU
+                if reconstructed_data.device != device:
+                    print(f"⚠️ VAE decoder output on wrong device: {reconstructed_data.device} (expected {device})")
                 
                 # Check GPU memory after VAE decoder
                 if torch.cuda.is_available():
@@ -267,7 +395,14 @@ config):
                     gpu_mem_used = gpu_mem_after - gpu_mem_before
                 
                 vae_decoder_end = time.time()
+                cpu_after_vae = cpu_monitor.get_current_cpu_usage()
                 vae_decoder_time = vae_decoder_end - vae_decoder_start
+                
+                # Check for VAE decoder CPU spikes
+                vae_cpu_spike = cpu_after_vae - cpu_before_vae
+                if vae_cpu_spike > 15:  # VAE decoder causing CPU spike
+                    print(f"🚨 VAE decoder CPU spike: +{vae_cpu_spike:.1f}% (batch {i}, {vae_decoder_time*1000:.1f}ms)")
+                    cpu_spike_count += 1
                 
                 # === SUBSTAGE 2D: LOSS COMPUTATION ===
                 loss_comp_start = time.time()
@@ -317,12 +452,32 @@ config):
             
             # === STAGE 4: OPTIMIZATION ===
             optimization_start_time = time.time()
+            cpu_before_opt = cpu_monitor.get_current_cpu_usage()
+            
+            # Check for garbage collection before optimization
+            gc_before = gc.get_count()
+            
             # Check gradient norms before clipping
             total_grad_norm = torch.nn.utils.clip_grad_norm_(latent_conditioner.parameters(), max_norm=10.0)
             latent_conditioner_optimized.step()
+            
+            # Check for garbage collection after optimization
+            gc_after = gc.get_count()
+            if any(gc_after[i] < gc_before[i] for i in range(len(gc_before))):
+                gc_events_count += 1
+                if gc_events_count <= 3:  # Only warn for first few GC events per epoch
+                    print(f"🗑️ Garbage collection occurred during optimization (batch {i})")
+            
             optimization_end_time = time.time()
+            cpu_after_opt = cpu_monitor.get_current_cpu_usage()
             batch_optimization_time = optimization_end_time - optimization_start_time
             total_optimization_time += batch_optimization_time
+            
+            # Check for optimization CPU spikes
+            opt_cpu_spike = cpu_after_opt - cpu_before_opt
+            if opt_cpu_spike > 10:
+                print(f"⚡ Optimization CPU spike: +{opt_cpu_spike:.1f}% (batch {i})")
+                cpu_spike_count += 1
             # Monitor gradient health
             if epoch % 100 == 0 and i == 0:  # Log every 100 epochs, first batch
                 print(f"DEBUG: Gradient norm: {total_grad_norm:.4f}, Recon Loss: {recon_loss.item():.4E}, Total Loss: {loss.item():.4E}")
@@ -474,6 +629,15 @@ config):
             print(f'        ⚡ Optimization:     {avg_optimization_time*1000:.1f}ms/batch ({optimization_percent:.1f}%)')
             print(f'        🔧 Other/Overhead:   {other_percent:.1f}%')
             print(f'        🧠 GPU Memory/batch: {avg_gpu_mem_used:.1f}MB (VAE decoder usage)')
+            
+            # CPU monitoring summary
+            current_cpu = cpu_monitor.get_current_cpu_usage()
+            cpu_spike_summary = cpu_monitor.get_cpu_spike_summary()
+            print(f'        🖥️ CPU Status:       {current_cpu:.1f}% current, {cpu_spike_count} spikes this epoch')
+            print(f'        🗑️ Memory Mgmt:      {gc_events_count} garbage collections this epoch')
+            if cpu_spike_count > 0:
+                print(f'            💡 Spike Analysis: {cpu_spike_summary}')
+            
             print(f'        📊 Total Training:   {epoch_duration:.2f}s ({num_batches} batches, {avg_batch_time*1000:.1f}ms/batch avg)')
             if validation_duration > 0:
                 print(f'        ✅ Validation:       {validation_duration:.2f}s ({val_batches} batches, {avg_val_batch_time*1000:.1f}ms/batch avg)')
@@ -482,6 +646,9 @@ config):
             print(f'Early stopping at epoch {epoch}. Best validation loss: {best_val_loss:.4E}')
             break
 
+    # Stop CPU monitoring
+    cpu_monitor.stop_monitoring()
+    
     torch.save(latent_conditioner.state_dict(), 'checkpoints/latent_conditioner_e2e.pth')
     torch.save(latent_conditioner, 'model_save/LatentConditioner_E2E')
 
@@ -528,11 +695,34 @@ config):
     if other_percent > 20:
         print(f"   🔧 High overhead ({other_percent:.1f}%) - check for CPU bottlenecks")
         
+    print(f"\n🖥️ CPU UTILIZATION ANALYSIS:")
+    final_cpu_summary = cpu_monitor.get_cpu_spike_summary()
+    print(f"   📊 Overall CPU spikes: {final_cpu_summary}")
+    print(f"   🗑️ Total GC events: {gc_events_count} across all epochs")
+    
+    # Analyze most likely CPU spike causes
+    print(f"\n🔍 CPU SPIKE ANALYSIS:")
+    if cpu_spike_count > 10:
+        print(f"   🚨 FREQUENT CPU SPIKES ({cpu_spike_count} total) - likely causes:")
+        print(f"      • VAE decoder operations falling back to CPU")
+        print(f"      • Memory pressure causing CPU-GPU swapping") 
+        print(f"      • DataLoader workers competing for CPU resources")
+        print(f"      • Garbage collection during large tensor operations")
+    elif cpu_spike_count > 0:
+        print(f"   ⚠️  Occasional CPU spikes ({cpu_spike_count} total) - monitor for:")
+        print(f"      • Memory management during VAE decoder calls")
+        print(f"      • DataLoader prefetching conflicts")
+    else:
+        print(f"   ✅ No significant CPU spikes detected - good performance!")
+
     print(f"\n🎯 NEXT STEPS TO IMPROVE PERFORMANCE:")
     print(f"   1. Add: vae_model.decoder = torch.compile(vae_model.decoder)")
     print(f"   2. Verify: vae_model.eval() and all parameters require_grad=False")
     print(f"   3. Profile: Individual VAE decoder layers with torch.profiler")
     print(f"   4. Consider: Reducing VAE decoder precision or complexity")
+    if cpu_spike_count > 5:
+        print(f"   5. CPU Optimization: Reduce DataLoader num_workers or enable CPU affinity")
+        print(f"   6. Memory: Monitor for CPU-GPU memory transfers in VAE decoder")
     print("="*70)
 
     return avg_val_loss
