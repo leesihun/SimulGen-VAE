@@ -265,14 +265,17 @@ config):
             data_start_time = time.time()
             # cpu_before_data = cpu_monitor.get_current_cpu_usage()  # Disabled for performance
             
+            # Optimized data transfer (skip device check when load_all=True)
             if x.device != device:
                 x, y1, y2 = x.to(device, non_blocking=True), y1.to(device, non_blocking=True), y2.to(device, non_blocking=True)
-            target_data = target_data.to(device, non_blocking=True)
+                target_data = target_data.to(device, non_blocking=True)
+            elif target_data.device != device:
+                target_data = target_data.to(device, non_blocking=True)
             
-            # Verify all tensors are on correct device
-            tensor_check = verify_tensor_devices({
-                'input_x': x, 'target_y1': y1, 'target_y2': y2, 'target_data': target_data
-            }, device)
+            # Tensor device verification (disabled for performance with load_all=True)
+            # tensor_check = verify_tensor_devices({
+            #     'input_x': x, 'target_y1': y1, 'target_y2': y2, 'target_data': target_data
+            # }, device)
             
             data_end_time = time.time()
             # cpu_after_data = cpu_monitor.get_current_cpu_usage()  # Disabled for performance
@@ -373,10 +376,10 @@ config):
                 if torch.cuda.is_available():
                     gpu_mem_before = torch.cuda.memory_allocated() / 1024**2  # MB
                 
-                # Verify VAE input tensors are on GPU
-                vae_tensor_check = verify_tensor_devices({
-                    'vae_input_y_pred1': y_pred1, 'vae_input_y_pred2': y_pred2
-                }, device)
+                # VAE input tensor verification (disabled for performance with load_all=True)
+                # vae_tensor_check = verify_tensor_devices({
+                #     'vae_input_y_pred1': y_pred1, 'vae_input_y_pred2': y_pred2
+                # }, device)
                 
                 # NOTE: VAE parameters are frozen (requires_grad=False) but we need gradient flow for E2E training
                 reconstructed_data, _ = vae_model.decoder(y_pred1, y_pred2)

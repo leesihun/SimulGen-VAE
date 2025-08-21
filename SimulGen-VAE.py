@@ -97,6 +97,7 @@ def main():
         setup_distributed_training, parse_condition_file, parse_training_parameters,
         evaluate_vae_reconstruction
     )
+    from modules.utils import cross_function_vram_cleanup
     from modules.augmentation import create_augmented_dataloaders
     from modules.plotter import temporal_plotter, dual_view_plotter
 
@@ -495,6 +496,7 @@ def main():
     else:
         raise NotImplementedError(f'Unrecognized latent_conditioner_data_type: {latent_conditioner_data_type}. Supported options: "image" (CNN), "image_vit" (ViT), "csv" (MLP)')
 
+    cross_function_vram_cleanup()
 
     print("Starting LatentConditioner training...")
     
@@ -528,15 +530,15 @@ def main():
         
         e2e_train_dataset, e2e_validation_dataset = random_split(e2e_dataset, [e2e_train_size, e2e_val_size])
         
-        # Create optimized E2E dataloaders (follows SimulGen-VAE pattern)
+        # Create optimized E2E dataloaders for H100 (minimal overhead configuration)
         e2e_dataloader = torch.utils.data.DataLoader(
             e2e_train_dataset,
             batch_size=latent_conditioner_batch_size,
             shuffle=True,
-            num_workers=latent_conditioner_optimal_workers,
-            pin_memory=not load_all,  # Only pin memory if not already on GPU
-            persistent_workers=latent_conditioner_optimal_workers > 0,
-            prefetch_factor=4 if latent_conditioner_optimal_workers > 0 else None,  # Increased prefetch
+            num_workers=0 if load_all else min(2, latent_conditioner_optimal_workers),  # Reduce workers when data is on GPU
+            pin_memory=False,  # Disable pin_memory for performance
+            persistent_workers=False,  # Disable persistence to reduce overhead
+            prefetch_factor=None,  # Disable prefetching when data is already on GPU
             drop_last=True
         )
         
@@ -544,14 +546,12 @@ def main():
             e2e_validation_dataset,
             batch_size=latent_conditioner_batch_size,
             shuffle=False,
-            num_workers=latent_conditioner_optimal_workers,
-            pin_memory=not load_all,  # Only pin memory if not already on GPU
-            persistent_workers=latent_conditioner_optimal_workers > 0,
-            prefetch_factor=4 if latent_conditioner_optimal_workers > 0 else None,  # Increased prefetch
+            num_workers=0 if load_all else min(2, latent_conditioner_optimal_workers),  # Reduce workers when data is on GPU
+            pin_memory=False,  # Disable pin_memory for performance
+            persistent_workers=False,  # Disable persistence to reduce overhead
+            prefetch_factor=None,  # Disable prefetching when data is already on GPU
             drop_last=False
         )
-        
-        from modules.utils import cross_function_vram_cleanup
         
         cross_function_vram_cleanup()
         
