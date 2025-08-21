@@ -34,6 +34,7 @@ def get_latest_file(directory, pattern='*'):
     return latest_file
 
 device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+
 class MyBaseDataset(Dataset):
     def __init__(self, x_data, load_all):
         print("Loading data...")
@@ -606,39 +607,21 @@ class E2ELatentConditionerDataset(Dataset):
     """
     
     def __init__(self, condition_data, latent_main_data, latent_hier_data, target_reconstruction_data, load_all=False):
-        """
-        Initialize E2E dataset with unified data handling.
-        
-        Args:
-            condition_data: Input conditions (images/parametric data)
-            latent_main_data: Main latent space targets (32D)
-            latent_hier_data: Hierarchical latent targets (3x8D)
-            target_reconstruction_data: Target reconstruction data for E2E loss
-            load_all: Whether to preload data to GPU memory (follows SimulGen-VAE pattern)
-        """
+
         super().__init__()
-        
-        # Validate data shapes
-        assert len(condition_data) == len(latent_main_data) == len(latent_hier_data) == len(target_reconstruction_data), \
-            f"Data length mismatch: {len(condition_data)}, {len(latent_main_data)}, {len(latent_hier_data)}, {len(target_reconstruction_data)}"
         
         self.length = len(condition_data)
         self.load_all = load_all
         
         if load_all and torch.cuda.is_available():
-            print("Preloading E2E dataset to GPU for maximum performance...")
-            device = torch.cuda.current_device()
-            
+    
             # Optimized GPU loading - direct conversion without pin_memory for speed
             print("Converting datasets to contiguous GPU tensors...")
-            self.condition_data = torch.from_numpy(condition_data).float().contiguous().to(device, non_blocking=False)
-            self.latent_main_data = torch.from_numpy(latent_main_data).float().contiguous().to(device, non_blocking=False)
-            self.latent_hier_data = torch.from_numpy(latent_hier_data).float().contiguous().to(device, non_blocking=False)
-            self.target_reconstruction_data = torch.from_numpy(target_reconstruction_data).float().contiguous().to(device, non_blocking=False)
+            self.condition_data = torch.tensor(condition_data).to(device, non_blocking=False)
+            self.latent_main_data = torch.tensor(latent_main_data).to(device, non_blocking=False)
+            self.latent_hier_data = torch.tensor(latent_hier_data).to(device, non_blocking=False)
+            self.target_reconstruction_data = torch.tensor(target_reconstruction_data).to(device, non_blocking=False)
             
-            # Ensure data is optimally laid out for batch access
-            print("Optimizing tensor layout for batch access...")
-            torch.cuda.synchronize()  # Ensure all transfers complete
             
             print(f"E2E Dataset loaded to GPU: {self.length} samples")
             print(f"  Condition data: {self.condition_data.shape} ({self.condition_data.numel() * 4 / 1024**2:.1f}MB)")
@@ -669,19 +652,13 @@ class E2ELatentConditionerDataset(Dataset):
             tuple: (condition_input, latent_main_target, latent_hier_target, reconstruction_target)
         """
         if self.load_all:
-            # Optimized GPU indexing - use views when possible to reduce memory operations
-            try:
-                # Single indexing operation per tensor (minimal overhead)
-                condition = self.condition_data[idx]
-                latent_main = self.latent_main_data[idx] 
-                latent_hier = self.latent_hier_data[idx]
-                target_recon = self.target_reconstruction_data[idx]
-                return condition, latent_main, latent_hier, target_recon
-            except Exception as e:
-                # Fallback with detailed error info
-                print(f"E2E Dataset indexing error at idx {idx}: {e}")
-                print(f"Data shapes: condition={self.condition_data.shape}, target={self.target_reconstruction_data.shape}")
-                raise
+            # Single indexing operation per tensor (minimal overhead)
+            condition = self.condition_data[idx]
+            latent_main = self.latent_main_data[idx] 
+            latent_hier = self.latent_hier_data[idx]
+            target_recon = self.target_reconstruction_data[idx]
+            return condition, latent_main, latent_hier, target_recon
+        
         else:
             # CPU mode with pinned memory
             return (

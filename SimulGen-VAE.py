@@ -369,15 +369,15 @@ def main():
         VAE_trained = torch.load('model_save/SimulGen-VAE', map_location=device, weights_only=False)
         VAE = VAE_trained.eval()
 
-    # Free all dataloaders
-    del dataloader, val_dataloader
-    torch.cuda.empty_cache()
-
+    
+    cross_function_vram_cleanup()
+    
+    
     # LatentConditioner training (runs for both train_latent_conditioner_only == 0 and train_latent_conditioner_only == 1)
     out_latent_vectors = latent_vectors.reshape([num_param, latent_dim_end])
     xs_vectors = hierarchical_latent_vectors.reshape([num_param, -1])
 
-    # Check for PCA_MLP mode
+
     if latent_conditioner_data_type=='image':
         print('Loading image data for CNN...')
         image=True
@@ -462,8 +462,6 @@ def main():
     )
 
     size2 = len(num_filter_enc)-1
-
-
     device = safe_cuda_initialization()
     
     if latent_conditioner_data_type == 'image':
@@ -603,9 +601,6 @@ def main():
     eval_device = "cuda:0" if torch.cuda.is_available() else "cpu"
     latent_conditioner = latent_conditioner.to(eval_device)
     device = eval_device
-
-    if VAE in globals():
-        del VAE
 
     VAE_trained = torch.load('model_save/SimulGen-VAE', map_location= device, weights_only=False)
     VAE = VAE_trained.eval()
