@@ -147,6 +147,13 @@ config):
         total_backward_time = 0
         total_optimization_time = 0
         
+        # Detailed forward pass timing
+        total_lc_forward_time = 0
+        total_tensor_prep_time = 0
+        total_vae_decoder_time = 0
+        total_loss_comp_time = 0
+        total_gpu_mem_used = 0
+        
         epoch_loss = 0
         epoch_recon_loss = 0
         epoch_latent_reg_loss = 0
@@ -210,14 +217,19 @@ config):
                 noise = torch.randn_like(x) * 0.01
                 x = x + noise
             
-            # === STAGE 2: FORWARD PASS ===
+            # === STAGE 2: FORWARD PASS (DETAILED PROFILING) ===
             forward_start_time = time.time()
             latent_conditioner_optimized.zero_grad(set_to_none=True)
 
             try:
-                # Forward pass without mixed precision (as requested)
+                # === SUBSTAGE 2A: LATENT CONDITIONER FORWARD ===
+                lc_forward_start = time.time()
                 y_pred1, y_pred2 = latent_conditioner(x)
+                lc_forward_end = time.time()
+                lc_forward_time = lc_forward_end - lc_forward_start
 
+                # === SUBSTAGE 2B: TENSOR PREPROCESSING ===
+                tensor_prep_start = time.time()
                 # Keep original tensor for latent regularization
                 y_pred2_tensor = y_pred2
                 
@@ -236,12 +248,32 @@ config):
                         y_pred2 = [y_pred2[:, i, :] for i in range(num_layers)]
                 elif isinstance(y_pred2, (list, tuple)):
                     y_pred2 = list(y_pred2)
-                # ==== KEY DIFFERENCE: Use VAE decoder to reconstruct data ====
-                # NOTE: VAE parameters are frozen (requires_grad=False) but we need gradient flow for E2E training
+                tensor_prep_end = time.time()
+                tensor_prep_time = tensor_prep_end - tensor_prep_start
                 
+                # === SUBSTAGE 2C: VAE DECODER (MAIN BOTTLENECK SUSPECT) ===
+                vae_decoder_start = time.time()
+                
+                # Check GPU memory before VAE decoder
+                if torch.cuda.is_available():
+                    gpu_mem_before = torch.cuda.memory_allocated() / 1024**2  # MB
+                
+                # NOTE: VAE parameters are frozen (requires_grad=False) but we need gradient flow for E2E training
                 reconstructed_data, _ = vae_model.decoder(y_pred1, y_pred2)
                 
+                # Check GPU memory after VAE decoder
+                if torch.cuda.is_available():
+                    gpu_mem_after = torch.cuda.memory_allocated() / 1024**2  # MB
+                    gpu_mem_used = gpu_mem_after - gpu_mem_before
+                
+                vae_decoder_end = time.time()
+                vae_decoder_time = vae_decoder_end - vae_decoder_start
+                
+                # === SUBSTAGE 2D: LOSS COMPUTATION ===
+                loss_comp_start = time.time()
                 recon_loss = reconstruction_loss_fn(reconstructed_data, target_data)
+                loss_comp_end = time.time()
+                loss_comp_time = loss_comp_end - loss_comp_start
                 
                 # Optional latent regularization (same as original but weighted)
                 if use_latent_regularization:
@@ -259,6 +291,14 @@ config):
                 forward_end_time = time.time()
                 batch_forward_time = forward_end_time - forward_start_time
                 total_forward_time += batch_forward_time
+                
+                # Accumulate detailed forward pass timings
+                total_lc_forward_time += lc_forward_time
+                total_tensor_prep_time += tensor_prep_time
+                total_vae_decoder_time += vae_decoder_time
+                total_loss_comp_time += loss_comp_time
+                if torch.cuda.is_available():
+                    total_gpu_mem_used += gpu_mem_used
 
                 epoch_loss += loss.item()
                 epoch_recon_loss += recon_loss.item()
@@ -302,10 +342,10 @@ config):
         val_latent_reg_loss = 0
         val_batches = 0
         
-        if epoch % 10 == 0:
-            validation_start_time = time.time()
-            with torch.no_grad():
-                for i, (x_val, y1_val, y2_val, target_val_data) in enumerate(e2e_validation_dataloader):
+        # Run validation every epoch for complete loss tracking
+        validation_start_time = time.time()
+        with torch.no_grad():
+            for i, (x_val, y1_val, y2_val, target_val_data) in enumerate(e2e_validation_dataloader):
                     
                     x_val, y1_val, y2_val = x_val.to(device), y1_val.to(device), y2_val.to(device)
                     target_val_data = target_val_data.to(device)
@@ -340,32 +380,31 @@ config):
                     val_recon_loss += recon_loss_val.item()
                     val_batches += 1
 
-            if val_batches > 0:
-                avg_val_loss = val_loss / val_batches
-                avg_val_recon_loss = val_recon_loss / val_batches
-                avg_val_latent_reg_loss = val_latent_reg_loss / val_batches
-                
-                validation_end_time = time.time()
-                validation_duration = validation_end_time - validation_start_time
-                avg_val_batch_time = validation_duration / max(val_batches, 1)
-            else:
-                avg_val_loss = avg_val_recon_loss = avg_val_latent_reg_loss = 0.0
-                validation_duration = 0.0
-                avg_val_batch_time = 0.0
-
-            overfitting_ratio = avg_val_loss / max(avg_train_loss, 1e-8)
-            if overfitting_ratio > overfitting_threshold:
-                print(f'Severe overfitting detected! Val/Train ratio: {overfitting_ratio:.1f}')
-                print(f'Stopping early at epoch {epoch}')
-                break
-                
-            if avg_val_loss < best_val_loss - min_delta:
-                best_val_loss = avg_val_loss
-                patience_counter = 0
-            else:
-                patience_counter += 1
+        # Process validation results (now runs every epoch)
+        if val_batches > 0:
+            avg_val_loss = val_loss / val_batches
+            avg_val_recon_loss = val_recon_loss / val_batches
+            avg_val_latent_reg_loss = val_latent_reg_loss / val_batches
+            
+            validation_end_time = time.time()
+            validation_duration = validation_end_time - validation_start_time
+            avg_val_batch_time = validation_duration / max(val_batches, 1)
         else:
             avg_val_loss = avg_val_recon_loss = avg_val_latent_reg_loss = 0.0
+            validation_duration = 0.0
+            avg_val_batch_time = 0.0
+
+        overfitting_ratio = avg_val_loss / max(avg_train_loss, 1e-8)
+        if overfitting_ratio > overfitting_threshold:
+            print(f'Severe overfitting detected! Val/Train ratio: {overfitting_ratio:.1f}')
+            print(f'Stopping early at epoch {epoch}')
+            break
+            
+        if avg_val_loss < best_val_loss - min_delta:
+            best_val_loss = avg_val_loss
+            patience_counter = 0
+        else:
+            patience_counter += 1
             
         if epoch < warmup_epochs:
             warmup_scheduler.step()
@@ -382,12 +421,25 @@ config):
         avg_backward_time = total_backward_time / max(num_batches, 1)
         avg_optimization_time = total_optimization_time / max(num_batches, 1)
         
+        # Detailed forward pass averages
+        avg_lc_forward_time = total_lc_forward_time / max(num_batches, 1)
+        avg_tensor_prep_time = total_tensor_prep_time / max(num_batches, 1)
+        avg_vae_decoder_time = total_vae_decoder_time / max(num_batches, 1)
+        avg_loss_comp_time = total_loss_comp_time / max(num_batches, 1)
+        avg_gpu_mem_used = total_gpu_mem_used / max(num_batches, 1)
+        
         # Calculate percentages
         data_percent = (total_data_time / epoch_duration) * 100 if epoch_duration > 0 else 0
         forward_percent = (total_forward_time / epoch_duration) * 100 if epoch_duration > 0 else 0
         backward_percent = (total_backward_time / epoch_duration) * 100 if epoch_duration > 0 else 0
         optimization_percent = (total_optimization_time / epoch_duration) * 100 if epoch_duration > 0 else 0
         other_percent = 100 - (data_percent + forward_percent + backward_percent + optimization_percent)
+        
+        # Detailed forward pass percentages (of total forward time)
+        lc_forward_percent = (total_lc_forward_time / max(total_forward_time, 1e-8)) * 100
+        tensor_prep_percent = (total_tensor_prep_time / max(total_forward_time, 1e-8)) * 100
+        vae_decoder_percent = (total_vae_decoder_time / max(total_forward_time, 1e-8)) * 100
+        loss_comp_percent = (total_loss_comp_time / max(total_forward_time, 1e-8)) * 100
 
         if epoch % 100 == 0:
             writer.add_scalar('LatentConditioner Loss/train_total', avg_train_loss, epoch)
@@ -414,11 +466,16 @@ config):
             print(f'    ⏱️  TIMING BREAKDOWN - Epoch {epoch}:')
             print(f'        📥 Data Acquisition: {avg_data_time*1000:.1f}ms/batch ({data_percent:.1f}%)')
             print(f'        🔄 Forward Pass:     {avg_forward_time*1000:.1f}ms/batch ({forward_percent:.1f}%)')
+            print(f'            🧠 Latent Cond:     {avg_lc_forward_time*1000:.1f}ms ({lc_forward_percent:.1f}% of forward)')
+            print(f'            🔧 Tensor Prep:     {avg_tensor_prep_time*1000:.1f}ms ({tensor_prep_percent:.1f}% of forward)')
+            print(f'            🏭 VAE Decoder:     {avg_vae_decoder_time*1000:.1f}ms ({vae_decoder_percent:.1f}% of forward) ⚠️')
+            print(f'            📏 Loss Compute:    {avg_loss_comp_time*1000:.1f}ms ({loss_comp_percent:.1f}% of forward)')
             print(f'        ⬅️  Backward Pass:    {avg_backward_time*1000:.1f}ms/batch ({backward_percent:.1f}%)')
             print(f'        ⚡ Optimization:     {avg_optimization_time*1000:.1f}ms/batch ({optimization_percent:.1f}%)')
             print(f'        🔧 Other/Overhead:   {other_percent:.1f}%')
+            print(f'        🧠 GPU Memory/batch: {avg_gpu_mem_used:.1f}MB (VAE decoder usage)')
             print(f'        📊 Total Training:   {epoch_duration:.2f}s ({num_batches} batches, {avg_batch_time*1000:.1f}ms/batch avg)')
-            if epoch % 10 == 0 and validation_duration > 0:
+            if validation_duration > 0:
                 print(f'        ✅ Validation:       {validation_duration:.2f}s ({val_batches} batches, {avg_val_batch_time*1000:.1f}ms/batch avg)')
                
         if patience_counter >= patience:
@@ -430,20 +487,52 @@ config):
 
     writer.close()
     
-    # Final timing summary
+    # Final timing summary with VAE decoder analysis
     total_training_time = time.time() - epoch_start_time  # Use the last epoch start time as reference
-    print("\n" + "="*60)
-    print("🏁 END-TO-END TRAINING COMPLETED")
-    print("="*60)
+    print("\n" + "="*70)
+    print("🏁 END-TO-END TRAINING COMPLETED - VAE DECODER ANALYSIS")
+    print("="*70)
     print(f"📈 Final validation loss: {best_val_loss:.4E}")
     print(f"⏱️  Training completed in {total_training_time/3600:.2f} hours")
-    print(f"📊 Performance optimization recommendations:")
+    
+    print(f"\n🔍 VAE DECODER PERFORMANCE ANALYSIS:")
+    print(f"   🏭 VAE Decoder Time:     {avg_vae_decoder_time*1000:.1f}ms/batch ({vae_decoder_percent:.1f}% of forward pass)")
+    print(f"   🧠 Latent Conditioner:  {avg_lc_forward_time*1000:.1f}ms/batch ({lc_forward_percent:.1f}% of forward pass)")
+    print(f"   🧠 GPU Memory Usage:     {avg_gpu_mem_used:.1f}MB/batch (VAE decoder)")
+    
+    print(f"\n📊 PERFORMANCE OPTIMIZATION RECOMMENDATIONS:")
+    
+    # VAE Decoder specific recommendations
+    if vae_decoder_percent > 70:
+        print(f"   🚨 CRITICAL: VAE decoder is consuming {vae_decoder_percent:.1f}% of forward pass time!")
+        print(f"      • Consider torch.compile(vae_model.decoder) for 20-30% speedup")
+        print(f"      • Check if VAE decoder has unnecessary computation for frozen weights")
+        print(f"      • Profile individual VAE decoder layers to find bottlenecks")
+        
+    if avg_vae_decoder_time > 0.5:  # >500ms per batch
+        print(f"   ⚠️  VAE decoder is very slow ({avg_vae_decoder_time*1000:.1f}ms/batch)")
+        print(f"      • Verify VAE model is in eval() mode and weights are frozen")
+        print(f"      • Consider reducing VAE model complexity if possible")
+        print(f"      • Check for CPU-GPU memory transfers in VAE decoder")
+        
+    if avg_gpu_mem_used > 1000:  # >1GB per batch
+        print(f"   💾 High GPU memory usage ({avg_gpu_mem_used:.1f}MB/batch)")
+        print(f"      • VAE decoder may be creating large intermediate tensors")
+        print(f"      • Consider gradient checkpointing for VAE decoder")
+        
+    # General recommendations
     if data_percent > 15:
-        print(f"   • Data loading is slow ({data_percent:.1f}%) - consider increasing num_workers or using load_all=1")
+        print(f"   📥 Data loading is slow ({data_percent:.1f}%) - consider increasing num_workers")
     if forward_percent < 40:
-        print(f"   • GPU utilization may be low - forward pass only {forward_percent:.1f}% of time")
+        print(f"   🔄 GPU utilization may be low - forward pass only {forward_percent:.1f}% of time")
     if other_percent > 20:
-        print(f"   • High overhead ({other_percent:.1f}%) - check for CPU bottlenecks")
-    print("="*60)
+        print(f"   🔧 High overhead ({other_percent:.1f}%) - check for CPU bottlenecks")
+        
+    print(f"\n🎯 NEXT STEPS TO IMPROVE PERFORMANCE:")
+    print(f"   1. Add: vae_model.decoder = torch.compile(vae_model.decoder)")
+    print(f"   2. Verify: vae_model.eval() and all parameters require_grad=False")
+    print(f"   3. Profile: Individual VAE decoder layers with torch.profiler")
+    print(f"   4. Consider: Reducing VAE decoder precision or complexity")
+    print("="*70)
 
     return avg_val_loss
