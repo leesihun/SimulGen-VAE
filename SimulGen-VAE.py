@@ -552,7 +552,8 @@ def main():
         )
         
         # CRITICAL: Delete new_x_train to free ~25GB VRAM (biggest memory hog!)
-        del new_x_train
+        # move new_x_train to cpu
+        new_x_train = new_x_train.cpu()
         
         # CROSS-FUNCTION VRAM CLEANUP - Find memory from other functions
         def cross_function_vram_cleanup():
