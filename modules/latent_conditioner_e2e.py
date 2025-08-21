@@ -222,12 +222,14 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
         print(f"Used: {current_memory:.2f}GB | Reserved: {reserved_memory:.2f}GB | Free: {free_memory:.2f}GB | Total: {total_memory:.2f}GB")
         print(f"==========================================")
 
-    
+    # Initialize global timing variables
     total_forward_time = 0
     total_lc_forward_time = 0
     total_tensor_prep_time = 0
     total_vae_decoder_time = 0
     total_loss_comp_time = 0
+    total_backward_time = 0
+    total_optimization_time = 0
 
     for epoch in range(latent_conditioner_epoch):
         epoch_start_time = time.time()
@@ -235,11 +237,16 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
         
         data_loader_start_time = time.time()
         
+        # Initialize per-epoch variables
+        epoch_loss = 0
+        epoch_recon_loss = 0
+        epoch_latent_reg_loss = 0
+        num_batches = 0
+        
         for i, (x, y1, y2, target_data) in enumerate(e2e_dataloader):
 
             data_loader_end_time = time.time()
             dataloader_time = data_loader_end_time - data_loader_start_time
-            epoch_latent_reg_loss = 0
             
             if not model_summary_shown:
                 batch_size = x.shape[0]
