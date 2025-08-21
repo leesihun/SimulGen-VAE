@@ -138,6 +138,11 @@ config):
         start_time = time.time()
         latent_conditioner.train(True)
         
+        # GPU utilization monitoring (every 100 epochs)
+        if epoch % 100 == 0 and torch.cuda.is_available():
+            gpu_util = torch.cuda.utilization()
+            print(f"DEBUG: GPU utilization at epoch {epoch}: {gpu_util}%")
+        
         epoch_loss = 0
         epoch_recon_loss = 0
         epoch_latent_reg_loss = 0
@@ -211,20 +216,23 @@ config):
             latent_conditioner_optimized.zero_grad(set_to_none=True)
 
             try:
-                # Forward pass through latent conditioner
-                y_pred1, y_pred2 = latent_conditioner(x)
-
-                # Convert y_pred2 to proper list format for VAE decoder
-                # Debug: Check the actual structure
-                print(f"DEBUG: y_pred1 shape: {y_pred1.shape}")
-                print(f"DEBUG: y_pred2 type: {type(y_pred2)}")
-                if torch.is_tensor(y_pred2):
-                    print(f"DEBUG: y_pred2 shape: {y_pred2.shape}")
-                else:
-                    print(f"DEBUG: y_pred2 length: {len(y_pred2) if hasattr(y_pred2, '__len__') else 'no len'}")
-                    if hasattr(y_pred2, '__len__') and len(y_pred2) > 0:
-                        print(f"DEBUG: y_pred2[0] shape: {y_pred2[0].shape if torch.is_tensor(y_pred2[0]) else type(y_pred2[0])}")
+                # Timing measurements (log every 10 batches)
+                if i % 10 == 0:
+                    torch.cuda.synchronize()
+                    batch_start = time.time()
                 
+                # Forward pass through latent conditioner
+                if i % 10 == 0:
+                    torch.cuda.synchronize()
+                    lc_start = time.time()
+                
+                y_pred1, y_pred2 = latent_conditioner(x)
+                
+                if i % 10 == 0:
+                    torch.cuda.synchronize()
+                    lc_end = time.time()
+                    lc_time = lc_end - lc_start
+
                 # The VAE decoder expects xs as a list where each element corresponds to a decoder layer
                 # Based on the error, we need to restructure y_pred2 correctly
                 if torch.is_tensor(y_pred2):
@@ -241,15 +249,29 @@ config):
                 elif isinstance(y_pred2, (list, tuple)):
                     y_pred2 = list(y_pred2)
                 
-                print(f"DEBUG: After conversion, y_pred2 type: {type(y_pred2)}, length: {len(y_pred2) if hasattr(y_pred2, '__len__') else 'no len'}")
-                if hasattr(y_pred2, '__len__') and len(y_pred2) > 0:
-                    print(f"DEBUG: y_pred2[0] shape: {y_pred2[0].shape if torch.is_tensor(y_pred2[0]) else type(y_pred2[0])}")
-                
+                if i % 10 == 0:
+                    torch.cuda.synchronize()
+                    conversion_end = time.time()
+                    conversion_time = conversion_end - lc_end
+                    
                 # ==== KEY DIFFERENCE: Use VAE decoder to reconstruct data ====
                 # NOTE: VAE parameters are frozen (requires_grad=False) but we need gradient flow for E2E training
+                if i % 10 == 0:
+                    torch.cuda.synchronize()
+                    vae_start = time.time()
+                
                 reconstructed_data, _ = vae_model.decoder(y_pred1, y_pred2)
                 
+                if i % 10 == 0:
+                    torch.cuda.synchronize()
+                    vae_end = time.time()
+                    vae_time = vae_end - vae_start
+                
                 # Primary loss: reconstruction quality
+                if i % 10 == 0:
+                    torch.cuda.synchronize()
+                    loss_start = time.time()
+                
                 recon_loss = reconstruction_loss_fn(reconstructed_data, target_data)
                 
                 # Optional latent regularization (same as original but weighted)
@@ -265,22 +287,42 @@ config):
                     # Pure end-to-end loss: only reconstruction quality matters
                     loss = recon_loss
 
+                if i % 10 == 0:
+                    torch.cuda.synchronize()
+                    backward_start = time.time()
+                    loss_time = backward_start - loss_start
+                
                 epoch_loss += loss.item()
                 epoch_recon_loss += recon_loss.item()
                 num_batches += 1
                 
             except RuntimeError as e:
-                if "out of memory" in str(e):
-                    print(f"CUDA OOM at epoch {epoch+1}, batch {i+1}. Skipping batch.")
-                    torch.cuda.empty_cache()
-                    continue
-                else:
-                    raise
+                print(f"Error during training at epoch {epoch+1}, batch {i+1}: {e}")
+                raise
             
             loss.backward()
             
+            if i % 10 == 0:
+                torch.cuda.synchronize()
+                backward_end = time.time()
+                backward_time = backward_end - backward_start
+            
             # Check gradient norms before clipping
             total_grad_norm = torch.nn.utils.clip_grad_norm_(latent_conditioner.parameters(), max_norm=10.0)
+            
+            latent_conditioner_optimized.step()
+            
+            if i % 10 == 0:
+                torch.cuda.synchronize()
+                batch_end = time.time()
+                step_time = batch_end - backward_end
+                total_batch_time = batch_end - batch_start
+                
+                # Print detailed timing breakdown
+                print(f"TIMING [Epoch {epoch}, Batch {i}]: Total={total_batch_time*1000:.1f}ms | "
+                      f"LC={lc_time*1000:.1f}ms | Conv={conversion_time*1000:.1f}ms | "
+                      f"VAE={vae_time*1000:.1f}ms | Loss={loss_time*1000:.1f}ms | "
+                      f"Backward={backward_time*1000:.1f}ms | Step={step_time*1000:.1f}ms")
             
             # Monitor gradient health
             if epoch % 100 == 0 and i == 0:  # Log every 100 epochs, first batch
@@ -289,8 +331,6 @@ config):
                     print(f"WARNING: Large gradient norm detected: {total_grad_norm:.2f}")
                 elif total_grad_norm < 1e-4:
                     print(f"WARNING: Very small gradient norm: {total_grad_norm:.2E}")
-            
-            latent_conditioner_optimized.step()
         
         
         avg_train_loss = epoch_loss / num_batches if num_batches > 0 else 0.0

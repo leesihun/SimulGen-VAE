@@ -43,8 +43,5 @@ param_data_type .png
 use_e2e_training	1	# 0=disabled, 1=enabled - use end-to-end training
 e2e_loss_function	MSE	# MSE, MAE, Huber, SmoothL1 - loss function for reconstruction
 e2e_vae_model_path	model_save/SimulGen-VAE	# path to pre-trained VAE model
-use_latent_regularization	0	# 0=disabled, 1=enabled - add latent space regularization
-latent_reg_weight	0.1	# weight for latent regularization term
-e2e_memory_efficient	0	# 0=disabled, 1=enabled - use memory optimizations
-e2e_gradient_checkpointing	0	# 0=disabled, 1=enabled - use gradient checkpointing
-e2e_batch_reduction_factor	0.5	# factor to reduce batch size on OOM (0.1-1.0)
+use_latent_regularization	1	# 0=disabled, 1=enabled - add latent space regularization
+latent_reg_weight	1	# weight for latent regularization term

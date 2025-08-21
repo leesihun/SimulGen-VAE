@@ -345,9 +345,6 @@ def parse_training_parameters(params):
     config['e2e_vae_model_path'] = params.get('e2e_vae_model_path', 'model_save/SimulGen-VAE')
     config['use_latent_regularization'] = int(params.get('use_latent_regularization', 0))
     config['latent_reg_weight'] = float(params.get('latent_reg_weight', 0.1))
-    config['e2e_memory_efficient'] = int(params.get('e2e_memory_efficient', 1))
-    config['e2e_gradient_checkpointing'] = int(params.get('e2e_gradient_checkpointing', 0))
-    config['e2e_batch_reduction_factor'] = float(params.get('e2e_batch_reduction_factor', 0.5))
     
     return config
 
