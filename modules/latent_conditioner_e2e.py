@@ -212,19 +212,19 @@ config):
             latent_conditioner_optimized.zero_grad(set_to_none=True)
 
             try:
-                # Timing measurements (log every 10 batches)
-                if i % 10 == 0:
+                # Timing measurements (log every 100 batches for better GPU utilization)
+                if i % 100 == 0:
                     torch.cuda.synchronize()
                     batch_start = time.time()
                 
                 # Forward pass through latent conditioner
-                if i % 10 == 0:
+                if i % 100 == 0:
                     torch.cuda.synchronize()
                     lc_start = time.time()
                 
                 y_pred1, y_pred2 = latent_conditioner(x)
                 
-                if i % 10 == 0:
+                if i % 100 == 0:
                     torch.cuda.synchronize()
                     lc_end = time.time()
                     lc_time = lc_end - lc_start
@@ -248,26 +248,26 @@ config):
                 elif isinstance(y_pred2, (list, tuple)):
                     y_pred2 = list(y_pred2)
                 
-                if i % 10 == 0:
+                if i % 100 == 0:
                     torch.cuda.synchronize()
                     conversion_end = time.time()
                     conversion_time = conversion_end - lc_end
                     
                 # ==== KEY DIFFERENCE: Use VAE decoder to reconstruct data ====
                 # NOTE: VAE parameters are frozen (requires_grad=False) but we need gradient flow for E2E training
-                if i % 10 == 0:
+                if i % 100 == 0:
                     torch.cuda.synchronize()
                     vae_start = time.time()
                 
                 reconstructed_data, _ = vae_model.decoder(y_pred1, y_pred2)
                 
-                if i % 10 == 0:
+                if i % 100 == 0:
                     torch.cuda.synchronize()
                     vae_end = time.time()
                     vae_time = vae_end - vae_start
                 
                 # Primary loss: reconstruction quality
-                if i % 10 == 0:
+                if i % 100 == 0:
                     torch.cuda.synchronize()
                     loss_start = time.time()
                 
@@ -286,7 +286,7 @@ config):
                     # Pure end-to-end loss: only reconstruction quality matters
                     loss = recon_loss
 
-                if i % 10 == 0:
+                if i % 100 == 0:
                     torch.cuda.synchronize()
                     backward_start = time.time()
                     loss_time = backward_start - loss_start
@@ -301,7 +301,7 @@ config):
             
             loss.backward()
             
-            if i % 10 == 0:
+            if i % 100 == 0:
                 torch.cuda.synchronize()
                 backward_end = time.time()
                 backward_time = backward_end - backward_start
@@ -311,7 +311,7 @@ config):
             
             latent_conditioner_optimized.step()
             
-            if i % 10 == 0:
+            if i % 100 == 0:
                 torch.cuda.synchronize()
                 batch_end = time.time()
                 step_time = batch_end - backward_end
