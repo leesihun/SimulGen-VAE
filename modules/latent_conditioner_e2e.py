@@ -12,6 +12,7 @@ from torch.utils.tensorboard import SummaryWriter
 from torchinfo import summary
 from modules.pca_preprocessor import PCAPreprocessor
 import matplotlib.pyplot as plt
+from torch.cuda.amp import autocast, GradScaler
 
 # Import shared utilities from original module
 from modules.latent_conditioner import (
@@ -64,10 +65,9 @@ def load_vae_model(vae_model_path, device):
         print(f"Error loading VAE model: {e}")
 
 def train_latent_conditioner_e2e(latent_conditioner_epoch, 
-latent_conditioner_dataloader, 
-latent_conditioner_validation_dataloader, 
+e2e_dataloader, 
+e2e_validation_dataloader, 
 latent_conditioner, 
-target_dataloader, 
 latent_conditioner_lr, 
 weight_decay, 
 is_image_data, 
@@ -105,6 +105,11 @@ config):
     latent_conditioner_optimized, warmup_scheduler, main_scheduler, warmup_epochs = setup_optimizer_and_scheduler_e2e(
         latent_conditioner, latent_conditioner_lr, weight_decay, latent_conditioner_epoch
     )
+    
+    # Initialize mixed precision scaler for performance optimization
+    scaler = GradScaler()
+    use_mixed_precision = torch.cuda.is_available() and config.get('use_mixed_precision', 1)
+    print(f"Mixed precision training: {'Enabled' if use_mixed_precision else 'Disabled'}")
     
     best_val_loss = float('inf')
     patience = 100000
@@ -144,21 +149,8 @@ config):
         epoch_latent_reg_loss = 0
         num_batches = 0
         
-        # Synchronize data loaders for target data
-        target_iter = iter(target_dataloader)
-        
-        for i, (x, y1, y2) in enumerate(latent_conditioner_dataloader):
-            # Get corresponding target data
-            try:
-                target_data = next(target_iter)
-                if isinstance(target_data, (list, tuple)):
-                    target_data = target_data[0]  # Extract data if wrapped in tuple
-            except StopIteration:
-                # Restart target iterator if we run out
-                target_iter = iter(target_dataloader)
-                target_data = next(target_iter)
-                if isinstance(target_data, (list, tuple)):
-                    target_data = target_data[0]
+        # Use unified E2E dataloader - no need for separate iterators
+        for i, (x, y1, y2, target_data) in enumerate(e2e_dataloader):
             
             if x.device != device:
                 x, y1, y2 = x.to(device, non_blocking=True), y1.to(device, non_blocking=True), y2.to(device, non_blocking=True)
@@ -212,47 +204,47 @@ config):
             latent_conditioner_optimized.zero_grad(set_to_none=True)
 
             try:
-                
-                y_pred1, y_pred2 = latent_conditioner(x)
+                # Mixed precision forward pass
+                with autocast(enabled=use_mixed_precision):
+                    y_pred1, y_pred2 = latent_conditioner(x)
 
-                # Keep original tensor for latent regularization
-                y_pred2_tensor = y_pred2
-                
-                # The VAE decoder expects xs as a list where each element corresponds to a decoder layer
-                # Based on the error, we need to restructure y_pred2 correctly
-                if torch.is_tensor(y_pred2):
-                    # If y_pred2 is [batch_size, 3, 8] then split along dim 1
-                    if y_pred2.dim() == 3 and y_pred2.shape[1] == 3:
-                        y_pred2 = [y_pred2[:, i, :] for i in range(y_pred2.shape[1])]
-                    # If y_pred2 is [batch_size, num_layers * latent_dim], reshape and split
-                    elif y_pred2.dim() == 2:
-                        # Assume it needs to be reshaped to [batch_size, num_layers, latent_dim]
-                        num_layers = 3  # Based on decoder structure
-                        latent_dim = y_pred2.shape[1] // num_layers
-                        y_pred2 = y_pred2.view(y_pred2.shape[0], num_layers, latent_dim)
-                        y_pred2 = [y_pred2[:, i, :] for i in range(num_layers)]
-                elif isinstance(y_pred2, (list, tuple)):
-                    y_pred2 = list(y_pred2)
-                # ==== KEY DIFFERENCE: Use VAE decoder to reconstruct data ====
-                # NOTE: VAE parameters are frozen (requires_grad=False) but we need gradient flow for E2E training
-                
-                reconstructed_data, _ = vae_model.decoder(y_pred1, y_pred2)
-                
-                
-                recon_loss = reconstruction_loss_fn(reconstructed_data, target_data)
-                
-                # Optional latent regularization (same as original but weighted)
-                if use_latent_regularization:
-                    latent_reg_main = nn.MSELoss()(y_pred1, y1)
-                    latent_reg_hier = nn.MSELoss()(y_pred2_tensor.reshape(-1), y2.reshape(-1))
-                    latent_reg_total = latent_reg_main + latent_reg_hier
+                    # Keep original tensor for latent regularization
+                    y_pred2_tensor = y_pred2
                     
-                    # Combine reconstruction loss with latent regularization
-                    loss = recon_loss + latent_reg_weight * latent_reg_total
-                    epoch_latent_reg_loss += (latent_reg_weight * latent_reg_total).item()
-                else:
-                    # Pure end-to-end loss: only reconstruction quality matters
-                    loss = recon_loss
+                    # The VAE decoder expects xs as a list where each element corresponds to a decoder layer
+                    # Based on the error, we need to restructure y_pred2 correctly
+                    if torch.is_tensor(y_pred2):
+                        # If y_pred2 is [batch_size, 3, 8] then split along dim 1
+                        if y_pred2.dim() == 3 and y_pred2.shape[1] == 3:
+                            y_pred2 = [y_pred2[:, i, :] for i in range(y_pred2.shape[1])]
+                        # If y_pred2 is [batch_size, num_layers * latent_dim], reshape and split
+                        elif y_pred2.dim() == 2:
+                            # Assume it needs to be reshaped to [batch_size, num_layers, latent_dim]
+                            num_layers = 3  # Based on decoder structure
+                            latent_dim = y_pred2.shape[1] // num_layers
+                            y_pred2 = y_pred2.view(y_pred2.shape[0], num_layers, latent_dim)
+                            y_pred2 = [y_pred2[:, i, :] for i in range(num_layers)]
+                    elif isinstance(y_pred2, (list, tuple)):
+                        y_pred2 = list(y_pred2)
+                    # ==== KEY DIFFERENCE: Use VAE decoder to reconstruct data ====
+                    # NOTE: VAE parameters are frozen (requires_grad=False) but we need gradient flow for E2E training
+                    
+                    reconstructed_data, _ = vae_model.decoder(y_pred1, y_pred2)
+                    
+                    recon_loss = reconstruction_loss_fn(reconstructed_data, target_data)
+                    
+                    # Optional latent regularization (same as original but weighted)
+                    if use_latent_regularization:
+                        latent_reg_main = nn.MSELoss()(y_pred1, y1)
+                        latent_reg_hier = nn.MSELoss()(y_pred2_tensor.reshape(-1), y2.reshape(-1))
+                        latent_reg_total = latent_reg_main + latent_reg_hier
+                        
+                        # Combine reconstruction loss with latent regularization
+                        loss = recon_loss + latent_reg_weight * latent_reg_total
+                        epoch_latent_reg_loss += (latent_reg_weight * latent_reg_total).item()
+                    else:
+                        # Pure end-to-end loss: only reconstruction quality matters
+                        loss = recon_loss
 
                 epoch_loss += loss.item()
                 epoch_recon_loss += recon_loss.item()
@@ -262,12 +254,19 @@ config):
                 print(f"Error during training at epoch {epoch+1}, batch {i+1}: {e}")
                 raise
             
-            loss.backward()
-            
-            # Check gradient norms before clipping
-            total_grad_norm = torch.nn.utils.clip_grad_norm_(latent_conditioner.parameters(), max_norm=10.0)
-            
-            latent_conditioner_optimized.step()
+            # Mixed precision backward pass
+            if use_mixed_precision:
+                scaler.scale(loss).backward()
+                # Check gradient norms before clipping
+                scaler.unscale_(latent_conditioner_optimized)
+                total_grad_norm = torch.nn.utils.clip_grad_norm_(latent_conditioner.parameters(), max_norm=10.0)
+                scaler.step(latent_conditioner_optimized)
+                scaler.update()
+            else:
+                loss.backward()
+                # Check gradient norms before clipping
+                total_grad_norm = torch.nn.utils.clip_grad_norm_(latent_conditioner.parameters(), max_norm=10.0)
+                latent_conditioner_optimized.step()
             # Monitor gradient health
             if epoch % 100 == 0 and i == 0:  # Log every 100 epochs, first batch
                 print(f"DEBUG: Gradient norm: {total_grad_norm:.4f}, Recon Loss: {recon_loss.item():.4E}, Total Loss: {loss.item():.4E}")
@@ -289,15 +288,7 @@ config):
         
         if epoch % 10 == 0:
             with torch.no_grad():
-                target_val_iter = iter(target_dataloader)  # Use same target data for validation
-                
-                for i, (x_val, y1_val, y2_val) in enumerate(latent_conditioner_validation_dataloader):
-                    try:
-                        target_val_data = next(target_val_iter)
-                        if isinstance(target_val_data, (list, tuple)):
-                            target_val_data = target_val_data[0]
-                    except StopIteration:
-                        break
+                for i, (x_val, y1_val, y2_val, target_val_data) in enumerate(e2e_validation_dataloader):
                     
                     x_val, y1_val, y2_val = x_val.to(device), y1_val.to(device), y2_val.to(device)
                     target_val_data = target_val_data.to(device)

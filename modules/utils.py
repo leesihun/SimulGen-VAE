@@ -523,6 +523,83 @@ def evaluate_vae_simple(VAE, dataloader, device, dataset_name="Dataset"):
     
     return loss_total
 
+class E2ELatentConditionerDataset(Dataset):
+    """
+    Unified dataset for End-to-End Latent Conditioner training.
+    Combines condition inputs, latent targets, and reconstruction targets in one dataset.
+    
+    This follows the SimulGen-VAE.py dataloader pattern with load_all optimization.
+    """
+    
+    def __init__(self, condition_data, latent_main_data, latent_hier_data, target_reconstruction_data, load_all=False):
+        """
+        Initialize E2E dataset with unified data handling.
+        
+        Args:
+            condition_data: Input conditions (images/parametric data)
+            latent_main_data: Main latent space targets (32D)
+            latent_hier_data: Hierarchical latent targets (3x8D)
+            target_reconstruction_data: Target reconstruction data for E2E loss
+            load_all: Whether to preload data to GPU memory (follows SimulGen-VAE pattern)
+        """
+        super().__init__()
+        
+        # Validate data shapes
+        assert len(condition_data) == len(latent_main_data) == len(latent_hier_data) == len(target_reconstruction_data), \
+            f"Data length mismatch: {len(condition_data)}, {len(latent_main_data)}, {len(latent_hier_data)}, {len(target_reconstruction_data)}"
+        
+        self.length = len(condition_data)
+        self.load_all = load_all
+        
+        if load_all and torch.cuda.is_available():
+            print("Preloading E2E dataset to GPU for maximum performance...")
+            device = torch.cuda.current_device()
+            
+            # Pin memory optimization for fast GPU transfer (follows existing pattern)
+            self.condition_data = torch.from_numpy(condition_data).float().pin_memory().to(device, non_blocking=True)
+            self.latent_main_data = torch.from_numpy(latent_main_data).float().pin_memory().to(device, non_blocking=True)
+            self.latent_hier_data = torch.from_numpy(latent_hier_data).float().pin_memory().to(device, non_blocking=True)
+            self.target_reconstruction_data = torch.from_numpy(target_reconstruction_data).float().pin_memory().to(device, non_blocking=True)
+            
+            print(f"E2E Dataset loaded to GPU: {self.length} samples")
+            print(f"  Condition data: {self.condition_data.shape} ({self.condition_data.numel() * 4 / 1024**2:.1f}MB)")
+            print(f"  Target reconstruction: {self.target_reconstruction_data.shape} ({self.target_reconstruction_data.numel() * 4 / 1024**2:.1f}MB)")
+            
+        else:
+            # CPU memory with pin_memory for efficient transfer (follows existing pattern)
+            self.condition_data = torch.from_numpy(condition_data).float().pin_memory()
+            self.latent_main_data = torch.from_numpy(latent_main_data).float().pin_memory() 
+            self.latent_hier_data = torch.from_numpy(latent_hier_data).float().pin_memory()
+            self.target_reconstruction_data = torch.from_numpy(target_reconstruction_data).float().pin_memory()
+            print(f"E2E Dataset loaded to CPU with pin_memory: {self.length} samples")
+    
+    def __len__(self):
+        return self.length
+    
+    def __getitem__(self, idx):
+        """
+        Return unified sample for E2E training.
+        
+        Returns:
+            tuple: (condition_input, latent_main_target, latent_hier_target, reconstruction_target)
+        """
+        if self.load_all:
+            # Data already on GPU
+            return (
+                self.condition_data[idx],
+                self.latent_main_data[idx], 
+                self.latent_hier_data[idx],
+                self.target_reconstruction_data[idx]
+            )
+        else:
+            # Return pinned memory tensors for fast GPU transfer
+            return (
+                self.condition_data[idx],
+                self.latent_main_data[idx],
+                self.latent_hier_data[idx], 
+                self.target_reconstruction_data[idx]
+            )
+
 def initialize_folder(folder_name):
     """Initialize folder by deleting all files in it."""
     os.makedirs(folder_name, exist_ok=True)

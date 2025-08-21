@@ -93,7 +93,7 @@ def main():
     
     # Utilities and data handling
     from modules.utils import (
-        MyBaseDataset, LatentConditionerDataset, get_optimal_workers,
+        MyBaseDataset, LatentConditionerDataset, E2ELatentConditionerDataset, get_optimal_workers,
         setup_distributed_training, parse_condition_file, parse_training_parameters,
         evaluate_vae_reconstruction
     )
@@ -500,36 +500,55 @@ def main():
     
     # Check for end-to-end training mode
     if config.get('use_e2e_training', 0) == 1:
+        print(' ' * 10)
+        print(' ' * 10)
         print("Using end-to-end latent conditioner training")
         print("Architecture: Input Conditions → Latent Conditioner → VAE Decoder → Reconstructed Data")
+        # Create unified E2E dataset combining conditions and targets
+        print("Creating unified E2E dataset for optimized training...")
         
+        e2e_dataset = E2ELatentConditionerDataset(
+            condition_data=np.float32(physical_param_input),
+            latent_main_data=np.float32(out_latent_vectors), 
+            latent_hier_data=np.float32(out_hierarchical_latent_vectors),
+            target_reconstruction_data=np.float32(new_x_train),
+            load_all=load_all
+        )
         
-        # CRITICAL: Delete VAE model temporarily to free ~5GB VRAM
-        if 'VAE' in locals():
-            del VAE
-        if 'VAE_trained' in locals():
-            del VAE_trained
-        import gc
-        gc.collect()
-        torch.cuda.empty_cache()
-        
-        # Create target dataloader for end-to-end training
-        # Use the same VAE training data as target for reconstruction
-
-        target_dataset = MyBaseDataset(new_x_train, load_all)
-        print(f"Target dataset size: {len(target_dataset)} samples")
+        print(f"E2E Dataset created: {len(e2e_dataset)} samples")
         print(f"Target data shape per sample: {new_x_train.shape[1:]} = {np.prod(new_x_train.shape[1:])} elements")
-        print(f"Target batch memory estimate: {latent_conditioner_batch_size * np.prod(new_x_train.shape[1:]) * 4 / 1024**3:.3f}GB")
+        print(f"E2E batch memory estimate: {latent_conditioner_batch_size * np.prod(new_x_train.shape[1:]) * 4 / 1024**3:.3f}GB")
         
-        target_dataloader = torch.utils.data.DataLoader(
-            target_dataset,
+        # Split E2E dataset into train/validation (follows existing pattern)
+        e2e_dataset_size = len(e2e_dataset)
+        e2e_train_size = int(0.8 * e2e_dataset_size)
+        e2e_val_size = e2e_dataset_size - e2e_train_size
+        
+        print(f"E2E dataset split: {e2e_train_size} training, {e2e_val_size} validation samples")
+        
+        e2e_train_dataset, e2e_validation_dataset = random_split(e2e_dataset, [e2e_train_size, e2e_val_size])
+        
+        # Create optimized E2E dataloaders (follows SimulGen-VAE pattern)
+        e2e_dataloader = torch.utils.data.DataLoader(
+            e2e_train_dataset,
             batch_size=latent_conditioner_batch_size,
             shuffle=True,
             num_workers=latent_conditioner_optimal_workers,
-            pin_memory=False,
+            pin_memory=not load_all,  # Only pin memory if not already on GPU
             persistent_workers=latent_conditioner_optimal_workers > 0,
-            prefetch_factor=2 if latent_conditioner_optimal_workers > 0 else None,
+            prefetch_factor=4 if latent_conditioner_optimal_workers > 0 else None,  # Increased prefetch
             drop_last=True
+        )
+        
+        e2e_validation_dataloader = torch.utils.data.DataLoader(
+            e2e_validation_dataset,
+            batch_size=latent_conditioner_batch_size,
+            shuffle=False,
+            num_workers=latent_conditioner_optimal_workers,
+            pin_memory=not load_all,  # Only pin memory if not already on GPU
+            persistent_workers=latent_conditioner_optimal_workers > 0,
+            prefetch_factor=4 if latent_conditioner_optimal_workers > 0 else None,  # Increased prefetch
+            drop_last=False
         )
         
         # CRITICAL: Delete new_x_train to free ~25GB VRAM (biggest memory hog!)
@@ -614,10 +633,9 @@ def main():
         
         LatentConditioner_loss = train_latent_conditioner_e2e(
             latent_conditioner_epoch=latent_conditioner_epoch,
-            latent_conditioner_dataloader=latent_conditioner_dataloader,
-            latent_conditioner_validation_dataloader=latent_conditioner_validation_dataloader,
+            e2e_dataloader=e2e_dataloader,
+            e2e_validation_dataloader=e2e_validation_dataloader,
             latent_conditioner=latent_conditioner,
-            target_dataloader=target_dataloader,
             latent_conditioner_lr=latent_conditioner_lr,
             weight_decay=latent_conditioner_weight_decay,
             is_image_data=image,
