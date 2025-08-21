@@ -229,6 +229,9 @@ config):
                     lc_end = time.time()
                     lc_time = lc_end - lc_start
 
+                # Keep original tensor for latent regularization
+                y_pred2_tensor = y_pred2
+                
                 # The VAE decoder expects xs as a list where each element corresponds to a decoder layer
                 # Based on the error, we need to restructure y_pred2 correctly
                 if torch.is_tensor(y_pred2):
@@ -273,7 +276,7 @@ config):
                 # Optional latent regularization (same as original but weighted)
                 if use_latent_regularization:
                     latent_reg_main = nn.MSELoss()(y_pred1, y1)
-                    latent_reg_hier = nn.MSELoss()(y_pred2.reshape(-1), y2.reshape(-1))
+                    latent_reg_hier = nn.MSELoss()(y_pred2_tensor.reshape(-1), y2.reshape(-1))
                     latent_reg_total = latent_reg_main + latent_reg_hier
                     
                     # Combine reconstruction loss with latent regularization
