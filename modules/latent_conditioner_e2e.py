@@ -138,10 +138,6 @@ config):
         start_time = time.time()
         latent_conditioner.train(True)
         
-        # GPU utilization monitoring (every 100 epochs)
-        if epoch % 100 == 0 and torch.cuda.is_available():
-            gpu_util = torch.cuda.utilization()
-            print(f"DEBUG: GPU utilization at epoch {epoch}: {gpu_util}%")
         
         epoch_loss = 0
         epoch_recon_loss = 0
