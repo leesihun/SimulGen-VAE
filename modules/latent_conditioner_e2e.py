@@ -235,7 +235,8 @@ config):
         latent_conditioner.train(True)
         
         # Initialize timing tracking for this epoch
-        total_data_time = 0
+        total_dataloader_time = 0  # NEW: Actual DataLoader fetch time
+        total_data_time = 0        # Data transfer/preprocessing time
         total_forward_time = 0
         total_backward_time = 0
         total_optimization_time = 0
@@ -258,10 +259,22 @@ config):
         num_batches = 0
         
         # Use unified E2E dataloader - no need for separate iterators
-        for i, (x, y1, y2, target_data) in enumerate(e2e_dataloader):
+        dataloader_iter = iter(e2e_dataloader)
+        
+        for i in range(len(e2e_dataloader)):
+            # REAL data acquisition timing starts here (DataLoader fetch)
             batch_start_time = time.time()
+            dataloader_start = time.time()
             
-            # === STAGE 1: DATA ACQUISITION AND TRANSFER ===
+            try:
+                x, y1, y2, target_data = next(dataloader_iter)
+            except StopIteration:
+                break
+                
+            dataloader_end = time.time()
+            dataloader_time = dataloader_end - dataloader_start
+            
+            # === STAGE 1: DATA TRANSFER AND PREPROCESSING ===
             data_start_time = time.time()
             # cpu_before_data = cpu_monitor.get_current_cpu_usage()  # Disabled for performance
             
@@ -281,6 +294,7 @@ config):
             # cpu_after_data = cpu_monitor.get_current_cpu_usage()  # Disabled for performance
             
             batch_data_time = data_end_time - data_start_time
+            total_dataloader_time += dataloader_time  # Track actual DataLoader time
             total_data_time += batch_data_time
             
             # CPU spike tracking disabled for performance
@@ -570,6 +584,7 @@ config):
         
         # === ELAPSED TIME SUMMARY FOR THIS EPOCH ===
         avg_batch_time = epoch_duration / max(num_batches, 1)
+        avg_dataloader_time = total_dataloader_time / max(num_batches, 1)  # NEW
         avg_data_time = total_data_time / max(num_batches, 1)
         avg_forward_time = total_forward_time / max(num_batches, 1)
         avg_backward_time = total_backward_time / max(num_batches, 1)
@@ -583,11 +598,12 @@ config):
         avg_gpu_mem_used = total_gpu_mem_used / max(num_batches, 1)
         
         # Calculate percentages
+        dataloader_percent = (total_dataloader_time / epoch_duration) * 100 if epoch_duration > 0 else 0  # NEW
         data_percent = (total_data_time / epoch_duration) * 100 if epoch_duration > 0 else 0
         forward_percent = (total_forward_time / epoch_duration) * 100 if epoch_duration > 0 else 0
         backward_percent = (total_backward_time / epoch_duration) * 100 if epoch_duration > 0 else 0
         optimization_percent = (total_optimization_time / epoch_duration) * 100 if epoch_duration > 0 else 0
-        other_percent = 100 - (data_percent + forward_percent + backward_percent + optimization_percent)
+        other_percent = 100 - (dataloader_percent + data_percent + forward_percent + backward_percent + optimization_percent)
         
         # Detailed forward pass percentages (of total forward time)
         lc_forward_percent = (total_lc_forward_time / max(total_forward_time, 1e-8)) * 100
@@ -618,7 +634,8 @@ config):
         # Detailed timing breakdown every 100 epochs or first 5 epochs (reduced for performance)
         if epoch % 100 == 0 or epoch < 5:
             print(f'    ⏱️  TIMING BREAKDOWN - Epoch {epoch}:')
-            print(f'        📥 Data Acquisition: {avg_data_time*1000:.1f}ms/batch ({data_percent:.1f}%)')
+            print(f'        📡 DataLoader Fetch: {avg_dataloader_time*1000:.1f}ms/batch ({dataloader_percent:.1f}%) 🚨')
+            print(f'        📥 Data Transfer:    {avg_data_time*1000:.1f}ms/batch ({data_percent:.1f}%)')
             print(f'        🔄 Forward Pass:     {avg_forward_time*1000:.1f}ms/batch ({forward_percent:.1f}%)')
             print(f'            🧠 Latent Cond:     {avg_lc_forward_time*1000:.1f}ms ({lc_forward_percent:.1f}% of forward)')
             print(f'            🔧 Tensor Prep:     {avg_tensor_prep_time*1000:.1f}ms ({tensor_prep_percent:.1f}% of forward)')
@@ -686,9 +703,14 @@ config):
         print(f"      • VAE decoder may be creating large intermediate tensors")
         print(f"      • Consider gradient checkpointing for VAE decoder")
         
-    # General recommendations
-    if data_percent > 15:
-        print(f"   📥 Data loading is slow ({data_percent:.1f}%) - consider increasing num_workers")
+    # DataLoader and data loading analysis
+    if dataloader_percent > 20:
+        print(f"   🚨 CRITICAL: DataLoader fetch is slow ({dataloader_percent:.1f}%) - major bottleneck!")
+        print(f"      • E2ELatentConditionerDataset.__getitem__ optimization needed")
+        print(f"      • Large tensor indexing overhead with batch size {64}")
+        print(f"      • Consider tensor batching optimization or memory layout changes")
+    if data_percent > 10:
+        print(f"   📥 Data transfer overhead ({data_percent:.1f}%) - optimize device transfers")
     if forward_percent < 40:
         print(f"   🔄 GPU utilization may be low - forward pass only {forward_percent:.1f}% of time")
     if other_percent > 20:

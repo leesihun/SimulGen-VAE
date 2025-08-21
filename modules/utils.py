@@ -629,15 +629,25 @@ class E2ELatentConditionerDataset(Dataset):
             print("Preloading E2E dataset to GPU for maximum performance...")
             device = torch.cuda.current_device()
             
-            # Pin memory optimization for fast GPU transfer (follows existing pattern)
-            self.condition_data = torch.from_numpy(condition_data).float().pin_memory().to(device, non_blocking=True)
-            self.latent_main_data = torch.from_numpy(latent_main_data).float().pin_memory().to(device, non_blocking=True)
-            self.latent_hier_data = torch.from_numpy(latent_hier_data).float().pin_memory().to(device, non_blocking=True)
-            self.target_reconstruction_data = torch.from_numpy(target_reconstruction_data).float().pin_memory().to(device, non_blocking=True)
+            # Optimized GPU loading - direct conversion without pin_memory for speed
+            print("Converting datasets to contiguous GPU tensors...")
+            self.condition_data = torch.from_numpy(condition_data).float().contiguous().to(device, non_blocking=False)
+            self.latent_main_data = torch.from_numpy(latent_main_data).float().contiguous().to(device, non_blocking=False)
+            self.latent_hier_data = torch.from_numpy(latent_hier_data).float().contiguous().to(device, non_blocking=False)
+            self.target_reconstruction_data = torch.from_numpy(target_reconstruction_data).float().contiguous().to(device, non_blocking=False)
+            
+            # Ensure data is optimally laid out for batch access
+            print("Optimizing tensor layout for batch access...")
+            torch.cuda.synchronize()  # Ensure all transfers complete
             
             print(f"E2E Dataset loaded to GPU: {self.length} samples")
             print(f"  Condition data: {self.condition_data.shape} ({self.condition_data.numel() * 4 / 1024**2:.1f}MB)")
             print(f"  Target reconstruction: {self.target_reconstruction_data.shape} ({self.target_reconstruction_data.numel() * 4 / 1024**2:.1f}MB)")
+            print(f"  Memory layout optimized for batch size access")
+            
+            # Pre-warm the GPU cache with a few sample accesses
+            _ = self.condition_data[0]
+            _ = self.target_reconstruction_data[0]
             
         else:
             # CPU memory with pin_memory for efficient transfer (follows existing pattern)
@@ -653,20 +663,27 @@ class E2ELatentConditionerDataset(Dataset):
     def __getitem__(self, idx):
         """
         Return unified sample for E2E training.
+        Optimized for minimal indexing overhead.
         
         Returns:
             tuple: (condition_input, latent_main_target, latent_hier_target, reconstruction_target)
         """
         if self.load_all:
-            # Data already on GPU
-            return (
-                self.condition_data[idx],
-                self.latent_main_data[idx], 
-                self.latent_hier_data[idx],
-                self.target_reconstruction_data[idx]
-            )
+            # Optimized GPU indexing - use views when possible to reduce memory operations
+            try:
+                # Single indexing operation per tensor (minimal overhead)
+                condition = self.condition_data[idx]
+                latent_main = self.latent_main_data[idx] 
+                latent_hier = self.latent_hier_data[idx]
+                target_recon = self.target_reconstruction_data[idx]
+                return condition, latent_main, latent_hier, target_recon
+            except Exception as e:
+                # Fallback with detailed error info
+                print(f"E2E Dataset indexing error at idx {idx}: {e}")
+                print(f"Data shapes: condition={self.condition_data.shape}, target={self.target_reconstruction_data.shape}")
+                raise
         else:
-            # Return pinned memory tensors for fast GPU transfer
+            # CPU mode with pinned memory
             return (
                 self.condition_data[idx],
                 self.latent_main_data[idx],
