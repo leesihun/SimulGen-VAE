@@ -212,22 +212,8 @@ config):
             latent_conditioner_optimized.zero_grad(set_to_none=True)
 
             try:
-                # Timing measurements (log every 100 batches for better GPU utilization)
-                if i % 100 == 0:
-                    torch.cuda.synchronize()
-                    batch_start = time.time()
-                
-                # Forward pass through latent conditioner
-                if i % 100 == 0:
-                    torch.cuda.synchronize()
-                    lc_start = time.time()
                 
                 y_pred1, y_pred2 = latent_conditioner(x)
-                
-                if i % 100 == 0:
-                    torch.cuda.synchronize()
-                    lc_end = time.time()
-                    lc_time = lc_end - lc_start
 
                 # Keep original tensor for latent regularization
                 y_pred2_tensor = y_pred2
@@ -247,29 +233,11 @@ config):
                         y_pred2 = [y_pred2[:, i, :] for i in range(num_layers)]
                 elif isinstance(y_pred2, (list, tuple)):
                     y_pred2 = list(y_pred2)
-                
-                if i % 100 == 0:
-                    torch.cuda.synchronize()
-                    conversion_end = time.time()
-                    conversion_time = conversion_end - lc_end
-                    
                 # ==== KEY DIFFERENCE: Use VAE decoder to reconstruct data ====
                 # NOTE: VAE parameters are frozen (requires_grad=False) but we need gradient flow for E2E training
-                if i % 100 == 0:
-                    torch.cuda.synchronize()
-                    vae_start = time.time()
                 
                 reconstructed_data, _ = vae_model.decoder(y_pred1, y_pred2)
                 
-                if i % 100 == 0:
-                    torch.cuda.synchronize()
-                    vae_end = time.time()
-                    vae_time = vae_end - vae_start
-                
-                # Primary loss: reconstruction quality
-                if i % 100 == 0:
-                    torch.cuda.synchronize()
-                    loss_start = time.time()
                 
                 recon_loss = reconstruction_loss_fn(reconstructed_data, target_data)
                 
@@ -286,11 +254,6 @@ config):
                     # Pure end-to-end loss: only reconstruction quality matters
                     loss = recon_loss
 
-                if i % 100 == 0:
-                    torch.cuda.synchronize()
-                    backward_start = time.time()
-                    loss_time = backward_start - loss_start
-                
                 epoch_loss += loss.item()
                 epoch_recon_loss += recon_loss.item()
                 num_batches += 1
@@ -301,28 +264,10 @@ config):
             
             loss.backward()
             
-            if i % 100 == 0:
-                torch.cuda.synchronize()
-                backward_end = time.time()
-                backward_time = backward_end - backward_start
-            
             # Check gradient norms before clipping
             total_grad_norm = torch.nn.utils.clip_grad_norm_(latent_conditioner.parameters(), max_norm=10.0)
             
             latent_conditioner_optimized.step()
-            
-            if i % 100 == 0:
-                torch.cuda.synchronize()
-                batch_end = time.time()
-                step_time = batch_end - backward_end
-                total_batch_time = batch_end - batch_start
-                
-                # Print detailed timing breakdown
-                print(f"TIMING [Epoch {epoch}, Batch {i}]: Total={total_batch_time*1000:.1f}ms | "
-                      f"LC={lc_time*1000:.1f}ms | Conv={conversion_time*1000:.1f}ms | "
-                      f"VAE={vae_time*1000:.1f}ms | Loss={loss_time*1000:.1f}ms | "
-                      f"Backward={backward_time*1000:.1f}ms | Step={step_time*1000:.1f}ms")
-            
             # Monitor gradient health
             if epoch % 100 == 0 and i == 0:  # Log every 100 epochs, first batch
                 print(f"DEBUG: Gradient norm: {total_grad_norm:.4f}, Recon Loss: {recon_loss.item():.4E}, Total Loss: {loss.item():.4E}")
