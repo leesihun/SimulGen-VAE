@@ -497,85 +497,9 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
                current_lr, scheduler_info,
                (latent_conditioner_epoch-epoch)*epoch_duration/3600, patience_counter, patience))
         
-        # Detailed timing breakdown every 100 epochs or first 5 epochs (reduced for performance)
-        if epoch % 100 == 0 or epoch < 5:
-            print(f'    ⏱️  TIMING BREAKDOWN - Epoch {epoch}:')
-            print(f'        📡 DataLoader Fetch: {avg_dataloader_time*1000:.1f}ms/batch ({dataloader_percent:.1f}%) 🚨')
-            print(f'        🔄 Forward Pass:     {avg_forward_time*1000:.1f}ms/batch ({forward_percent:.1f}%)')
-            print(f'            🧠 Latent Cond:     {avg_lc_forward_time*1000:.1f}ms ({lc_forward_percent:.1f}% of forward)')
-            print(f'            🔧 Tensor Prep:     {avg_tensor_prep_time*1000:.1f}ms ({tensor_prep_percent:.1f}% of forward)')
-            print(f'            🏭 VAE Decoder:     {avg_vae_decoder_time*1000:.1f}ms ({vae_decoder_percent:.1f}% of forward) ⚠️')
-            print(f'            📏 Loss Compute:    {avg_loss_comp_time*1000:.1f}ms ({loss_comp_percent:.1f}% of forward)')
-            print(f'        ⬅️  Backward Pass:    {avg_backward_time*1000:.1f}ms/batch ({backward_percent:.1f}%)')
-            print(f'        ⚡ Optimization:     {avg_optimization_time*1000:.1f}ms/batch ({optimization_percent:.1f}%)')
-            print(f'        🔧 Other/Overhead:   {other_percent:.1f}%')
-            print(f'        🧠 GPU Memory/batch: {avg_gpu_mem_used:.1f}MB (VAE decoder usage)')
-            
-            print(f'        📊 Total Training:   {epoch_duration:.2f}s ({num_batches} batches, {avg_batch_time*1000:.1f}ms/batch avg)')
-            if validation_duration > 0:
-                print(f'        ✅ Validation:       {validation_duration:.2f}s ({val_batches} batches, {avg_val_batch_time*1000:.1f}ms/batch avg)')
-            
-            # dataloader_time
-            data_loader_start_time = time.time()
+        data_loader_start_time = time.time()
 
     torch.save(latent_conditioner.state_dict(), 'checkpoints/latent_conditioner_e2e.pth')
     torch.save(latent_conditioner, 'model_save/LatentConditioner_E2E')
-
-    writer.close()
     
-    # Final timing summary with VAE decoder analysis
-    total_training_time = time.time() - epoch_start_time  # Use the last epoch start time as reference
-    print("\n" + "="*70)
-    print("🏁 END-TO-END TRAINING COMPLETED - VAE DECODER ANALYSIS")
-    print("="*70)
-    print(f"📈 Final validation loss: {best_val_loss:.4E}")
-    print(f"⏱️  Training completed in {total_training_time/3600:.2f} hours")
-    
-    print(f"\n🔍 VAE DECODER PERFORMANCE ANALYSIS:")
-    print(f"   🏭 VAE Decoder Time:     {avg_vae_decoder_time*1000:.1f}ms/batch ({vae_decoder_percent:.1f}% of forward pass)")
-    print(f"   🧠 Latent Conditioner:  {avg_lc_forward_time*1000:.1f}ms/batch ({lc_forward_percent:.1f}% of forward pass)")
-    
-    print(f"\n📊 PERFORMANCE OPTIMIZATION RECOMMENDATIONS:")
-    
-    # VAE Decoder specific recommendations
-    if vae_decoder_percent > 70:
-        print(f"   🚨 CRITICAL: VAE decoder is consuming {vae_decoder_percent:.1f}% of forward pass time!")
-        print(f"      • Consider torch.compile(vae_model.decoder) for 20-30% speedup")
-        print(f"      • Check if VAE decoder has unnecessary computation for frozen weights")
-        print(f"      • Profile individual VAE decoder layers to find bottlenecks")
-        
-    if avg_vae_decoder_time > 0.5:  # >500ms per batch
-        print(f"   ⚠️  VAE decoder is very slow ({avg_vae_decoder_time*1000:.1f}ms/batch)")
-        print(f"      • Verify VAE model is in eval() mode and weights are frozen")
-        print(f"      • Consider reducing VAE model complexity if possible")
-        print(f"      • Check for CPU-GPU memory transfers in VAE decoder")
-        
-    # DataLoader and data loading analysis
-    if dataloader_percent > 20:
-        print(f"   🚨 CRITICAL: DataLoader fetch is slow ({dataloader_percent:.1f}%) - major bottleneck!")
-        print(f"      • E2ELatentConditionerDataset.__getitem__ optimization needed")
-        print(f"      • Large tensor indexing overhead with batch size {64}")
-        print(f"      • Consider tensor batching optimization or memory layout changes")
-    if forward_percent < 40:
-        print(f"   🔄 GPU utilization may be low - forward pass only {forward_percent:.1f}% of time")
-    if other_percent > 20:
-        print(f"   🔧 High overhead ({other_percent:.1f}%) - check for CPU bottlenecks")
-        
-    
-    # CPU spike analysis disabled for performance
-    print(f"\n🔍 PERFORMANCE OPTIMIZATION STATUS:")
-    print(f"   ✅ CPU monitoring overhead eliminated (was 36% of training time)")
-    print(f"   ✅ VAE decoder compiled with torch.compile()")
-    print(f"   ✅ Memory format optimized for modern GPUs")
-    print(f"   ✅ Batch size increased to {128} for H100 utilization")
-
-    print(f"\n🎯 FURTHER OPTIMIZATION OPPORTUNITIES:")
-    print(f"   1. ✅ COMPLETED: vae_model.decoder = torch.compile(vae_model.decoder)")
-    print(f"   2. ✅ COMPLETED: CPU monitoring overhead eliminated")
-    print(f"   3. ✅ COMPLETED: Batch size optimized for H100")
-    print(f"   4. Future: Profile individual VAE decoder layers with torch.profiler")
-    print(f"   5. Future: Consider mixed precision training for memory efficiency")
-    print(f"   6. Future: Optimize DataLoader num_workers based on performance testing")
-    print("="*70)
-
     return avg_val_loss
