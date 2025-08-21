@@ -534,7 +534,7 @@ def main():
             batch_size=latent_conditioner_batch_size,
             shuffle=True,
             num_workers=0 if load_all else min(2, latent_conditioner_optimal_workers),  # Reduce workers when data is on GPU
-            pin_memory=False,  # Disable pin_memory for performance
+            pin_memory=False if load_all else True,  # Disable pin_memory for performance
             persistent_workers=False,  # Disable persistence to reduce overhead
             prefetch_factor=None,  # Disable prefetching when data is already on GPU
             drop_last=True
@@ -545,13 +545,11 @@ def main():
             batch_size=latent_conditioner_batch_size,
             shuffle=False,
             num_workers=0 if load_all else min(2, latent_conditioner_optimal_workers),  # Reduce workers when data is on GPU
-            pin_memory=False,  # Disable pin_memory for performance
+            pin_memory=False if load_all else True,  # Disable pin_memory for performance
             persistent_workers=False,  # Disable persistence to reduce overhead
             prefetch_factor=None,  # Disable prefetching when data is already on GPU
             drop_last=False
         )
-        
-        cross_function_vram_cleanup()
         
         LatentConditioner_loss = train_latent_conditioner_e2e(
             latent_conditioner_epoch=latent_conditioner_epoch,

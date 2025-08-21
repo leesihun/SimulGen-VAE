@@ -156,15 +156,7 @@ def load_vae_model(vae_model_path, device):
     except Exception as e:
         print(f"Error loading VAE model: {e}")
 
-def train_latent_conditioner_e2e(latent_conditioner_epoch, 
-e2e_dataloader, 
-e2e_validation_dataloader, 
-latent_conditioner, 
-latent_conditioner_lr, 
-weight_decay, 
-is_image_data, 
-image_size, 
-config):
+def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_validation_dataloader, latent_conditioner, latent_conditioner_lr, weight_decay, is_image_data, image_size, config):
     """
     End-to-end training function with the same structure as the original train_latent_conditioner.
     
