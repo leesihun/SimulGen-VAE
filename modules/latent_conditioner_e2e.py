@@ -277,8 +277,6 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
         epoch_start_time = time.time()
         latent_conditioner.train(True)
         
-        data_loader_start_time = time.time()
-        
         # Initialize per-epoch variables (both training and timing)
         epoch_loss = 0
         epoch_recon_loss = 0
@@ -293,13 +291,10 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
         total_loss_comp_time = 0
         total_backward_time = 0
         total_optimization_time = 0
-        total_dataloader_time = 0
+        total_other_time = 0
         
         for i, (x, y1, y2, target_data) in enumerate(e2e_dataloader):
-
-            data_loader_end_time = time.time()
-            dataloader_time = data_loader_end_time - data_loader_start_time
-            total_dataloader_time += dataloader_time
+            batch_start_time = time.time()
             
             if not model_summary_shown:
                 batch_size = x.shape[0]
@@ -345,6 +340,10 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
             if torch.rand(1, device=x.device) < 0.2:
                 noise = torch.randn_like(x) * 0.01
                 x = x + noise
+            
+            other_ops_end_time = time.time()
+            batch_other_time = other_ops_end_time - batch_start_time
+            total_other_time += batch_other_time
             
             # === STAGE 2: FORWARD PASS (DETAILED PROFILING) ===
             forward_start_time = time.time()
@@ -540,7 +539,7 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
         
         # === ELAPSED TIME SUMMARY FOR THIS EPOCH ===
         avg_batch_time = epoch_duration / max(num_batches, 1)
-        avg_dataloader_time = total_dataloader_time / max(num_batches, 1)
+        avg_other_time = total_other_time / max(num_batches, 1)
         avg_forward_time = total_forward_time / max(num_batches, 1)
         avg_backward_time = total_backward_time / max(num_batches, 1)
         avg_optimization_time = total_optimization_time / max(num_batches, 1)
@@ -551,12 +550,16 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
         avg_vae_decoder_time = total_vae_decoder_time / max(num_batches, 1)
         avg_loss_comp_time = total_loss_comp_time / max(num_batches, 1)
         
-        # Calculate percentages
-        dataloader_percent = (total_dataloader_time / epoch_duration) * 100 if epoch_duration > 0 else 0
-        forward_percent = (total_forward_time / epoch_duration) * 100 if epoch_duration > 0 else 0
-        backward_percent = (total_backward_time / epoch_duration) * 100 if epoch_duration > 0 else 0
-        optimization_percent = (total_optimization_time / epoch_duration) * 100 if epoch_duration > 0 else 0
-        other_percent = 100 - (dataloader_percent + forward_percent + backward_percent + optimization_percent)
+        # Calculate percentages based on actual measurements
+        training_only_duration = epoch_duration - validation_duration if validation_duration > 0 else epoch_duration
+        other_percent = (total_other_time / training_only_duration) * 100 if training_only_duration > 0 else 0
+        forward_percent = (total_forward_time / training_only_duration) * 100 if training_only_duration > 0 else 0
+        backward_percent = (total_backward_time / training_only_duration) * 100 if training_only_duration > 0 else 0
+        optimization_percent = (total_optimization_time / training_only_duration) * 100 if training_only_duration > 0 else 0
+        
+        # Calculate remaining percentage (should be close to 0 if measurements are accurate)
+        measured_total = other_percent + forward_percent + backward_percent + optimization_percent
+        remaining_percent = 100 - measured_total
         
         # Detailed forward pass percentages (of total forward time)
         lc_forward_percent = (total_lc_forward_time / max(total_forward_time, 1e-8)) * 100
@@ -569,7 +572,7 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
 
         if epoch % 100 == 0:
             print(f'    ⏱️  TIMING BREAKDOWN - Epoch {epoch}:')
-            print(f'        📡 DataLoader Fetch: {avg_dataloader_time*1000:.1f}ms/batch ({dataloader_percent:.1f}%) 🚨')
+            print(f'        🔧 Data Prep/Aug:    {avg_other_time*1000:.1f}ms/batch ({other_percent:.1f}%)')
             print(f'        🔄 Forward Pass:     {avg_forward_time*1000:.1f}ms/batch ({forward_percent:.1f}%)')
             print(f'            🧠 Latent Cond:     {avg_lc_forward_time*1000:.1f}ms ({lc_forward_percent:.1f}% of forward)')
             print(f'            🔧 Tensor Prep:     {avg_tensor_prep_time*1000:.1f}ms ({tensor_prep_percent:.1f}% of forward)')
@@ -577,11 +580,12 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
             print(f'            📏 Loss Compute:    {avg_loss_comp_time*1000:.1f}ms ({loss_comp_percent:.1f}% of forward)')
             print(f'        ⬅️  Backward Pass:    {avg_backward_time*1000:.1f}ms/batch ({backward_percent:.1f}%)')
             print(f'        ⚡ Optimization:     {avg_optimization_time*1000:.1f}ms/batch ({optimization_percent:.1f}%)')
-            print(f'        🔧 Other/Overhead:   {other_percent:.1f}%')
+            print(f'        🔍 Unmeasured:       {remaining_percent:.1f}% (should be ~0%)')
             
-            print(f'        📊 Total Training:   {epoch_duration:.2f}s ({num_batches} batches, {avg_batch_time*1000:.1f}ms/batch avg)')
+            print(f'        📊 Training Only:    {training_only_duration:.2f}s ({num_batches} batches, {avg_batch_time*1000:.1f}ms/batch avg)')
             if validation_duration > 0:
                 print(f'        ✅ Validation:       {validation_duration:.2f}s ({val_batches} batches, {avg_val_batch_time*1000:.1f}ms/batch avg)')
+            print(f'        📊 Total Epoch:      {epoch_duration:.2f}s')
                 
             
         
@@ -591,9 +595,6 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
                avg_val_loss, avg_val_recon_loss, avg_val_latent_reg_loss,
                current_lr, scheduler_info,
                (latent_conditioner_epoch-epoch)*epoch_duration/3600, patience_counter, patience))
-        
-
-        data_loader_start_time = time.time()
 
     torch.save(latent_conditioner.state_dict(), 'checkpoints/latent_conditioner_e2e.pth')
     torch.save(latent_conditioner, 'model_save/LatentConditioner_E2E')
