@@ -273,6 +273,10 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
         reconstruction_loss_fn = nn.MSELoss()
         print(f"Unknown loss function {loss_function_type}, using MSE")
 
+    # Configuration for end-to-end training - increased regularization to reduce overfitting
+    use_latent_regularization = config.get('use_latent_regularization', 0) == 1 if config else False
+    latent_reg_weight = float(config.get('latent_reg_weight', 1.0)) if config else 1.0  # Increased from 0.1 to 1.0
+
     latent_conditioner_optimized, warmup_scheduler, main_scheduler, warmup_epochs = setup_optimizer_and_scheduler_e2e(
         latent_conditioner, latent_conditioner_lr, weight_decay, latent_conditioner_epoch
     )
@@ -286,10 +290,6 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
     latent_conditioner = latent_conditioner.to(device)
     latent_conditioner.apply(safe_initialize_weights_He)
     model_summary_shown = False
-
-    # Configuration for end-to-end training - increased regularization to reduce overfitting
-    use_latent_regularization = config.get('use_latent_regularization', 0) == 1 if config else False
-    latent_reg_weight = float(config.get('latent_reg_weight', 1.0)) if config else 1.0  # Increased from 0.1 to 1.0
 
     print(f"Starting end-to-end latent conditioner training for {latent_conditioner_epoch} epochs")
     print(f"Reconstruction loss function: {loss_function_type}")
