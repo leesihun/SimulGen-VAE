@@ -15,6 +15,8 @@ from torch.utils.tensorboard import SummaryWriter
 from torchinfo import summary
 from modules.pca_preprocessor import PCAPreprocessor
 import matplotlib.pyplot as plt
+import pickle
+from joblib import load
 # Removed mixed precision as requested
 
 class CPUMonitor:
@@ -114,6 +116,44 @@ from modules.latent_conditioner import (
     safe_cuda_initialization, safe_initialize_weights_He, setup_device_and_model
 )
 
+def load_scaler(scaler_path):
+    """Load a scaler from a pickle file."""
+    try:
+        with open(scaler_path, 'rb') as f:
+            scaler = load(f)
+        return scaler
+    except Exception as e:
+        print(f"Error loading scaler from {scaler_path}: {e}")
+        return None
+
+def descale_latent_predictions(y_pred1, y_pred2, latent_vectors_scaler, xs_scaler):
+    """Descale latent conditioner predictions to match VAE decoder expectations."""
+    if latent_vectors_scaler is None or xs_scaler is None:
+        print("Warning: Scalers not available, using original predictions")
+        return y_pred1, y_pred2
+    
+    # Convert to numpy for scaler operations
+    y_pred1_np = y_pred1.detach().cpu().numpy()
+    y_pred2_np = y_pred2.detach().cpu().numpy()
+    
+    # Descale predictions
+    y_pred1_descaled_np = latent_vectors_scaler.inverse_transform(y_pred1_np)
+    
+    # Handle hierarchical latent vectors (y_pred2) - need to reshape for scaler
+    if len(y_pred2_np.shape) == 3:
+        original_shape = y_pred2_np.shape
+        y_pred2_reshaped = y_pred2_np.reshape(original_shape[0], -1)
+        y_pred2_descaled_np = xs_scaler.inverse_transform(y_pred2_reshaped)
+        y_pred2_descaled_np = y_pred2_descaled_np.reshape(original_shape)
+    else:
+        y_pred2_descaled_np = xs_scaler.inverse_transform(y_pred2_np)
+    
+    # Convert back to tensors on the same device
+    y_pred1_descaled = torch.from_numpy(y_pred1_descaled_np).to(y_pred1.device).float()
+    y_pred2_descaled = torch.from_numpy(y_pred2_descaled_np).to(y_pred2.device).float()
+    
+    return y_pred1_descaled, y_pred2_descaled
+
 def setup_optimizer_and_scheduler_e2e(latent_conditioner, latent_conditioner_lr, weight_decay, latent_conditioner_epoch):
     """Setup optimizer and scheduler for end-to-end training - same as original but with E2E suffix."""
     optimizer = torch.optim.AdamW(latent_conditioner.parameters(), lr=latent_conditioner_lr, weight_decay=weight_decay)
@@ -171,6 +211,17 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
     # Load VAE model for end-to-end training
     vae_model_path = config.get('e2e_vae_model_path', 'model_save/SimulGen-VAE') if config else 'model_save/SimulGen-VAE'
     vae_model = load_vae_model(vae_model_path, device)
+    
+    # Load scalers once at the beginning of training for efficiency
+    print("Loading scalers for latent prediction descaling...")
+    latent_vectors_scaler = load_scaler('./model_save/latent_vectors_scaler.pkl')
+    xs_scaler = load_scaler('./model_save/xs_scaler.pkl')
+    
+    if latent_vectors_scaler is None or xs_scaler is None:
+        print("Warning: Could not load scalers. Training will continue but may have large reconstruction loss.")
+        print("Make sure scalers exist at ./model_save/latent_vectors_scaler.pkl and ./model_save/xs_scaler.pkl")
+    else:
+        print("✅ Scalers loaded successfully for latent prediction descaling")
     
     # Compile VAE decoder for 20-30% performance improvement
     vae_model.decoder = torch.compile(vae_model.decoder)
@@ -302,6 +353,12 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
             # === SUBSTAGE 2A: LATENT CONDITIONER FORWARD ===
             lc_forward_start = time.time()
             y_pred1, y_pred2 = latent_conditioner(x)
+            
+            # Descale predictions to match VAE decoder expectations
+            y_pred1_descaled, y_pred2_descaled = descale_latent_predictions(
+                y_pred1, y_pred2, latent_vectors_scaler, xs_scaler
+            )
+            
             lc_forward_end = time.time()
             lc_forward_time = lc_forward_end - lc_forward_start
 
@@ -311,20 +368,21 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
             y_pred2_tensor = y_pred2
             
             # The VAE decoder expects xs as a list where each element corresponds to a decoder layer
-            # Based on the error, we need to restructure y_pred2 correctly
-            if torch.is_tensor(y_pred2):
+            # Use descaled predictions for VAE decoder
+            y_pred2_for_decoder = y_pred2_descaled
+            if torch.is_tensor(y_pred2_for_decoder):
                 # If y_pred2 is [batch_size, 3, 8] then split along dim 1
-                if y_pred2.dim() == 3 and y_pred2.shape[1] == 3:
-                    y_pred2 = [y_pred2[:, i, :] for i in range(y_pred2.shape[1])]
+                if y_pred2_for_decoder.dim() == 3 and y_pred2_for_decoder.shape[1] == 3:
+                    y_pred2_for_decoder = [y_pred2_for_decoder[:, i, :] for i in range(y_pred2_for_decoder.shape[1])]
                 # If y_pred2 is [batch_size, num_layers * latent_dim], reshape and split
-                elif y_pred2.dim() == 2:
+                elif y_pred2_for_decoder.dim() == 2:
                     # Assume it needs to be reshaped to [batch_size, num_layers, latent_dim]
                     num_layers = 3  # Based on decoder structure
-                    latent_dim = y_pred2.shape[1] // num_layers
-                    y_pred2 = y_pred2.view(y_pred2.shape[0], num_layers, latent_dim)
-                    y_pred2 = [y_pred2[:, i, :] for i in range(num_layers)]
-            elif isinstance(y_pred2, (list, tuple)):
-                y_pred2 = list(y_pred2)
+                    latent_dim = y_pred2_for_decoder.shape[1] // num_layers
+                    y_pred2_for_decoder = y_pred2_for_decoder.view(y_pred2_for_decoder.shape[0], num_layers, latent_dim)
+                    y_pred2_for_decoder = [y_pred2_for_decoder[:, i, :] for i in range(num_layers)]
+            elif isinstance(y_pred2_for_decoder, (list, tuple)):
+                y_pred2_for_decoder = list(y_pred2_for_decoder)
             tensor_prep_end = time.time()
             tensor_prep_time = tensor_prep_end - tensor_prep_start
             
@@ -332,7 +390,8 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
             vae_decoder_start = time.time()
             
             # NOTE: VAE parameters are frozen (requires_grad=False) but we need gradient flow for E2E training
-            reconstructed_data, _ = vae_model.decoder(y_pred1, y_pred2)
+            # Use descaled predictions for VAE decoder
+            reconstructed_data, _ = vae_model.decoder(y_pred1_descaled, y_pred2_for_decoder)
             
             vae_decoder_end = time.time()
             vae_decoder_time = vae_decoder_end - vae_decoder_start
@@ -417,18 +476,24 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
                     
                     y_pred1_val, y_pred2_val = latent_conditioner(x_val)
                     
+                    # Descale validation predictions to match VAE decoder expectations
+                    y_pred1_val_descaled, y_pred2_val_descaled = descale_latent_predictions(
+                        y_pred1_val, y_pred2_val, latent_vectors_scaler, xs_scaler
+                    )
+                    
                     # Keep original tensor for latent regularization
                     y_pred2_val_tensor = y_pred2_val
                     
                     # Convert y_pred2_val to proper list format for VAE decoder
-                    if torch.is_tensor(y_pred2_val):
-                        y_pred2_val = [y_pred2_val[:, i, :] for i in range(y_pred2_val.shape[1])]
-                    elif isinstance(y_pred2_val, (list, tuple)):
-                        y_pred2_val = list(y_pred2_val)
+                    y_pred2_val_for_decoder = y_pred2_val_descaled
+                    if torch.is_tensor(y_pred2_val_for_decoder):
+                        y_pred2_val_for_decoder = [y_pred2_val_for_decoder[:, i, :] for i in range(y_pred2_val_for_decoder.shape[1])]
+                    elif isinstance(y_pred2_val_for_decoder, (list, tuple)):
+                        y_pred2_val_for_decoder = list(y_pred2_val_for_decoder)
                     
                     # Validate with same end-to-end approach (gradients not needed for validation)
                     with torch.no_grad():
-                        reconstructed_val_data, _ = vae_model.decoder(y_pred1_val, y_pred2_val)
+                        reconstructed_val_data, _ = vae_model.decoder(y_pred1_val_descaled, y_pred2_val_for_decoder)
                     recon_loss_val = reconstruction_loss_fn(reconstructed_val_data, target_val_data)
                     
                     if use_latent_regularization:
