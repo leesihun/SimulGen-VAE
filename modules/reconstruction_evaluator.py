@@ -102,6 +102,81 @@ class ReconstructionEvaluator:
                 self._print_reconstruction_stats(
                     i, original_data_sample, target_output_predicted, target_output_true
                 )
+
+    def evaluate_reconstruction_comparison_e2e(self, latent_conditioner, latent_conditioner_dataset, 
+                                         original_data, latent_vectors_scaler, xs_scaler):
+        """Compare VAE+LatentConditioner vs VAE-only reconstructions.
+        
+        Args:
+            latent_conditioner: Trained latent conditioner model
+            latent_conditioner_dataset: Dataset for latent conditioner evaluation
+            original_data: Original training data (new_x_train)
+            latent_vectors_scaler: Scaler for main latent vectors
+            xs_scaler: Scaler for hierarchical latent vectors
+        """
+        # Create unshuffled dataloader for consistent comparison
+        dataloader_test = torch.utils.data.DataLoader(
+            latent_conditioner_dataset, 
+            batch_size=1, 
+            shuffle=False,
+            num_workers=0,
+            pin_memory=False
+        )
+        
+        # Create corresponding original data loader (unshuffled)
+        original_dataset = torch.utils.data.TensorDataset(torch.from_numpy(original_data))
+        original_dataloader = torch.utils.data.DataLoader(
+            original_dataset,
+            batch_size=1,
+            shuffle=False,
+            num_workers=0,
+            pin_memory=False
+        )
+        
+        if self.debug_mode >= 1:
+            print(f"Evaluating {len(latent_conditioner_dataset)} samples...")
+        
+        for i, ((x_lc, y1_true, y2_true), (x_orig,), (x_ans,)) in enumerate(zip(dataloader_test, original_dataloader)):
+            # Move to device
+
+            x_ans = x_ans.to(self.device)
+            original_data = x_ans.cpu().detach().numpy()
+            
+            x_lc = x_lc.to(self.device)
+            x_orig = x_orig.to(self.device)
+            
+            # Get predictions from latent conditioner
+            y_pred1, y_pred2 = latent_conditioner(x_lc)
+            
+            # Convert to numpy for inverse scaling
+            y_pred1_np = y_pred1.cpu().detach().numpy()
+            y_pred2_np = y_pred2.cpu().detach().numpy()
+            y1_true_np = y1_true.cpu().detach().numpy()
+            y2_true_np = y2_true.cpu().detach().numpy()
+            
+            # Reconstruct using predicted latents (VAE+LatentConditioner)
+            target_output_predicted = self._reconstruct_from_latents(
+                y_pred1_np, y_pred2_np, latent_vectors_scaler, xs_scaler
+            )
+            
+            # Reconstruct using true latents (VAE-only, should match original)
+            target_output_true = self._reconstruct_from_latents(
+                y1_true_np, y2_true_np, latent_vectors_scaler, xs_scaler
+            )
+            
+            # Get original data for comparison
+            original_data_sample = x_orig.cpu().detach().numpy()
+            
+            # Generate comparison plots
+            self._plot_reconstruction_comparison(
+                i, original_data_sample, target_output_predicted, 
+                target_output_true, save_plots=True
+            )
+            
+            if self.debug_mode >= 1:
+                self._print_reconstruction_stats(
+                    i, original_data_sample, target_output_predicted, target_output_true
+                )
     
     def _reconstruct_from_latents(self, y_pred, y2_pred, latent_scaler, xs_scaler):
         """Reconstruct data from latent vectors."""

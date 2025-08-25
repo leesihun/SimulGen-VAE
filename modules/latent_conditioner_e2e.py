@@ -175,6 +175,35 @@ def setup_optimizer_and_scheduler_e2e(latent_conditioner, latent_conditioner_lr,
     
     return optimizer, warmup_scheduler, main_scheduler, warmup_epochs
 
+def setup_latent_reg_scheduler(initial_weight, total_epochs, warmup_epochs):
+    """
+    Setup latent regularization weight scheduler using cosine annealing.
+    
+    Args:
+        initial_weight: Starting regularization weight (e.g., 1.0)
+        total_epochs: Total number of training epochs
+        warmup_epochs: Number of warmup epochs (maintain high weight)
+        
+    Returns:
+        Function that takes current epoch and returns regularization weight
+    """
+    final_weight = initial_weight / 1000.0  # Target: 1/1000 of original weight
+    main_epochs = total_epochs - warmup_epochs
+    
+    def get_reg_weight(epoch):
+        if epoch < warmup_epochs:
+            # Maintain full regularization during warmup
+            return initial_weight
+        else:
+            # Cosine annealing for main training phase
+            progress = (epoch - warmup_epochs) / main_epochs
+            cosine_decay = 0.5 * (1 + math.cos(math.pi * progress))
+            current_weight = final_weight + (initial_weight - final_weight) * cosine_decay
+            return current_weight
+    
+    print(f"📉 Latent regularization scheduler: {initial_weight:.3f} → {final_weight:.6f} over {total_epochs} epochs")
+    return get_reg_weight
+
 def load_vae_model(vae_model_path, device):
     """Load and prepare VAE model for end-to-end training."""
     try:
@@ -247,6 +276,9 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
     latent_conditioner_optimized, warmup_scheduler, main_scheduler, warmup_epochs = setup_optimizer_and_scheduler_e2e(
         latent_conditioner, latent_conditioner_lr, weight_decay, latent_conditioner_epoch
     )
+    
+    # Setup latent regularization weight scheduler
+    latent_reg_scheduler = setup_latent_reg_scheduler(latent_reg_weight, latent_conditioner_epoch, warmup_epochs)
     
     # Training configuration
     overfitting_threshold = 1000.0
@@ -402,15 +434,18 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
             loss_comp_end = time.time()
             loss_comp_time = loss_comp_end - loss_comp_start
             
-            # Optional latent regularization (same as original but weighted)
+            # Optional latent regularization with dynamic weight scheduling
             if use_latent_regularization:
+                # Get current regularization weight from scheduler
+                current_reg_weight = latent_reg_scheduler(epoch)
+                
                 latent_reg_main = nn.MSELoss()(y_pred1, y1)
                 latent_reg_hier = nn.MSELoss()(y_pred2_tensor.reshape(-1), y2.reshape(-1))
                 latent_reg_total = latent_reg_main + latent_reg_hier
                 
-                # Combine reconstruction loss with latent regularization
-                loss = recon_loss + latent_reg_weight * latent_reg_total
-                epoch_latent_reg_loss += (latent_reg_weight * latent_reg_total).item()
+                # Combine reconstruction loss with scheduled latent regularization
+                loss = recon_loss + current_reg_weight * latent_reg_total
+                epoch_latent_reg_loss += (current_reg_weight * latent_reg_total).item()
             else:
                 loss = recon_loss
 
@@ -497,12 +532,15 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
                     recon_loss_val = reconstruction_loss_fn(reconstructed_val_data, target_val_data)
                     
                     if use_latent_regularization:
+                        # Use same dynamic regularization weight for validation
+                        current_reg_weight = latent_reg_scheduler(epoch)
+                        
                         latent_reg_main_val = nn.MSELoss()(y_pred1_val, y1_val)
                         latent_reg_hier_val = nn.MSELoss()(y_pred2_val_tensor.reshape(-1), y2_val.reshape(-1))
                         latent_reg_total_val = latent_reg_main_val + latent_reg_hier_val
                         
-                        total_val_loss = recon_loss_val + latent_reg_weight * latent_reg_total_val
-                        val_latent_reg_loss += (latent_reg_weight * latent_reg_total_val).item()
+                        total_val_loss = recon_loss_val + current_reg_weight * latent_reg_total_val
+                        val_latent_reg_loss += (current_reg_weight * latent_reg_total_val).item()
                     else:
                         total_val_loss = recon_loss_val
                     
@@ -564,6 +602,7 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
         loss_comp_percent = (total_loss_comp_time / max(total_forward_time, 1e-8)) * 100
 
         current_lr = latent_conditioner_optimized.param_groups[0]['lr']
+        current_reg_weight = latent_reg_scheduler(epoch) if use_latent_regularization else 0.0
         scheduler_info = f"Warmup" if epoch < warmup_epochs else f"Cosine"
 
         if epoch % 100 == 0:
@@ -586,10 +625,11 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
             
         
         # Enhanced progress display with detailed timing breakdown
-        print('[%d/%d]\tTrain: %.4E (recon:%.4E, reg:%.4E), Val: %.4E (recon:%.4E, reg:%.4E), LR: %.2E (%s), ETA: %.2f h' % 
+        reg_weight_info = f", RegW: {current_reg_weight:.4f}" if use_latent_regularization else ""
+        print('[%d/%d]\tTrain: %.4E (recon:%.4E, reg:%.4E), Val: %.4E (recon:%.4E, reg:%.4E), LR: %.2E (%s)%s, ETA: %.2f h' % 
               (epoch, latent_conditioner_epoch, avg_train_loss, avg_train_recon_loss, avg_train_latent_reg_loss, 
                avg_val_loss, avg_val_recon_loss, avg_val_latent_reg_loss,
-               current_lr, scheduler_info,
+               current_lr, scheduler_info, reg_weight_info,
                (latent_conditioner_epoch-epoch)*epoch_duration/3600))
 
     torch.save(latent_conditioner.state_dict(), 'checkpoints/latent_conditioner_e2e.pth')

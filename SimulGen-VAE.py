@@ -603,8 +603,17 @@ def main():
     VAE_trained = torch.load('model_save/SimulGen-VAE', map_location= device, weights_only=False)
     VAE = VAE_trained.eval()
 
+
     print("Starting reconstruction evaluation...")
     evaluator = ReconstructionEvaluator(VAE, device, num_time)
+    
+    # Validation plotting
+    if config.get('use_e2e_training', 0) == 1:
+        evaluator.evaluate_reconstruction_comparison(
+            latent_conditioner, e2e_validation_dataloader, 
+            _, latent_vectors_scaler, xs_scaler
+        )
+
     evaluator.evaluate_reconstruction_comparison(
         latent_conditioner, latent_conditioner_dataset, 
         new_x_train, latent_vectors_scaler, xs_scaler
