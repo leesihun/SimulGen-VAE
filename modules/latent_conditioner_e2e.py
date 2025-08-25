@@ -222,31 +222,33 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
         print(f"Used: {current_memory:.2f}GB | Reserved: {reserved_memory:.2f}GB | Free: {free_memory:.2f}GB | Total: {total_memory:.2f}GB")
         print(f"==========================================")
 
-    # Initialize global timing variables
-    total_forward_time = 0
-    total_lc_forward_time = 0
-    total_tensor_prep_time = 0
-    total_vae_decoder_time = 0
-    total_loss_comp_time = 0
-    total_backward_time = 0
-    total_optimization_time = 0
-
     for epoch in range(latent_conditioner_epoch):
         epoch_start_time = time.time()
         latent_conditioner.train(True)
         
         data_loader_start_time = time.time()
         
-        # Initialize per-epoch variables
+        # Initialize per-epoch variables (both training and timing)
         epoch_loss = 0
         epoch_recon_loss = 0
         epoch_latent_reg_loss = 0
         num_batches = 0
         
+        # Initialize timing variables per epoch (prevents cross-epoch accumulation)
+        total_forward_time = 0
+        total_lc_forward_time = 0
+        total_tensor_prep_time = 0
+        total_vae_decoder_time = 0
+        total_loss_comp_time = 0
+        total_backward_time = 0
+        total_optimization_time = 0
+        total_dataloader_time = 0
+        
         for i, (x, y1, y2, target_data) in enumerate(e2e_dataloader):
 
             data_loader_end_time = time.time()
             dataloader_time = data_loader_end_time - data_loader_start_time
+            total_dataloader_time += dataloader_time
             
             if not model_summary_shown:
                 batch_size = x.shape[0]
@@ -473,7 +475,7 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
         
         # === ELAPSED TIME SUMMARY FOR THIS EPOCH ===
         avg_batch_time = epoch_duration / max(num_batches, 1)
-        avg_dataloader_time = dataloader_time
+        avg_dataloader_time = total_dataloader_time / max(num_batches, 1)
         avg_forward_time = total_forward_time / max(num_batches, 1)
         avg_backward_time = total_backward_time / max(num_batches, 1)
         avg_optimization_time = total_optimization_time / max(num_batches, 1)
@@ -485,7 +487,7 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
         avg_loss_comp_time = total_loss_comp_time / max(num_batches, 1)
         
         # Calculate percentages
-        dataloader_percent = (dataloader_time / epoch_duration) * 100 if epoch_duration > 0 else 0  # NEW
+        dataloader_percent = (total_dataloader_time / epoch_duration) * 100 if epoch_duration > 0 else 0
         forward_percent = (total_forward_time / epoch_duration) * 100 if epoch_duration > 0 else 0
         backward_percent = (total_backward_time / epoch_duration) * 100 if epoch_duration > 0 else 0
         optimization_percent = (total_optimization_time / epoch_duration) * 100 if epoch_duration > 0 else 0
@@ -515,6 +517,8 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
             print(f'        📊 Total Training:   {epoch_duration:.2f}s ({num_batches} batches, {avg_batch_time*1000:.1f}ms/batch avg)')
             if validation_duration > 0:
                 print(f'        ✅ Validation:       {validation_duration:.2f}s ({val_batches} batches, {avg_val_batch_time*1000:.1f}ms/batch avg)')
+                
+            
         
         # Enhanced progress display with detailed timing breakdown
         print('[%d/%d]\tTrain: %.4E (recon:%.4E, reg:%.4E), Val: %.4E (recon:%.4E, reg:%.4E), LR: %.2E (%s), ETA: %.2f h, Patience: %d/%d' % 
@@ -523,6 +527,7 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
                current_lr, scheduler_info,
                (latent_conditioner_epoch-epoch)*epoch_duration/3600, patience_counter, patience))
         
+
         data_loader_start_time = time.time()
 
     torch.save(latent_conditioner.state_dict(), 'checkpoints/latent_conditioner_e2e.pth')
