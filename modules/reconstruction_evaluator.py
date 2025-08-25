@@ -123,25 +123,20 @@ class ReconstructionEvaluator:
             pin_memory=False
         )
         
-        # Create corresponding original data loader (unshuffled)
-        # Check if original_data is actually a numpy array
-        if not isinstance(original_data, np.ndarray):
-            raise TypeError(f"original_data must be a numpy array, got {type(original_data)}. "
-                          f"Check the parameter order in the function call - you may have "
-                          f"passed scalers in the wrong position.")
-        original_dataset = torch.utils.data.TensorDataset(torch.from_numpy(original_data))
-        original_dataloader = torch.utils.data.DataLoader(
-            original_dataset,
-            batch_size=1,
-            shuffle=False,
-            num_workers=0,
-            pin_memory=False
-        )
+        # # Extract original_data from latent_conditioner_dataset, the last entry
+        # original_dataset = torch.utils.data.TensorDataset(torch.from_numpy(original_data))
+        # original_dataloader = torch.utils.data.DataLoader(
+        #     original_dataset,
+        #     batch_size=1,
+        #     shuffle=False,
+        #     num_workers=0,
+        #     pin_memory=False
+        # )
         
         if self.debug_mode >= 1:
             print(f"Evaluating {len(latent_conditioner_dataset)} samples...")
         
-        for i, ((x_lc, y1_true, y2_true), (x_orig,), (x_ans,)) in enumerate(zip(dataloader_test, original_dataloader)):
+        for i, ((x_lc, y1_true, y2_true, x_orig,)) in enumerate(zip(dataloader_test)):
             # Move to device
 
             x_ans = x_ans.to(self.device)
