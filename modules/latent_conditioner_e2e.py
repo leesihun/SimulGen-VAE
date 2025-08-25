@@ -155,8 +155,11 @@ def descale_latent_predictions(y_pred1, y_pred2, latent_vectors_scaler, xs_scale
     return y_pred1_descaled, y_pred2_descaled
 
 def setup_optimizer_and_scheduler_e2e(latent_conditioner, latent_conditioner_lr, weight_decay, latent_conditioner_epoch):
-    """Setup optimizer and scheduler for end-to-end training - same as original but with E2E suffix."""
-    optimizer = torch.optim.AdamW(latent_conditioner.parameters(), lr=latent_conditioner_lr, weight_decay=weight_decay)
+    """Setup optimizer and scheduler for end-to-end training - reduced LR for better generalization."""
+    # Reduce learning rate by factor of 10 for more stable convergence and better generalization
+    reduced_lr = latent_conditioner_lr / 10.0
+    print(f"📉 Reducing learning rate from {latent_conditioner_lr} to {reduced_lr} for better generalization")
+    optimizer = torch.optim.AdamW(latent_conditioner.parameters(), lr=reduced_lr, weight_decay=weight_decay)
     warmup_epochs = 100
     warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
         optimizer, 
@@ -245,19 +248,16 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
         latent_conditioner, latent_conditioner_lr, weight_decay, latent_conditioner_epoch
     )
     
-    best_val_loss = float('inf')
-    patience = 100000
-    patience_counter = 0
-    min_delta = 1e-8
+    # Training configuration
     overfitting_threshold = 1000.0
 
     latent_conditioner = latent_conditioner.to(device)
     latent_conditioner.apply(safe_initialize_weights_He)
     model_summary_shown = False
 
-    # Configuration for end-to-end training
+    # Configuration for end-to-end training - increased regularization to reduce overfitting
     use_latent_regularization = config.get('use_latent_regularization', 0) == 1 if config else False
-    latent_reg_weight = float(config.get('latent_reg_weight', 0.1)) if config else 0.1
+    latent_reg_weight = float(config.get('latent_reg_weight', 1.0)) if config else 1.0  # Increased from 0.1 to 1.0
 
     print(f"Starting end-to-end latent conditioner training for {latent_conditioner_epoch} epochs")
     print(f"Reconstruction loss function: {loss_function_type}")
@@ -324,8 +324,8 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
                 x_2d = apply_outline_preserving_augmentations(x_2d, prob=0.8)
                 x = x_2d.reshape(x.shape[0], -1)
                 
-            # Mixup augmentation (applied to both input and target data)
-            if torch.rand(1, device=x.device) < 0.02 and x.size(0) > 1:
+            # Mixup augmentation (applied to both input and target data) - increased for better generalization
+            if torch.rand(1, device=x.device) < 0.15 and x.size(0) > 1:
                 alpha = 0.2
                 lam = torch.tensor(np.random.beta(alpha, alpha), device=x.device, dtype=x.dtype)
                 batch_size = x.size(0)
@@ -337,7 +337,8 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
                     y1 = lam * y1 + (1 - lam) * y1[index, :]
                     y2 = lam * y2 + (1 - lam) * y2[index, :]
             
-            if torch.rand(1, device=x.device) < 0.2:
+            # Increased noise augmentation for better generalization
+            if torch.rand(1, device=x.device) < 0.5:
                 noise = torch.randn_like(x) * 0.01
                 x = x + noise
             
@@ -523,11 +524,6 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
             validation_duration = 0.0
             avg_val_batch_time = 0.0
             
-        if avg_val_loss < best_val_loss - min_delta:
-            best_val_loss = avg_val_loss
-            patience_counter = 0
-        else:
-            patience_counter += 1
             
         if epoch < warmup_epochs:
             warmup_scheduler.step()
