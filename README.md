@@ -251,11 +251,25 @@ If you use SimulGenVAE in your research, please cite:
 
 This project is licensed under the MIT License - see the LICENSE file for details.
 
+## Version History
+
+### Version 2.0.1 (2024-01-XX)
+**Bug Fixes:**
+- Fixed `TypeError: 'Dataloader' object is not subscriptable` in reconstruction evaluator
+- Fixed undefined `device` variable in E2ELatentConditionerDataset initialization  
+- Fixed evaluation call parameters in end-to-end training mode
+- Improved dataset initialization with proper device handling
+
+### Version 2.0.0 (2024)
+- Major refactoring and documentation improvements
+- Enhanced multi-GPU support and distributed training
+- Comprehensive anti-overfitting strategies
+
 ## Contact
 
 - **Author**: SiHun Lee, Ph.D.
 - **Email**: kevin1007kr@gmail.com
-- **Version**: 2.0.0 (Refactored & Documented)
+- **Version**: 2.0.1 (Bug Fixes & DataLoader Improvements)
 
 ## Acknowledgments
 

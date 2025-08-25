@@ -103,45 +103,24 @@ class ReconstructionEvaluator:
                     i, original_data_sample, target_output_predicted, target_output_true
                 )
 
-    def evaluate_reconstruction_comparison_e2e(self, latent_conditioner, latent_conditioner_dataset, 
+    def evaluate_reconstruction_comparison_e2e(self, latent_conditioner, dataloader_test, 
                                          original_data, latent_vectors_scaler, xs_scaler):
-        """Compare VAE+LatentConditioner vs VAE-only reconstructions.
+        """Compare VAE+LatentConditioner vs VAE-only reconstructions using E2E dataloader.
         
         Args:
             latent_conditioner: Trained latent conditioner model
-            latent_conditioner_dataset: Dataset for latent conditioner evaluation
+            dataloader_test: DataLoader for latent conditioner evaluation (E2E validation dataloader)
             original_data: Original training data (new_x_train)
             latent_vectors_scaler: Scaler for main latent vectors
             xs_scaler: Scaler for hierarchical latent vectors
         """
-        # Create unshuffled dataloader for consistent comparison
-        dataloader_test = torch.utils.data.DataLoader(
-            latent_conditioner_dataset, 
-            batch_size=1, 
-            shuffle=False,
-            num_workers=0,
-            pin_memory=False
-        )
-        
-        # # Extract original_data from latent_conditioner_dataset, the last entry
-        # original_dataset = torch.utils.data.TensorDataset(torch.from_numpy(original_data))
-        # original_dataloader = torch.utils.data.DataLoader(
-        #     original_dataset,
-        #     batch_size=1,
-        #     shuffle=False,
-        #     num_workers=0,
-        #     pin_memory=False
-        # )
         
         if self.debug_mode >= 1:
-            print(f"Evaluating {len(latent_conditioner_dataset)} samples...")
+            print(f"Evaluating E2E reconstruction with DataLoader...")
+            print(f"DataLoader type: {type(dataloader_test)}")
         
         for i, (x_lc, y1_true, y2_true, x_orig) in enumerate(dataloader_test):
             # Move to device
-
-            # x_ans = x_ans.to(self.device)
-            # original_data = x_ans.cpu().detach().numpy()
-            
             x_lc = x_lc.to(self.device)
             x_orig = x_orig.to(self.device)
             

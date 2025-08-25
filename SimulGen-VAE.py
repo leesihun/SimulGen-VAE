@@ -611,7 +611,7 @@ def main():
     if config.get('use_e2e_training', 0) == 1:
         evaluator.evaluate_reconstruction_comparison_e2e(
             latent_conditioner, e2e_validation_dataloader, 
-            _, latent_vectors_scaler, xs_scaler
+            new_x_train, latent_vectors_scaler, xs_scaler
         )
 
     evaluator.evaluate_reconstruction_comparison(
