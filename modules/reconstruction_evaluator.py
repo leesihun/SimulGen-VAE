@@ -136,11 +136,11 @@ class ReconstructionEvaluator:
         if self.debug_mode >= 1:
             print(f"Evaluating {len(latent_conditioner_dataset)} samples...")
         
-        for i, ((x_lc, y1_true, y2_true, x_orig,)) in enumerate(zip(dataloader_test)):
+        for i, (x_lc, y1_true, y2_true, x_orig) in enumerate(dataloader_test):
             # Move to device
 
-            x_ans = x_ans.to(self.device)
-            original_data = x_ans.cpu().detach().numpy()
+            # x_ans = x_ans.to(self.device)
+            # original_data = x_ans.cpu().detach().numpy()
             
             x_lc = x_lc.to(self.device)
             x_orig = x_orig.to(self.device)
