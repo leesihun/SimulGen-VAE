@@ -586,11 +586,11 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
             
         
         # Enhanced progress display with detailed timing breakdown
-        print('[%d/%d]\tTrain: %.4E (recon:%.4E, reg:%.4E), Val: %.4E (recon:%.4E, reg:%.4E), LR: %.2E (%s), ETA: %.2f h, Patience: %d/%d' % 
+        print('[%d/%d]\tTrain: %.4E (recon:%.4E, reg:%.4E), Val: %.4E (recon:%.4E, reg:%.4E), LR: %.2E (%s), ETA: %.2f h' % 
               (epoch, latent_conditioner_epoch, avg_train_loss, avg_train_recon_loss, avg_train_latent_reg_loss, 
                avg_val_loss, avg_val_recon_loss, avg_val_latent_reg_loss,
                current_lr, scheduler_info,
-               (latent_conditioner_epoch-epoch)*epoch_duration/3600, patience_counter, patience))
+               (latent_conditioner_epoch-epoch)*epoch_duration/3600))
 
     torch.save(latent_conditioner.state_dict(), 'checkpoints/latent_conditioner_e2e.pth')
     torch.save(latent_conditioner, 'model_save/LatentConditioner_E2E')
