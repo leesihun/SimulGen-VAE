@@ -124,6 +124,11 @@ class ReconstructionEvaluator:
         )
         
         # Create corresponding original data loader (unshuffled)
+        # Check if original_data is actually a numpy array
+        if not isinstance(original_data, np.ndarray):
+            raise TypeError(f"original_data must be a numpy array, got {type(original_data)}. "
+                          f"Check the parameter order in the function call - you may have "
+                          f"passed scalers in the wrong position.")
         original_dataset = torch.utils.data.TensorDataset(torch.from_numpy(original_data))
         original_dataloader = torch.utils.data.DataLoader(
             original_dataset,
