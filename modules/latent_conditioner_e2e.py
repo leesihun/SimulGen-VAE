@@ -633,6 +633,6 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
                (latent_conditioner_epoch-epoch)*epoch_duration/3600))
 
     torch.save(latent_conditioner.state_dict(), 'checkpoints/latent_conditioner_e2e.pth')
-    torch.save(latent_conditioner, 'model_save/LatentConditioner_E2E')
+    torch.save(latent_conditioner, 'model_save/LatentConditioner')
     
     return avg_val_loss
