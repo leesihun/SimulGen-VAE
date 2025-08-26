@@ -25,15 +25,15 @@ class AugmentedDataset(MyBaseDataset):
         # Default augmentation configuration - optimized for SimulGenVAE
         self.augmentation_config = {
             'noise_prob': 0.5,        # Probability of adding noise
-            'noise_level': 0.1,      # Noise intensity (10%)
+            'noise_level': 0.03,      # Noise intensity (10%)
             'scaling_prob': 0.5,      # Probability of scaling
-            'scaling_range': (0.8, 1.2), # Scaling factor range
+            'scaling_range': (0.9, 1.1), # Scaling factor range
             'shift_prob': 0.0,        # Probability of time shifting
             'shift_max': 0.0,         # Maximum shift fraction
-            'mixup_prob': 0.5,        # Probability of applying mixup
-            'mixup_alpha': 0.3,       # Mixup interpolation strength
+            'mixup_prob': 0.0,        # Probability of applying mixup
+            'mixup_alpha': 0.0,       # Mixup interpolation strength
             'cutout_prob': 0.0,       # Probability of applying cutout
-            'cutout_max': 0.1,        # Maximum cutout fraction
+            'cutout_max': 0.0,        # Maximum cutout fraction
             'enabled': True           # Master switch for augmentation
         }
         
