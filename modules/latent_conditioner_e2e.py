@@ -175,20 +175,22 @@ def setup_optimizer_and_scheduler_e2e(latent_conditioner, latent_conditioner_lr,
     
     return optimizer, warmup_scheduler, main_scheduler, warmup_epochs
 
-def setup_latent_reg_scheduler(initial_weight, total_epochs, warmup_epochs, decay_rate=5.0):
+def setup_latent_reg_scheduler(initial_weight, total_epochs, warmup_epochs, decay_rate=3.0):
     """
     Setup latent regularization weight scheduler using exponential decay.
+    Improved for e2e training to maintain better regularization longer.
     
     Args:
-        initial_weight: Starting regularization weight (e.g., 1.0)
+        initial_weight: Starting regularization weight (e.g., 0.001)
         total_epochs: Total number of training epochs
         warmup_epochs: Number of warmup epochs (maintain high weight)
-        decay_rate: Exponential decay rate (higher = faster decay, default: 5.0)
+        decay_rate: Exponential decay rate (lower = slower decay for better regularization)
         
     Returns:
         Function that takes current epoch and returns regularization weight
     """
-    final_weight = initial_weight / 100000  # Target: 1/100000 of original weight
+    # Less aggressive decay to maintain regularization longer
+    final_weight = initial_weight / 1000  # Target: 1/1000 of original weight (was 1/100000)
     main_epochs = total_epochs - warmup_epochs
     
     def get_reg_weight(epoch):
@@ -196,13 +198,14 @@ def setup_latent_reg_scheduler(initial_weight, total_epochs, warmup_epochs, deca
             # Maintain full regularization during warmup
             return initial_weight
         else:
-            # Exponential decay for main training phase (much faster than cosine)
+            # Slower exponential decay for main training phase
             progress = (epoch - warmup_epochs) / main_epochs
             exponential_decay = math.exp(-decay_rate * progress)
             current_weight = final_weight + (initial_weight - final_weight) * exponential_decay
-            return current_weight
+            # Clamp to minimum value to maintain some regularization
+            return max(current_weight, initial_weight / 10000)
     
-    print(f"📉 Latent regularization scheduler (exponential): {initial_weight:.3f} → {final_weight:.6f} over {total_epochs} epochs (decay_rate={decay_rate})")
+    print(f"📉 Latent regularization scheduler (improved): {initial_weight:.6f} → {final_weight:.6f} over {total_epochs} epochs (decay_rate={decay_rate})")
     return get_reg_weight
 
 def load_vae_model(vae_model_path, device):
@@ -251,8 +254,12 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
     xs_scaler = load_scaler('./model_save/xs_scaler.pkl')
     
     if latent_vectors_scaler is None or xs_scaler is None:
-        print("Warning: Could not load scalers. Training will continue but may have large reconstruction loss.")
-        print("Make sure scalers exist at ./model_save/latent_vectors_scaler.pkl and ./model_save/xs_scaler.pkl")
+        print("⚠️ Warning: Could not load scalers. E2E training will use raw predictions.")
+        print("This may cause larger reconstruction loss initially but training should still work.")
+        print("Expected scaler paths: ./model_save/latent_vectors_scaler.pkl and ./model_save/xs_scaler.pkl")
+        # Continue training without scalers - set to None for safety
+        latent_vectors_scaler = None
+        xs_scaler = None
     else:
         print("✅ Scalers loaded successfully for latent prediction descaling")
     
@@ -350,15 +357,15 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
                 summary(latent_conditioner, (batch_size, 1, input_features))
                 model_summary_shown = True
             
-            # Data augmentation (same as original)
-            if is_image_data and torch.rand(1, device=x.device) < 0.5:
+            # Enhanced data augmentation for better generalization
+            if is_image_data and torch.rand(1, device=x.device) < 0.8:
                 im_size = int(math.sqrt(x.shape[-1]))
                 x_2d = x.reshape(-1, im_size, im_size)
                 x_2d = apply_outline_preserving_augmentations(x_2d, prob=0.8)
                 x = x_2d.reshape(x.shape[0], -1)
                 
             # Mixup augmentation (applied to both input and target data) - increased for better generalization
-            if torch.rand(1, device=x.device) < 0.15 and x.size(0) > 1:
+            if torch.rand(1, device=x.device) < 0.3 and x.size(0) > 1:
                 alpha = 0.2
                 lam = torch.tensor(np.random.beta(alpha, alpha), device=x.device, dtype=x.dtype)
                 batch_size = x.size(0)
@@ -370,10 +377,21 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
                     y1 = lam * y1 + (1 - lam) * y1[index, :]
                     y2 = lam * y2 + (1 - lam) * y2[index, :]
             
-            # Increased noise augmentation for better generalization
-            if torch.rand(1, device=x.device) < 0.5:
-                noise = torch.randn_like(x) * 0.01
+            # Enhanced noise augmentation for better generalization
+            if torch.rand(1, device=x.device) < 0.7:
+                # Vary noise intensity based on training progress
+                noise_intensity = 0.02 if epoch < latent_conditioner_epoch // 3 else 0.01
+                noise = torch.randn_like(x) * noise_intensity
                 x = x + noise
+            
+            # Additional gaussian blur augmentation for images
+            if is_image_data and torch.rand(1, device=x.device) < 0.3:
+                # Simple gaussian-like smoothing
+                im_size = int(math.sqrt(x.shape[-1]))
+                x_2d = x.reshape(-1, im_size, im_size)
+                # Apply light smoothing by averaging with shifted versions
+                x_smooth = 0.7 * x_2d + 0.15 * torch.roll(x_2d, 1, dims=1) + 0.15 * torch.roll(x_2d, 1, dims=2)
+                x = x_smooth.reshape(x.shape[0], -1)
             
             other_ops_end_time = time.time()
             batch_other_time = other_ops_end_time - batch_start_time
@@ -474,8 +492,15 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
             # === STAGE 4: OPTIMIZATION ===
             optimization_start_time = time.time()
             
-            # Check gradient norms before clipping
-            total_grad_norm = torch.nn.utils.clip_grad_norm_(latent_conditioner.parameters(), max_norm=10.0)
+            # Improved gradient clipping with adaptive threshold
+            total_grad_norm = torch.nn.utils.clip_grad_norm_(latent_conditioner.parameters(), max_norm=5.0)
+            
+            # Additional gradient health monitoring for e2e training
+            if total_grad_norm > 5.0:
+                print(f"WARNING: Large gradient norm clipped: {total_grad_norm:.2f}")
+            elif total_grad_norm < 1e-5:
+                print(f"WARNING: Very small gradient norm detected: {total_grad_norm:.2E}")
+                
             latent_conditioner_optimized.step()
             
             
