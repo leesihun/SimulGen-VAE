@@ -22,17 +22,17 @@ class AugmentedDataset(MyBaseDataset):
         """
         super().__init__(x_data, load_all)
         
-        # Default augmentation configuration
+        # Default augmentation configuration - optimized for SimulGenVAE
         self.augmentation_config = {
             'noise_prob': 0.5,        # Probability of adding noise
-            'noise_level': 0.03,      # Noise intensity (0.03 = 3%)
-            'scaling_prob': 0.3,      # Probability of scaling
-            'scaling_range': (0.9, 1.1), # Scaling factor range
-            'shift_prob': 0.3,        # Probability of time shifting
-            'shift_max': 0.1,         # Maximum shift fraction
-            'mixup_prob': 0.2,        # Probability of applying mixup
-            'mixup_alpha': 0.2,       # Mixup interpolation strength
-            'cutout_prob': 0.2,       # Probability of applying cutout
+            'noise_level': 0.1,      # Noise intensity (10%)
+            'scaling_prob': 0.5,      # Probability of scaling
+            'scaling_range': (0.8, 1.2), # Scaling factor range
+            'shift_prob': 0.0,        # Probability of time shifting
+            'shift_max': 0.0,         # Maximum shift fraction
+            'mixup_prob': 0.5,        # Probability of applying mixup
+            'mixup_alpha': 0.3,       # Mixup interpolation strength
+            'cutout_prob': 0.0,       # Probability of applying cutout
             'cutout_max': 0.1,        # Maximum cutout fraction
             'enabled': True           # Master switch for augmentation
         }
@@ -73,12 +73,13 @@ class AugmentedDataset(MyBaseDataset):
             sample = self._apply_shift(sample)
         
         # Apply mixup (need another sample)
-        if random.random() < self.augmentation_config['mixup_prob']:
+        if random.random() < self.augmentation_config['mixup_prob'] and len(self) > 1:
             # Get another random sample for mixup
             other_idx = random.randint(0, len(self) - 1)
-            if other_idx != index:  # Avoid same sample
-                other_sample = super().__getitem__(other_idx)
-                sample = self._apply_mixup(sample, other_sample)
+            while other_idx == index:  # Ensure different sample
+                other_idx = random.randint(0, len(self) - 1)
+            other_sample = super().__getitem__(other_idx)
+            sample = self._apply_mixup(sample, other_sample)
         
         # Apply cutout (set random time segments to zero)
         if random.random() < self.augmentation_config['cutout_prob']:
@@ -168,41 +169,34 @@ def create_augmented_dataloaders(x_data, batch_size, load_all=False, augmentatio
     Returns:
         train_dataloader, val_dataloader
     """
-    from torch.utils.data import DataLoader, random_split
+    from torch.utils.data import DataLoader
+    import torch
     
-    # Default augmentation configuration - optimized for SimulGenVAE
-    default_config = {
-        'noise_prob': 0.5,        # Probability of adding noise
-        'noise_level': 0.1,      # Noise intensity (0.03 = 3%)
-        'scaling_prob': 0.5,      # Probability of scaling
-        'scaling_range': (0.8, 1.2), # Scaling factor range
-        'shift_prob': 0.0,        # Probability of time shifting
-        'shift_max': 0.0,         # Maximum shift fraction
-        'mixup_prob': 0.5,        # Probability of applying mixup
-        'mixup_alpha': 0.3,       # Mixup interpolation strength
-        'cutout_prob': 0.0,       # Probability of applying cutout
-        'cutout_max': 0.1,        # Maximum cutout fraction
-        'enabled': True           # Master switch for augmentation
-    }
+    # Create train config (use provided config or class defaults)
+    train_config = augmentation_config
     
-    # Use defaults or merge with user config
-    if augmentation_config is None:
-        final_config = default_config
+    # Create val config (disable augmentation for validation)
+    if augmentation_config is not None:
+        val_config = augmentation_config.copy()
+        val_config['enabled'] = False
     else:
-        # Merge user config with defaults (user config takes precedence)
-        final_config = default_config.copy()
-        final_config.update(augmentation_config)
+        val_config = {'enabled': False}
     
-    # Create dataset with final configuration
-    dataset = AugmentedDataset(x_data, load_all, final_config)
+    # Split indices first
+    dataset_size = len(x_data)
+    val_size = int(dataset_size * val_split)
+    train_size = dataset_size - val_size
+    indices = torch.randperm(dataset_size)
+    train_indices = indices[:train_size]
+    val_indices = indices[train_size:]
     
-    # Split into train and validation
-    val_size = int(len(dataset) * val_split)
-    train_size = len(dataset) - val_size
-    train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
+    # Create separate datasets with different configurations
+    train_dataset = AugmentedDataset(x_data, load_all, train_config)
+    val_dataset = AugmentedDataset(x_data, load_all, val_config)
     
-    # Set training mode for train dataset and disable for validation
-    dataset.set_training(True)
+    # Create subset datasets with proper indices
+    train_subset = torch.utils.data.Subset(train_dataset, train_indices)
+    val_subset = torch.utils.data.Subset(val_dataset, val_indices)
     
     # Determine optimal number of workers if not specified
     if num_workers is None:
@@ -214,7 +208,7 @@ def create_augmented_dataloaders(x_data, batch_size, load_all=False, augmentatio
     
     # Create dataloaders
     train_dataloader = DataLoader(
-        train_dataset,
+        train_subset,
         batch_size=batch_size,
         shuffle=True,
         num_workers=num_workers,
@@ -222,12 +216,11 @@ def create_augmented_dataloaders(x_data, batch_size, load_all=False, augmentatio
     )
     
     val_dataloader = DataLoader(
-        val_dataset,
+        val_subset,
         batch_size=batch_size,
         shuffle=False,
         num_workers=num_workers,
         pin_memory=not load_all
     )
-    
     
     return train_dataloader, val_dataloader 
