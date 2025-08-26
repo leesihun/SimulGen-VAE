@@ -7,13 +7,13 @@ RESERVED	0
 RESERVED	0
 RESERVED	0
 '
-%LSH-VAE parameters  10002
+%LSH-VAE parameters
 Training_epochs	10002
 Batch_size	16
 LearningR	0.001
 Latent_dim	8	# Hierarchical latent Dim1
 Latent_dim_end	32 # Main latent Dim1
-Loss_type	1	# 1: MSE, 2, MAE
+Loss_type	1	# 1: MSE, 2, MAE, 3: smoothL1, 4: Huber
 Stretch	0
 RESERVED	0
 RESERVED	0
@@ -34,7 +34,7 @@ n_epoch	10000
 latent_conditioner_lr	0.001
 latent_conditioner_batch	16
 latent_conditioner_weight_decay	1e-4
-latent_conditioner_dropout_rate	0.1
+latent_conditioner_dropout_rate	0.3
 use_spatial_attention	0	# 0=off, 1=on - spatial attention in CNN
 input_type	image	#image, csvs, image_vit
 param_data_type .png
