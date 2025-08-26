@@ -175,19 +175,20 @@ def setup_optimizer_and_scheduler_e2e(latent_conditioner, latent_conditioner_lr,
     
     return optimizer, warmup_scheduler, main_scheduler, warmup_epochs
 
-def setup_latent_reg_scheduler(initial_weight, total_epochs, warmup_epochs):
+def setup_latent_reg_scheduler(initial_weight, total_epochs, warmup_epochs, decay_rate=5.0):
     """
-    Setup latent regularization weight scheduler using cosine annealing.
+    Setup latent regularization weight scheduler using exponential decay.
     
     Args:
         initial_weight: Starting regularization weight (e.g., 1.0)
         total_epochs: Total number of training epochs
         warmup_epochs: Number of warmup epochs (maintain high weight)
+        decay_rate: Exponential decay rate (higher = faster decay, default: 5.0)
         
     Returns:
         Function that takes current epoch and returns regularization weight
     """
-    final_weight = initial_weight / 1000.0  # Target: 1/1000 of original weight
+    final_weight = initial_weight / 100000  # Target: 1/100000 of original weight
     main_epochs = total_epochs - warmup_epochs
     
     def get_reg_weight(epoch):
@@ -195,13 +196,13 @@ def setup_latent_reg_scheduler(initial_weight, total_epochs, warmup_epochs):
             # Maintain full regularization during warmup
             return initial_weight
         else:
-            # Cosine annealing for main training phase
+            # Exponential decay for main training phase (much faster than cosine)
             progress = (epoch - warmup_epochs) / main_epochs
-            cosine_decay = 0.5 * (1 + math.cos(math.pi * progress))
-            current_weight = final_weight + (initial_weight - final_weight) * cosine_decay
+            exponential_decay = math.exp(-decay_rate * progress)
+            current_weight = final_weight + (initial_weight - final_weight) * exponential_decay
             return current_weight
     
-    print(f"📉 Latent regularization scheduler: {initial_weight:.3f} → {final_weight:.6f} over {total_epochs} epochs")
+    print(f"📉 Latent regularization scheduler (exponential): {initial_weight:.3f} → {final_weight:.6f} over {total_epochs} epochs (decay_rate={decay_rate})")
     return get_reg_weight
 
 def load_vae_model(vae_model_path, device):

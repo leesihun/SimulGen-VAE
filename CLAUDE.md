@@ -1,296 +1,504 @@
 # CLAUDE.md
 
-This file provides comprehensive guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides comprehensive guidance to Claude Code (claude.ai/code) when working with the SimulGenVAE codebase.
 
-## Important Precautions
+## ⚠️ Critical Safety Precautions
 
-⚠️ **CRITICAL**: The SimulGenVAE code is designed to run on specialized hardware with GPU acceleration. Claude Code should NEVER attempt to:
-- Run the training scripts locally
-- Execute any GPU-dependent code
-- Try to retrieve or access training data from runs/datasets
-- Attempt to load large pickle files or datasets
+**NEVER attempt to:**
+- Execute training scripts or GPU-dependent code
+- Run model training, evaluation, or inference
+- Load large datasets, pickle files, or model checkpoints
+- Access training outputs, logs, or generated data
+- Attempt CUDA operations or GPU memory operations
 
-Always ask the user for any information needed about training runs, datasets, or system configurations.
+**Always ask the user** for information about:
+- Training results, model performance, or validation metrics
+- Dataset contents, structure, or statistics  
+- Hardware specifications or system configurations
+- Running training sessions or experiment results
 
-## Project Overview
+## 📋 Project Overview
 
-SimulGenVAE is a high-performance Variational Autoencoder system designed for fast generation and inference of transient/static simulation data with Physics-Aware Neural Network (PANN) integration. The system supports both single-GPU and multi-GPU distributed training with three different latent conditioning architectures.
+SimulGenVAE v2.0.0 is a high-performance Variational Autoencoder system designed for physics simulation data processing. The system features:
+
+- **Hierarchical VAE Architecture**: Dual-level latent representation (32D main + 8D hierarchical)
+- **Three Conditioning Architectures**: MLP, CNN, and Vision Transformer for different input types
+- **Advanced Training Pipeline**: DDP support, mixed precision, gradient checkpointing
+- **Physics-Aware Design**: Optimized for temporal and spatial simulation data
+- **Production-Ready**: Comprehensive error handling, monitoring, and optimization
 
 ### Version Information
 - **Version**: 2.0.0 (Refactored & Documented)
 - **Author**: SiHun Lee, Ph.D.
 - **Contact**: kevin1007kr@gmail.com
+- **Architecture**: Hierarchical encoder-decoder with external parameter conditioning
 
-## Core Architecture
+## 🏗 Core Architecture Components
 
 ### Main Components
-- **VAE Network** (`modules/VAE_network.py`): Main Variational Autoencoder with hierarchical encoder-decoder architecture
-- **Latent Conditioner** (`modules/latent_conditioner.py`): Conditions latent space on external parameters (images/parametric data)
-- **Training System** (`modules/train.py`): Advanced training pipeline with mixed precision, gradient checkpointing
-- **Data Processing** (`modules/data_preprocess.py`): Handles simulation dataset loading and preprocessing
+1. **VAE Network** (`modules/VAE_network.py`): Main Variational Autoencoder class
+2. **Hierarchical Encoder** (`modules/encoder.py`): Multi-scale temporal-spatial compression
+3. **Hierarchical Decoder** (`modules/decoder.py`): Progressive reconstruction with skip connections
+4. **Latent Conditioner System**: Three architectural variants for parameter conditioning
+5. **Training Pipeline** (`modules/train.py`): Advanced training with validation and scheduling
+6. **Data Processing** (`modules/data_preprocess.py`): Loading, scaling, and augmentation
 
 ### Latent Conditioning Architectures
-1. **MLP-based** (`latent_conditioner_model_parametric.py`): For parametric data input
-2. **CNN-based** (`latent_conditioner_model_cnn.py`): For image/outline detection with spatial attention
-3. **Vision Transformer** (`latent_conditioner_model_vit.py`): For complex image analysis
 
-### Key Features
-- Hierarchical latent space (main: 32D, hierarchical: 8D)
-- Comprehensive overfitting prevention (dropout, augmentation, early stopping)
-- Mixed precision training with GradScaler
-- Distributed Data Parallel (DDP) support
-- Advanced learning rate scheduling (warmup + cosine annealing)
-- Multiple loss functions (MSE, MAE, smoothL1, Huber)
+#### 1. MLP-based (`latent_conditioner_model_parametric.py`)
+- **Purpose**: Numerical/tabular parametric data processing
+- **Input**: CSV files with simulation parameters
+- **Architecture**: Enhanced multi-layer perceptron with residual connections
+- **Features**: Progressive dropout, layer normalization, GELU activations
+- **Use Case**: Parameter studies, optimization results
 
-## Common Training Commands
+#### 2. CNN-based (`latent_conditioner_model_cnn.py`)
+- **Purpose**: 2D image data processing (geometry, boundary conditions)
+- **Input**: PNG/JPG images automatically resized to 256×256
+- **Architecture**: ResNet-style blocks with GroupNorm and spectral normalization
+- **Features**: Squeeze-and-Excitation attention, adaptive pooling, SiLU activations
+- **Use Case**: Geometric shapes, boundary condition visualization
 
-### Single GPU Training
-```bash
-python SimulGen-VAE.py --preset=1 --plot=2 --lc_only=0 --size=small --load_all=1
-```
+#### 3. Vision Transformer (`latent_conditioner_model_vit.py`)
+- **Purpose**: Complex image analysis with transformer architecture
+- **Input**: High-resolution images requiring attention mechanisms
+- **Architecture**: Patch-based embedding (16×16) with multi-head self-attention
+- **Features**: Position embeddings, stochastic depth, global average pooling
+- **Use Case**: Complex spatial patterns, multi-scale geometric features
 
-### Multi-GPU Training
-```bash
-torchrun --nproc_per_node=4 SimulGen-VAE.py --use_ddp --preset=1 --plot=2 --lc_only=0 --size=small --load_all=1
-```
-
-### DDP Launcher (Simplified)
-```bash
-python launch_ddp.py --gpus=2 --preset=1 --plot=2 --size=small
-```
-
-### Train Only Latent Conditioner
-```bash
-python SimulGen-VAE.py --preset=1 --lc_only=1 --plot=2
-```
-
-### Key Command Arguments
-- `--preset`: Dataset configuration (1-5, defined in preset.txt)
-- `--plot`: Plotting mode (0=interactive, 1=save, 2=off)
-- `--lc_only`: Train mode (0=full training, 1=LC only)
-- `--size`: Model size (small/big)
-- `--load_all`: Load all data to memory (0=lazy loading, 1=preload)
-- `--use_ddp`: Enable distributed training
-
-### No Standard Test/Lint Commands
-This repository does not include standard testing or linting commands. The system relies on internal validation loops and checkpointing for quality assurance.
-
-## Configuration System
+## ⚙️ Configuration System
 
 ### Primary Configuration Files
 
-#### 1. `preset.txt` - Dataset Presets
-- **Line 1**: Headers (data_No, init_beta_divisor, num_filter_enc, latent_conditioner_filter)
-- **Line 2**: Preset number selection
-- **Line 3**: Beta initialization divisor
-- **Line 4**: Encoder filter sizes (e.g., "1024 512 256 128")
-- **Line 5**: Latent conditioner filter sizes (e.g., "32 64 128 256")
-
-#### 2. `input_data/condition.txt` - Comprehensive Training Parameters
-
-**Common Parameters:**
+#### `preset.txt` - Architecture and Dataset Presets
 ```
-Dim1: 484     # number of parameters
-Dim2: 200     # timesteps
-Dim3: 95008   # nodes
+Line 1: Headers (data_No, init_beta_divisor, num_filter_enc, latent_conditioner_filter)
+Line 2: Preset selection number (1-5)
+Line 3: Beta initialization divisor for KL annealing
+Line 4: Encoder filter progression (e.g., "1024 512 256 128")
+Line 5: Latent conditioner filter progression (e.g., "4 8 16 32 64")
 ```
 
-**VAE Training Parameters:**
+#### `input_data/condition.txt` - Comprehensive Training Parameters
+
+**Data Dimensions:**
 ```
-Training_epochs: 10002
-Batch_size: 16
-LearningR: 0.001
-Latent_dim: 8         # hierarchical latent dimension
-Latent_dim_end: 32    # main latent dimension
-Loss_type: 1          # 1: MSE, 2: MAE
+Dim1: 484      # Number of simulation parameters
+Dim2: 200      # Number of timesteps
+Dim3: 95008    # Number of nodes/spatial points
+num_var: 1     # Number of variables per node
 ```
 
-**Latent Conditioner Parameters:**
+**VAE Training Configuration:**
 ```
-n_epoch: 1000
-latent_conditioner_lr: 0.0001
-latent_conditioner_batch: 32
-latent_conditioner_dropout_rate: 0.2
-use_spatial_attention: 0           # 0=off, 1=on
-input_type: image                  # image, csvs, image_vit
-param_data_type: .png
+Training_epochs: 10002        # Total training epochs
+Batch_size: 16               # Batch size for VAE training
+LearningR: 0.001             # VAE learning rate
+Latent_dim: 8                # Hierarchical latent dimension
+Latent_dim_end: 32           # Main latent dimension  
+Loss_type: 1                 # 1=MSE, 2=MAE, 3=SmoothL1, 4=Huber
+alpha: 1000000               # KL divergence weight scaling
+```
+
+**Latent Conditioner Configuration:**
+```
+n_epoch: 10000                        # Conditioning training epochs
+latent_conditioner_lr: 0.001          # Conditioner learning rate
+latent_conditioner_batch: 16          # Conditioner batch size
+latent_conditioner_weight_decay: 1e-4 # L2 regularization
+latent_conditioner_dropout_rate: 0.3  # Dropout probability
+use_spatial_attention: 0              # CNN spatial attention (0=off, 1=on)
+input_type: image                     # image, csv, image_vit
+param_data_type: .png                 # File extension for input data
+param_dir: /images                    # Directory containing input data
 ```
 
 **End-to-End Training Configuration:**
 ```
-use_e2e_training: 1                # 0=disabled, 1=enabled
-e2e_loss_function: MSE             # MSE, MAE, Huber, SmoothL1
-e2e_vae_model_path: model_save/SimulGen-VAE
-use_latent_regularization: 1       # 0=disabled, 1=enabled
-latent_reg_weight: 1
+use_e2e_training: 1                   # Enable end-to-end training (0=off, 1=on)
+e2e_loss_function: Huber              # E2E loss: MSE, MAE, Huber, SmoothL1
+e2e_vae_model_path: model_save/SimulGen-VAE  # Path to pre-trained VAE
+use_latent_regularization: 1          # Enable latent regularization (0=off, 1=on)
+latent_reg_weight: 0.001              # Weight for latent regularization term
 ```
 
-## Data Organization
+## 🚀 Training Modes and Execution
+
+### Command-Line Interface
+
+**Main Entry Point**: `SimulGen-VAE.py`
+```bash
+python SimulGen-VAE.py [OPTIONS]
+```
+
+**Key Arguments:**
+- `--preset`: Dataset preset (1-5, default: 1)
+- `--plot`: Visualization (0=interactive, 1=save, 2=off, default: 2)  
+- `--lc_only`: Training mode (0=full VAE, 1=conditioner only, default: 0)
+- `--size`: Model size (small/large, default: small)
+- `--load_all`: Memory strategy (0=lazy loading, 1=preload all, default: 0)
+- `--use_ddp`: Enable distributed training (flag)
+
+### Training Modes
+
+#### 1. Full VAE Training (`lc_only=0`)
+**Complete end-to-end training pipeline:**
+- Trains VAE encoder-decoder with hierarchical latent space
+- Simultaneous latent conditioner training
+- KL annealing schedule with warmup and cosine scheduling
+- Validation monitoring with early stopping
+- Model checkpointing and best model saving
+
+**Example Command:**
+```bash
+python SimulGen-VAE.py --preset=1 --lc_only=0 --size=small --load_all=1
+```
+
+**Generated Outputs:**
+- `model_save/SimulGen-VAE`: Complete trained VAE model
+- `model_save/latent_vectors.npy`: Main latent representations [N, 32]
+- `model_save/xs.npy`: Hierarchical latent representations [N, layers, 8]
+- Various scaler files for data normalization
+
+#### 2. Latent Conditioner Only (`lc_only=1`) 
+**Conditioner-only training using pre-trained VAE:**
+- Loads existing VAE from `model_save/SimulGen-VAE`
+- Trains only the conditioning network (MLP/CNN/ViT)
+- Uses pre-computed latent vectors as targets
+- Faster iteration for parameter studies
+
+**Example Command:**
+```bash
+python SimulGen-VAE.py --preset=1 --lc_only=1 --plot=2 --size=small
+```
+
+**Prerequisites:**
+- Pre-trained VAE model must exist in `model_save/`
+- Latent vectors must be pre-computed (`latent_vectors.npy`, `xs.npy`)
+
+#### 3. End-to-End Training (`use_e2e_training=1`)
+**Direct reconstruction optimization:**
+- Condition Input → Latent Conditioner → VAE Decoder → Reconstruction
+- Unified loss combining reconstruction error and latent regularization
+- Bypasses intermediate latent space supervision
+- Optimal for deployment scenarios
+
+**Configuration in `condition.txt`:**
+```
+use_e2e_training: 1
+e2e_loss_function: Huber
+latent_reg_weight: 0.001
+```
+
+### Distributed Training
+
+#### Using torchrun (Recommended)
+```bash
+# Single node, multiple GPUs
+torchrun --nproc_per_node=4 SimulGen-VAE.py --use_ddp --preset=1
+
+# Multi-node distributed training
+torchrun --nnodes=2 --node_rank=0 --master_addr="192.168.1.1" \
+         --nproc_per_node=4 SimulGen-VAE.py --use_ddp --preset=1
+```
+
+#### Using DDP Launcher
+```bash
+python launch_ddp.py --gpus=4 --preset=1 --size=large --master_port=29500
+```
+
+**DDP Features:**
+- Automatic batch size scaling across GPUs
+- NCCL backend for efficient communication
+- Gradient synchronization and averaging
+- Rank-aware logging and checkpointing
+
+## 📊 Data Organization and Processing
 
 ### Expected Directory Structure
 ```
 SimulGenVAE/
 ├── input_data/
-│   ├── condition.txt          # Main configuration
-│   └── dataset#X.pickle       # VAE training data
-├── images/                    # Latent conditioner input images
-├── output/                    # Training outputs and plots
-├── model_save/               # Saved model checkpoints
+│   ├── condition.txt          # Main configuration file
+│   └── dataset*.pickle        # Pickled simulation data [N, T, M]
+├── images/                    # Conditioning images (256×256 PNG/JPG)
+├── model_save/               # Trained models and latent vectors
 ├── checkpoints/              # Training state checkpoints
-└── modules/                  # Core implementation
+├── output/                   # Training plots and logs
+└── modules/                  # Core implementation modules
 ```
 
-### Dataset Format
-- **VAE Data**: 3D pickled arrays `[num_param, num_time, num_node]`
-- **Image Data**: PNG/JPG files in `/images` directory (resized to 256x256)
-- **Parametric Data**: CSV files for MLP-based conditioning
+### Data Format Specifications
 
-## Training Modes
+#### Simulation Data Format
+**File**: `input_data/dataset*.pickle`
+**Shape**: `[num_parameters, num_timesteps, num_nodes]`
+**Type**: Float32 NumPy arrays
+**Processing**: Automatic scaling to [-0.7, 0.7] range for VAE optimization
 
-### 1. Full VAE Training (`lc_only=0`)
-Trains both VAE encoder/decoder and latent conditioner simultaneously.
+#### Image Data Format  
+**Directory**: `images/`
+**Format**: PNG/JPG files, automatically resized to 256×256
+**Naming**: Sequential (param_001.png, param_002.png, etc.)
+**Processing**: Normalized to [0, 1] range, optional augmentation
 
-### 2. Latent Conditioner Only (`lc_only=1`)
-Trains only the latent conditioner using a pre-trained VAE model.
+#### CSV Data Format
+**Directory**: Specified by `param_dir` in condition.txt
+**Format**: Standard CSV with headers
+**Processing**: MinMaxScaler normalization, saved as pickle for reuse
 
-### 3. End-to-End Training
-Set `use_e2e_training=1` in `condition.txt` for direct data reconstruction optimization.
+### Data Processing Pipeline
 
-## Development Workflow
+1. **Loading** (`input_variables.py`): Configuration parsing and dataset loading
+2. **Reduction** (`data_preprocess.py`): Temporal/spatial dimension reduction  
+3. **Augmentation**: On-the-fly augmentation preserving physics constraints
+4. **Scaling**: MinMaxScaler with consistent ranges across train/validation
+5. **DataLoader Creation**: Optimized loaders with memory management
 
-### Model Development Pattern
-1. Configure parameters in `input_data/condition.txt`
-2. Set dataset preset in `preset.txt`
-3. Start with small model and single GPU for testing
-4. Scale to multi-GPU for full training
-5. Monitor via TensorBoard logs in output directory
+### Memory Management Strategies
 
-### Key Implementation Notes
-- Uses mixed precision training (autocast + GradScaler)
-- Implements aggressive overfitting prevention
-- Supports gradient checkpointing for memory efficiency
-- Automatic NaN detection and training recovery
-- Advanced learning rate scheduling with warmup phases
+#### Lazy Loading (`load_all=0`)
+- **Benefits**: Reduced GPU memory usage, supports larger datasets
+- **Trade-offs**: Slower data loading, I/O bottlenecks
+- **Use Case**: Limited GPU memory, very large datasets
 
-### Memory Management
-- `--load_all=1`: Preload all data (faster but memory intensive)
-- `--load_all=0`: Lazy loading (memory efficient but slower)
-- Mixed precision reduces memory usage by ~40%
-- Gradient checkpointing available for extreme memory constraints
+#### GPU Preloading (`load_all=1`) 
+- **Benefits**: Faster training, reduced I/O overhead
+- **Trade-offs**: High GPU memory usage, limited dataset size
+- **Use Case**: Sufficient GPU memory, performance-critical training
 
-## Debugging and Monitoring
+## 🔧 Development and Debugging Guidelines
 
-### Built-in Diagnostics
-- Real-time loss monitoring with outlier detection
-- GPU memory usage tracking
-- NaN detection with automatic recovery
-- Overfitting ratio monitoring (val_loss/train_loss)
-- Comprehensive validation statistics every 10 epochs
+### Code Analysis Approach
+
+#### What Claude Can Help With
+1. **Code Structure Analysis**: Understanding module organization and dependencies
+2. **Configuration Guidance**: Explaining parameter relationships and effects
+3. **Architecture Review**: Analyzing model designs and data flow
+4. **Bug Investigation**: Reviewing code logic and identifying potential issues
+5. **Documentation**: Creating/updating comments and documentation
+6. **Optimization Suggestions**: Identifying performance improvement opportunities
+
+#### Configuration File Relationships
+- `preset.txt` controls architecture dimensions (filters, layers)
+- `condition.txt` controls training parameters and data paths
+- Both must be consistent for successful training
+- Dimension mismatches between config and data cause runtime errors
+
+### Common Configuration Patterns
+
+#### Small vs Large Model Selection
+```python
+# Small model (default): Faster training, less memory
+--size=small
+# Encoder: [1024, 512, 256, 128] filters
+# Memory: ~8-12GB GPU memory
+
+# Large model: Better capacity, more memory
+--size=large  
+# Encoder: Larger filter counts and additional layers
+# Memory: ~16-32GB GPU memory
+```
+
+#### Input Type Configuration
+```python
+# For image inputs (geometry, boundaries)
+input_type: image
+param_data_type: .png
+param_dir: /images
+
+# For parametric inputs (simulation parameters)
+input_type: csv  
+param_data_type: .csv
+param_dir: /parametric_data
+
+# For Vision Transformer
+input_type: image_vit
+param_data_type: .png  
+param_dir: /images
+```
+
+### Debugging Common Issues
+
+#### Configuration Inconsistencies
+```python
+# Check dimension consistency
+Dim1 (parameters) == len(simulation_data)
+Dim2 (timesteps) == simulation_data.shape[1] 
+Dim3 (nodes) == simulation_data.shape[2]
+
+# Check filter progression validity
+num_filter_enc: Must be decreasing sequence
+latent_conditioner_filter: Must match conditioning architecture
+```
+
+#### Memory-Related Problems
+```python
+# Batch size too large
+Batch_size: 16 → 8 → 4  # Progressive reduction
+
+# Enable lazy loading  
+--load_all=0
+
+# Use smaller model
+--size=small
+```
+
+#### Training Instability
+```python
+# Learning rate too high
+LearningR: 0.001 → 0.0001
+
+# KL annealing too aggressive  
+init_beta_divisor: 0 → 2 → 4  # Slower KL annealing
+
+# Insufficient regularization
+latent_conditioner_dropout_rate: 0.3 → 0.5
+```
+
+### File Organization Understanding
+
+#### Entry Points
+- `SimulGen-VAE.py`: Main training script with comprehensive CLI
+- `launch_ddp.py`: Simplified distributed training launcher
+
+#### Core Modules (`modules/` directory)
+- `VAE_network.py`: Main VAE class with forward/backward passes
+- `encoder.py`/`decoder.py`: Hierarchical encoder-decoder architectures  
+- `train.py`: Training loop with validation, checkpointing, scheduling
+- `latent_conditioner*.py`: Three conditioning architecture variants
+- `data_preprocess.py`: Data loading, scaling, augmentation pipeline
+- `utils.py`: Utility functions, datasets, distributed training setup
+- `losses.py`: KL divergence computation with numerical stability
+- `common.py`: Weight initialization, spectral normalization utilities
+
+#### Support Files
+- `augmentation.py`: Physics-preserving data augmentation
+- `plotter.py`: Visualization utilities for training monitoring
+- `reconstruction_evaluator.py`: Model evaluation and comparison tools
+
+## 🛠 Advanced Features and Optimizations
+
+### Training Pipeline Features
+
+#### KL Annealing Schedule
+```python
+# Progressive KL weight increase during training
+# Epochs 0 - 0.3*total: beta = init_beta (very small)
+# Epochs 0.3*total - 0.8*total: beta increases to 1.0
+# Epochs 0.8*total - total: beta = 1.0 (full KL weight)
+```
+
+#### Learning Rate Scheduling
+```python
+# CosineAnnealingWarmRestarts with warmup
+# Initial warmup phase for stable convergence
+# Cosine annealing with restarts for better optimization
+```
+
+#### Validation and Early Stopping
+```python
+# Validation loss monitoring every 10 epochs
+# Best model checkpointing based on validation loss
+# Overfitting detection via train/validation ratio
+# Early stopping available (configurable patience)
+```
+
+### Performance Optimization Features
+
+#### Memory Optimizations
+- **Mixed Precision**: Available but disabled by user preference
+- **Gradient Checkpointing**: Available for memory-constrained scenarios
+- **Channels-Last Memory Format**: Better performance on modern hardware
+- **Memory Pinning**: Optimized GPU-CPU data transfers
+
+#### Computational Optimizations
+- **Model Compilation**: `torch.compile` support for PyTorch 2.0+
+- **Optimal Worker Selection**: Automatic DataLoader worker optimization
+- **CUDA Graphs**: Available for ultimate performance (experimental)
+- **Non-blocking Transfers**: Asynchronous GPU operations
+
+### Distributed Training Features
+
+#### DDP Configuration
+- **Automatic Rank Detection**: Uses `torchrun` local rank assignment
+- **Gradient Synchronization**: Automatic all-reduce across GPUs
+- **Model Replication**: Consistent model states across processes
+- **Batch Size Scaling**: Automatic per-GPU batch size adjustment
+
+#### Communication Backend
+- **NCCL Backend**: Optimized GPU-GPU communication
+- **TCP Fallback**: CPU-based communication when NCCL unavailable
+- **Port Management**: Configurable master port for multi-job scenarios
+
+## 🔍 Monitoring and Evaluation
+
+### Training Monitoring
+```python
+# TensorBoard integration for real-time monitoring
+# Metrics logged: losses, KL components, learning rates
+# Memory usage tracking and reporting
+# Validation metrics and overfitting detection
+```
+
+### Model Evaluation Tools
+```python
+# ReconstructionEvaluator: Quantitative reconstruction assessment
+# Latent space analysis: PCA, t-SNE visualization
+# Conditioning effectiveness: Input-output correlation analysis
+# Physics constraint validation: Conservation law checking
+```
 
 ### Output Interpretation
-- Training outputs saved to `output/` directory
-- TensorBoard logs for loss curves and metrics
-- Model checkpoints automatically saved for best validation loss
-- Plotting system generates reconstruction comparisons
+```python
+# Training logs: Loss curves, convergence indicators
+# Model checkpoints: Best validation loss models
+# Latent representations: Saved for downstream analysis
+# Reconstruction comparisons: Visual validation plots
+```
 
-## Important Implementation Details
+## 🚨 Common Pitfalls and Solutions
 
-### Latent Space Architecture
-- **Hierarchical Design**: Two-level latent representation
-- **Main Latent**: 32D for primary data representation
-- **Hierarchical Latent**: 8D for multi-scale features
-- **Conditioning**: External parameters condition the latent space
+### Configuration Errors
+1. **Dimension Mismatches**: Ensure config dimensions match actual data
+2. **Path Issues**: Verify all data paths exist and are accessible
+3. **Memory Overcommitment**: Balance batch_size and load_all settings
+4. **Architecture Conflicts**: Check filter progressions are valid
 
-### Anti-Overfitting Strategy
-The system implements comprehensive overfitting prevention:
-- Progressive dropout rates (0.1-0.6 depending on architecture)
-- Outline-preserving data augmentation for images
-- Early stopping with validation monitoring
-- Weight decay and gradient clipping
-- Label smoothing and mixup augmentation
-
-### Distributed Training
-- Uses modern `torchrun` instead of deprecated `torch.distributed.launch`
-- Automatic local_rank detection
-- NCCL backend for multi-GPU communication
-- Graceful fallback to single-GPU if DDP fails
-
-## File Organization and Key Modules
-
-### Entry Points
-- `SimulGen-VAE.py`: Main training script with comprehensive argument parsing
-- `launch_ddp.py`: Simplified DDP launcher with preset configurations
-
-### Core Modules (`modules/` directory)
-- `VAE_network.py`: Main VAE implementation with hierarchical encoder-decoder
-- `encoder.py`: Hierarchical encoder with spectral normalization
-- `decoder.py`: Progressive decoder with skip connections
-- `train.py`: Advanced training pipeline with mixed precision
-- `latent_conditioner.py`: Latent conditioning training logic
-- `latent_conditioner_model_*.py`: Different conditioning architectures
-- `data_preprocess.py`: Efficient data loading and preprocessing
-- `augmentation.py`: Data augmentation for images
-- `losses.py`: Custom loss functions
-- `utils.py`: Utility functions and helpers
-- `plotter.py`: Visualization and plotting utilities
-
-### Configuration and Data
-- `preset.txt`: Dataset and architecture presets
-- `input_data/condition.txt`: Comprehensive training configuration
-- `requirements.txt`: Python dependencies
-
-## Development Guidelines for Claude
-
-### What Claude Can Do
-- Read and analyze code structure
-- Explain implementation details
-- Suggest improvements to code organization
-- Help with documentation and comments
-- Assist with configuration file modifications
-- Debug logical issues in code
-- Provide architectural advice
-
-### What Claude Should NOT Do
-- Execute training scripts
-- Run GPU-dependent code
-- Load large datasets or pickle files
-- Attempt to train models locally
-- Access training outputs or logs
-- Try to visualize training results
-
-### Working with Configuration Files
-- Always ask user for current configuration before suggesting changes
-- Understand the relationship between `preset.txt` and `condition.txt`
-- Be aware of the different input types (image, csvs, image_vit)
-- Consider memory constraints when suggesting batch sizes or model sizes
-
-### Code Analysis Guidelines
-- Focus on code structure and logic rather than execution
-- Pay attention to distributed training setup
-- Understand the hierarchical latent space design
-- Be aware of the three different conditioning architectures
-- Consider the anti-overfitting measures implemented
-
-## Troubleshooting Common Issues
-
-### Configuration Problems
-- Check consistency between `preset.txt` and `condition.txt`
-- Verify input_type matches available data
-- Ensure dimensions match dataset specifications
-
-### Memory Issues
-- Suggest smaller batch sizes
-- Recommend `--load_all=0` for memory efficiency
-- Consider gradient checkpointing options
-
-### Training Instability
-- Check learning rates in configuration
-- Verify dropout rates are appropriate
-- Suggest early stopping parameters
+### Training Issues  
+1. **NaN Losses**: Usually indicates learning rate too high or data issues
+2. **No Convergence**: Check KL annealing schedule and learning rates
+3. **Overfitting**: Increase dropout, reduce model size, add regularization
+4. **Memory Errors**: Reduce batch size, use lazy loading, smaller model
 
 ### Distributed Training Issues
-- Ensure proper GPU visibility
-- Check NCCL backend configuration
-- Verify torchrun usage instead of deprecated methods
+1. **Communication Timeouts**: Check network connectivity, firewall settings
+2. **Rank Synchronization**: Ensure consistent configuration across nodes  
+3. **Memory Imbalance**: Verify consistent GPU memory across devices
+4. **Port Conflicts**: Use different master ports for concurrent jobs
 
-This documentation provides comprehensive guidance for working with the SimulGenVAE codebase while respecting the hardware and execution limitations.
+## 📋 Development Workflow
+
+### Typical Development Pattern
+1. **Configuration Setup**: Modify `condition.txt` and `preset.txt` 
+2. **Data Preparation**: Organize datasets in expected directory structure
+3. **Small-Scale Testing**: Start with small model, single GPU
+4. **Hyperparameter Tuning**: Adjust learning rates, batch sizes, architecture
+5. **Full-Scale Training**: Scale to multi-GPU, large model as needed
+6. **Validation and Analysis**: Evaluate results, compare configurations
+
+### Best Practices for Configuration Changes
+- **Always backup** working configurations before modifications
+- **Test incrementally** with single GPU before distributed training
+- **Monitor early epochs** for convergence indicators and stability
+- **Document changes** in comments or separate notes
+- **Version control** configuration files alongside code
+
+### Debugging Workflow
+1. **Check logs** for specific error messages and stack traces
+2. **Verify data** shapes and ranges match configuration expectations
+3. **Test components** individually (VAE only, conditioner only)
+4. **Reduce complexity** temporarily (smaller batch, single GPU)
+5. **Compare** with known working configurations
+
+This documentation provides comprehensive guidance for working with SimulGenVAE while respecting the critical safety constraints around execution and hardware requirements.
