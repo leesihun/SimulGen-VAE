@@ -190,13 +190,33 @@ def create_augmented_dataloaders(x_data, batch_size, load_all=False, augmentatio
     train_indices = indices[:train_size]
     val_indices = indices[train_size:]
     
-    # Create separate datasets with different configurations
-    train_dataset = AugmentedDataset(x_data, load_all, train_config)
-    val_dataset = AugmentedDataset(x_data, load_all, val_config)
+    # Create single dataset and handle augmentation via wrapper
+    full_dataset = AugmentedDataset(x_data, load_all, train_config)
     
-    # Create subset datasets with proper indices
-    train_subset = torch.utils.data.Subset(train_dataset, train_indices)
-    val_subset = torch.utils.data.Subset(val_dataset, val_indices)
+    # Create wrapper class for validation that disables augmentation
+    class ValidationWrapper(torch.utils.data.Dataset):
+        def __init__(self, dataset, indices):
+            self.dataset = dataset
+            self.indices = indices
+            # Temporarily disable augmentation
+            self.original_enabled = dataset.augmentation_config['enabled']
+            
+        def __len__(self):
+            return len(self.indices)
+            
+        def __getitem__(self, idx):
+            # Disable augmentation for validation
+            self.dataset.augmentation_config['enabled'] = False
+            sample = self.dataset[self.indices[idx]]
+            # Restore original setting
+            self.dataset.augmentation_config['enabled'] = self.original_enabled
+            return sample
+    
+    # Create train subset (uses augmentation)
+    train_subset = torch.utils.data.Subset(full_dataset, train_indices)
+    
+    # Create validation subset (disables augmentation)
+    val_subset = ValidationWrapper(full_dataset, val_indices)
     
     # Determine optimal number of workers if not specified
     if num_workers is None:
