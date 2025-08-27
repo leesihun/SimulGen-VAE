@@ -236,6 +236,16 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
     print(f"Reconstruction loss function: {loss_function_type}")
     print(f"Latent regularization: {'Enabled' if use_latent_regularization else 'Disabled'}")
     
+    # Initialize loss tracking arrays for plotting
+    train_losses = []
+    val_losses = []
+    train_recon_losses = []
+    val_recon_losses = []
+    train_latent_reg_losses = []
+    val_latent_reg_losses = []
+    learning_rates = []
+    regularization_weights = []
+    
     # Display current VRAM usage at start of E2E training
     if torch.cuda.is_available():
         current_memory = torch.cuda.memory_allocated() / 1024**3
@@ -593,6 +603,16 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
         current_lr = latent_conditioner_optimized.param_groups[0]['lr']
         current_reg_weight = latent_reg_scheduler(epoch) if use_latent_regularization else 0.0
         scheduler_info = f"Warmup" if epoch < warmup_epochs else f"Cosine"
+        
+        # Store loss values for plotting
+        train_losses.append(avg_train_loss)
+        val_losses.append(avg_val_loss)
+        train_recon_losses.append(avg_train_recon_loss)
+        val_recon_losses.append(avg_val_recon_loss)
+        train_latent_reg_losses.append(avg_train_latent_reg_loss)
+        val_latent_reg_losses.append(avg_val_latent_reg_loss)
+        learning_rates.append(current_lr)
+        regularization_weights.append(current_reg_weight)
 
         if epoch % 100 == 0:
             print(f'    ⏱️  TIMING BREAKDOWN - Epoch {epoch}:')
@@ -623,5 +643,112 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
 
     torch.save(latent_conditioner.state_dict(), 'checkpoints/latent_conditioner_e2e.pth')
     torch.save(latent_conditioner, 'model_save/LatentConditioner')
+    
+    # Save training/validation loss and reconstruction loss as graph in log scale
+    print("📊 Generating training visualization plots...")
+    
+    # Ensure output directory exists
+    os.makedirs('output', exist_ok=True)
+    
+    # Calculate final overfitting ratio for plot titles
+    final_train_loss = train_losses[-1] if train_losses else 0
+    final_val_loss = val_losses[-1] if val_losses else 0
+    overfitting_ratio = final_val_loss / max(final_train_loss, 1e-8)
+    
+    # Create epoch array for x-axis
+    epochs_range = range(len(train_losses))
+    
+    # Create comprehensive loss visualization
+    plt.style.use('default')
+    fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(15, 12))
+    fig.suptitle(f'E2E Latent Conditioner Training Progress\nFinal Overfitting Ratio: {overfitting_ratio:.2f}x', fontsize=16, fontweight='bold')
+    
+    # Plot 1: Total Loss (Train vs Val) in Log Scale
+    ax1.plot(epochs_range, train_losses, 'b-', linewidth=2, label='Training Loss', alpha=0.8)
+    ax1.plot(epochs_range, val_losses, 'r-', linewidth=2, label='Validation Loss', alpha=0.8)
+    ax1.set_yscale('log')
+    ax1.set_xlabel('Epoch')
+    ax1.set_ylabel('Total Loss (log scale)')
+    ax1.set_title('Total Loss: Training vs Validation')
+    ax1.legend()
+    ax1.grid(True, alpha=0.3)
+    
+    # Plot 2: Reconstruction Loss (Train vs Val) in Log Scale
+    ax2.plot(epochs_range, train_recon_losses, 'g-', linewidth=2, label='Training Recon Loss', alpha=0.8)
+    ax2.plot(epochs_range, val_recon_losses, 'm-', linewidth=2, label='Validation Recon Loss', alpha=0.8)
+    ax2.set_yscale('log')
+    ax2.set_xlabel('Epoch')
+    ax2.set_ylabel('Reconstruction Loss (log scale)')
+    ax2.set_title('Reconstruction Loss: Training vs Validation')
+    ax2.legend()
+    ax2.grid(True, alpha=0.3)
+    
+    # Plot 3: Learning Rate Schedule
+    ax3.plot(epochs_range, learning_rates, 'orange', linewidth=2, label='Learning Rate')
+    ax3.set_yscale('log')
+    ax3.set_xlabel('Epoch')
+    ax3.set_ylabel('Learning Rate (log scale)')
+    ax3.set_title('Learning Rate Schedule')
+    ax3.legend()
+    ax3.grid(True, alpha=0.3)
+    
+    # Plot 4: Regularization Components
+    if use_latent_regularization:
+        ax4.plot(epochs_range, train_latent_reg_losses, 'c-', linewidth=2, label='Train Latent Reg Loss', alpha=0.8)
+        ax4.plot(epochs_range, val_latent_reg_losses, 'y-', linewidth=2, label='Val Latent Reg Loss', alpha=0.8)
+        ax4.plot(epochs_range, regularization_weights, 'k--', linewidth=1, label='Reg Weight', alpha=0.6)
+        ax4.set_yscale('log')
+        ax4.set_xlabel('Epoch')
+        ax4.set_ylabel('Regularization Loss & Weight (log scale)')
+        ax4.set_title('Latent Regularization Components')
+        ax4.legend()
+        ax4.grid(True, alpha=0.3)
+    else:
+        # If no regularization, show overfitting ratio over time
+        overfitting_ratios = [val/max(train, 1e-8) for train, val in zip(train_losses, val_losses)]
+        ax4.plot(epochs_range, overfitting_ratios, 'purple', linewidth=2, label='Overfitting Ratio (Val/Train)')
+        ax4.axhline(y=1.0, color='gray', linestyle='--', alpha=0.5, label='Perfect Fit Line')
+        ax4.set_xlabel('Epoch')
+        ax4.set_ylabel('Overfitting Ratio')
+        ax4.set_title('Overfitting Ratio Over Time')
+        ax4.legend()
+        ax4.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    
+    # Save with timestamp
+    import datetime
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    plot_filename = f'output/e2e_training_losses_{timestamp}.png'
+    plt.savefig(plot_filename, dpi=300, bbox_inches='tight')
+    print(f"📊 Training plots saved to: {plot_filename}")
+    
+    # Also save as latest for easy access
+    latest_filename = 'output/e2e_training_losses_latest.png'
+    plt.savefig(latest_filename, dpi=300, bbox_inches='tight')
+    print(f"📊 Latest plots saved to: {latest_filename}")
+    
+    plt.close()
+    
+    # Save loss data as CSV for further analysis
+    loss_data = {
+        'epoch': list(epochs_range),
+        'train_loss': train_losses,
+        'val_loss': val_losses,
+        'train_recon_loss': train_recon_losses,
+        'val_recon_loss': val_recon_losses,
+        'train_latent_reg_loss': train_latent_reg_losses,
+        'val_latent_reg_loss': val_latent_reg_losses,
+        'learning_rate': learning_rates,
+        'regularization_weight': regularization_weights
+    }
+    
+    import pandas as pd
+    df = pd.DataFrame(loss_data)
+    csv_filename = f'output/e2e_training_data_{timestamp}.csv'
+    df.to_csv(csv_filename, index=False)
+    print(f"📊 Training data saved to: {csv_filename}")
+    
+    print(f"✅ Final Results: Train Loss: {final_train_loss:.4E}, Val Loss: {final_val_loss:.4E}, Ratio: {overfitting_ratio:.2f}x")
     
     return avg_val_loss
