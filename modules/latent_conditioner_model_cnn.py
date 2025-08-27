@@ -38,8 +38,11 @@ class ResidualBlock(nn.Module):
         
         self.conv1 = add_sn(nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1, bias=False))
         self.gn1 = nn.GroupNorm(get_valid_groups(out_channels), out_channels)
+        self.dropout1 = nn.Dropout2d(drop_rate * 0.5)  # Spatial dropout after first conv
+        
         self.conv2 = add_sn(nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False))
         self.gn2 = nn.GroupNorm(get_valid_groups(out_channels), out_channels)
+        self.dropout2 = nn.Dropout2d(drop_rate)  # Stronger dropout after second conv
         
         self.downsample = downsample
         self.silu = nn.SiLU(inplace=True)
@@ -54,9 +57,11 @@ class ResidualBlock(nn.Module):
         out = self.conv1(x)
         out = self.gn1(out)
         out = self.silu(out)
+        out = self.dropout1(out)  # Add spatial dropout
         
         out = self.conv2(out)
         out = self.gn2(out)
+        out = self.dropout2(out)  # Add stronger spatial dropout
         
         if self.use_attention:
             out = self.attention(out)
@@ -119,14 +124,14 @@ class LatentConditionerImg(nn.Module):
         self.latent_head = nn.Sequential(
             add_sn(nn.Linear(shared_dim, shared_dim // 2)),
             nn.SiLU(inplace=True),
-            #nn.Dropout(dropout_rate),
+            nn.Dropout(dropout_rate),
             add_sn(nn.Linear(shared_dim // 2, latent_dim_end)),
             nn.Tanh()
         )
         self.xs_head = nn.Sequential(
             add_sn(nn.Linear(shared_dim, (shared_dim) // 2)),
             nn.SiLU(inplace=True), 
-            #nn.Dropout(dropout_rate),
+            nn.Dropout(dropout_rate),
             add_sn(nn.Linear((shared_dim) // 2, latent_dim * size2)),
             nn.Tanh()   
         )

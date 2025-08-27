@@ -156,8 +156,8 @@ def descale_latent_predictions(y_pred1, y_pred2, latent_vectors_scaler, xs_scale
 
 def setup_optimizer_and_scheduler_e2e(latent_conditioner, latent_conditioner_lr, weight_decay, latent_conditioner_epoch):
     """Setup optimizer and scheduler for end-to-end training - reduced LR for better generalization."""
-    # Reduce learning rate by factor of 10 for more stable convergence and better generalization
-    reduced_lr = latent_conditioner_lr / 10.0
+    # Reduce learning rate by factor of 20 for more stable convergence and better generalization
+    reduced_lr = latent_conditioner_lr / 20.0
     print(f"📉 Reducing learning rate from {latent_conditioner_lr} to {reduced_lr} for better generalization")
     optimizer = torch.optim.AdamW(latent_conditioner.parameters(), lr=reduced_lr, weight_decay=weight_decay)
     warmup_epochs = 100
@@ -175,13 +175,13 @@ def setup_optimizer_and_scheduler_e2e(latent_conditioner, latent_conditioner_lr,
     
     return optimizer, warmup_scheduler, main_scheduler, warmup_epochs
 
-def setup_latent_reg_scheduler(initial_weight, total_epochs, warmup_epochs, decay_rate=3.0):
+def setup_latent_reg_scheduler(initial_weight, total_epochs, warmup_epochs, decay_rate=1.5):
     """
     Setup latent regularization weight scheduler using exponential decay.
     Improved for e2e training to maintain better regularization longer.
     
     Args:
-        initial_weight: Starting regularization weight (e.g., 0.001)
+        initial_weight: Starting regularization weight (e.g., 10.0)
         total_epochs: Total number of training epochs
         warmup_epochs: Number of warmup epochs (maintain high weight)
         decay_rate: Exponential decay rate (lower = slower decay for better regularization)
@@ -189,8 +189,8 @@ def setup_latent_reg_scheduler(initial_weight, total_epochs, warmup_epochs, deca
     Returns:
         Function that takes current epoch and returns regularization weight
     """
-    # Less aggressive decay to maintain regularization longer
-    final_weight = initial_weight / 1000  # Target: 1/1000 of original weight (was 1/100000)
+    # Much less aggressive decay to maintain strong regularization longer
+    final_weight = initial_weight / 100  # Target: 1/100 of original weight (was 1/1000)
     main_epochs = total_epochs - warmup_epochs
     
     def get_reg_weight(epoch):
@@ -198,12 +198,12 @@ def setup_latent_reg_scheduler(initial_weight, total_epochs, warmup_epochs, deca
             # Maintain full regularization during warmup
             return initial_weight
         else:
-            # Slower exponential decay for main training phase
+            # Much slower exponential decay for main training phase
             progress = (epoch - warmup_epochs) / main_epochs
             exponential_decay = math.exp(-decay_rate * progress)
             current_weight = final_weight + (initial_weight - final_weight) * exponential_decay
-            # Clamp to minimum value to maintain some regularization
-            return max(current_weight, initial_weight / 10000)
+            # Clamp to higher minimum value to maintain strong regularization
+            return max(current_weight, initial_weight / 1000)
     
     print(f"📉 Latent regularization scheduler (improved): {initial_weight:.6f} → {final_weight:.6f} over {total_epochs} epochs (decay_rate={decay_rate})")
     return get_reg_weight
@@ -357,15 +357,15 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
                 summary(latent_conditioner, (batch_size, 1, input_features))
                 model_summary_shown = True
             
-            # Enhanced data augmentation for better generalization
-            if is_image_data and torch.rand(1, device=x.device) < 0.8:
+            # Reduced data augmentation to prevent training instability
+            if is_image_data and torch.rand(1, device=x.device) < 0.5:
                 im_size = int(math.sqrt(x.shape[-1]))
                 x_2d = x.reshape(-1, im_size, im_size)
-                x_2d = apply_outline_preserving_augmentations(x_2d, prob=0.8)
+                x_2d = apply_outline_preserving_augmentations(x_2d, prob=0.5)
                 x = x_2d.reshape(x.shape[0], -1)
                 
-            # Mixup augmentation (applied to both input and target data) - increased for better generalization
-            if torch.rand(1, device=x.device) < 0.3 and x.size(0) > 1:
+            # Reduced mixup augmentation to prevent overfitting to augmented data
+            if torch.rand(1, device=x.device) < 0.15 and x.size(0) > 1:
                 alpha = 0.2
                 lam = torch.tensor(np.random.beta(alpha, alpha), device=x.device, dtype=x.dtype)
                 batch_size = x.size(0)
@@ -377,15 +377,15 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
                     y1 = lam * y1 + (1 - lam) * y1[index, :]
                     y2 = lam * y2 + (1 - lam) * y2[index, :]
             
-            # Enhanced noise augmentation for better generalization
-            if torch.rand(1, device=x.device) < 0.7:
-                # Vary noise intensity based on training progress
-                noise_intensity = 0.02 if epoch < latent_conditioner_epoch // 3 else 0.01
+            # Reduced noise augmentation for better generalization
+            if torch.rand(1, device=x.device) < 0.4:
+                # Reduced noise intensity to prevent training instability
+                noise_intensity = 0.01 if epoch < latent_conditioner_epoch // 3 else 0.005
                 noise = torch.randn_like(x) * noise_intensity
                 x = x + noise
             
-            # Additional gaussian blur augmentation for images
-            if is_image_data and torch.rand(1, device=x.device) < 0.3:
+            # Reduced gaussian blur augmentation for images
+            if is_image_data and torch.rand(1, device=x.device) < 0.15:
                 # Simple gaussian-like smoothing
                 im_size = int(math.sqrt(x.shape[-1]))
                 x_2d = x.reshape(-1, im_size, im_size)
@@ -492,11 +492,11 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
             # === STAGE 4: OPTIMIZATION ===
             optimization_start_time = time.time()
             
-            # Improved gradient clipping with adaptive threshold
-            total_grad_norm = torch.nn.utils.clip_grad_norm_(latent_conditioner.parameters(), max_norm=5.0)
+            # More aggressive gradient clipping to prevent overfitting
+            total_grad_norm = torch.nn.utils.clip_grad_norm_(latent_conditioner.parameters(), max_norm=2.0)
             
             # Additional gradient health monitoring for e2e training
-            if total_grad_norm > 5.0:
+            if total_grad_norm > 2.0:
                 print(f"WARNING: Large gradient norm clipped: {total_grad_norm:.2f}")
             elif total_grad_norm < 1e-5:
                 print(f"WARNING: Very small gradient norm detected: {total_grad_norm:.2E}")
