@@ -9,7 +9,7 @@ RESERVED	0
 '
 %LSH-VAE parameters
 Training_epochs	10002
-Batch_size	16
+Batch_size	8
 LearningR	0.001
 Latent_dim	8	# Hierarchical latent Dim1
 Latent_dim_end	32 # Main latent Dim1
@@ -32,9 +32,9 @@ n_sample	484
 param_dir	/images
 n_epoch	10000
 latent_conditioner_lr	0.001
-latent_conditioner_batch	16
-latent_conditioner_weight_decay	5e-3
-latent_conditioner_dropout_rate	0.5
+latent_conditioner_batch	8
+latent_conditioner_weight_decay	1e-2
+latent_conditioner_dropout_rate	0.6
 use_spatial_attention	1	# 0=off, 1=on - spatial attention in CNN
 input_type	image	#image, csvs, image_vit
 param_data_type .png
@@ -44,4 +44,4 @@ use_e2e_training	1	# 0=disabled, 1=enabled - use end-to-end training
 e2e_loss_function	MSE #MSE, MAE, Huber, SmoothL1 - loss function for reconstruction
 e2e_vae_model_path	model_save/SimulGen-VAE	# path to pre-trained VAE model
 use_latent_regularization	1	# 0=disabled, 1=enabled - add latent space regularization
-latent_reg_weight	10   #weight for latent regularization term
+latent_reg_weight	20   #weight for latent regularization term

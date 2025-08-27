@@ -427,7 +427,7 @@ def main():
 
     # Get actual dataset size and calculate split sizes
     latent_conditioner_dataset_size = len(latent_conditioner_dataset)
-    train_size = int(0.8 * latent_conditioner_dataset_size)
+    train_size = int(0.7 * latent_conditioner_dataset_size)
     val_size = latent_conditioner_dataset_size - train_size
     
     print(f"LatentConditioner dataset: {train_size} training, {val_size} validation samples")

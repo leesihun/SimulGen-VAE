@@ -156,8 +156,8 @@ def descale_latent_predictions(y_pred1, y_pred2, latent_vectors_scaler, xs_scale
 
 def setup_optimizer_and_scheduler_e2e(latent_conditioner, latent_conditioner_lr, weight_decay, latent_conditioner_epoch):
     """Setup optimizer and scheduler for end-to-end training - reduced LR for better generalization."""
-    # Reduce learning rate by factor of 20 for more stable convergence and better generalization
-    reduced_lr = latent_conditioner_lr / 20.0
+    # Reduce learning rate by factor of 40 for more stable convergence and better generalization
+    reduced_lr = latent_conditioner_lr / 40.0
     print(f"📉 Reducing learning rate from {latent_conditioner_lr} to {reduced_lr} for better generalization")
     optimizer = torch.optim.AdamW(latent_conditioner.parameters(), lr=reduced_lr, weight_decay=weight_decay)
     warmup_epochs = 100
@@ -267,7 +267,7 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
     vae_model.decoder = torch.compile(vae_model.decoder)
     print("✅ VAE decoder compiled for optimized performance")
     
-    # Setup reconstruction loss function
+    # Setup reconstruction loss function with label smoothing equivalent
     loss_function_type = config.get('e2e_loss_function', 'MSE') if config else 'MSE'
     if loss_function_type == 'MSE':
         reconstruction_loss_fn = nn.MSELoss()
@@ -280,6 +280,10 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
     else:
         reconstruction_loss_fn = nn.MSELoss()
         print(f"Unknown loss function {loss_function_type}, using MSE")
+    
+    # Label smoothing equivalent for regression: add noise to targets
+    label_smoothing_factor = 0.1
+    print(f"Using label smoothing factor: {label_smoothing_factor} for better generalization")
 
     # Configuration for end-to-end training - increased regularization to reduce overfitting
     use_latent_regularization = config.get('use_latent_regularization', 0) == 1 if config else False
@@ -357,15 +361,15 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
                 summary(latent_conditioner, (batch_size, 1, input_features))
                 model_summary_shown = True
             
-            # Reduced data augmentation to prevent training instability
-            if is_image_data and torch.rand(1, device=x.device) < 0.5:
+            # Further reduced data augmentation to prevent training instability
+            if is_image_data and torch.rand(1, device=x.device) < 0.25:
                 im_size = int(math.sqrt(x.shape[-1]))
                 x_2d = x.reshape(-1, im_size, im_size)
-                x_2d = apply_outline_preserving_augmentations(x_2d, prob=0.5)
+                x_2d = apply_outline_preserving_augmentations(x_2d, prob=0.25)
                 x = x_2d.reshape(x.shape[0], -1)
                 
-            # Reduced mixup augmentation to prevent overfitting to augmented data
-            if torch.rand(1, device=x.device) < 0.15 and x.size(0) > 1:
+            # Further reduced mixup augmentation to prevent overfitting to augmented data
+            if torch.rand(1, device=x.device) < 0.08 and x.size(0) > 1:
                 alpha = 0.2
                 lam = torch.tensor(np.random.beta(alpha, alpha), device=x.device, dtype=x.dtype)
                 batch_size = x.size(0)
@@ -377,15 +381,15 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
                     y1 = lam * y1 + (1 - lam) * y1[index, :]
                     y2 = lam * y2 + (1 - lam) * y2[index, :]
             
-            # Reduced noise augmentation for better generalization
-            if torch.rand(1, device=x.device) < 0.4:
-                # Reduced noise intensity to prevent training instability
-                noise_intensity = 0.01 if epoch < latent_conditioner_epoch // 3 else 0.005
+            # Further reduced noise augmentation for better generalization
+            if torch.rand(1, device=x.device) < 0.2:
+                # Further reduced noise intensity to prevent training instability
+                noise_intensity = 0.005 if epoch < latent_conditioner_epoch // 3 else 0.002
                 noise = torch.randn_like(x) * noise_intensity
                 x = x + noise
             
-            # Reduced gaussian blur augmentation for images
-            if is_image_data and torch.rand(1, device=x.device) < 0.15:
+            # Further reduced gaussian blur augmentation for images
+            if is_image_data and torch.rand(1, device=x.device) < 0.08:
                 # Simple gaussian-like smoothing
                 im_size = int(math.sqrt(x.shape[-1]))
                 x_2d = x.reshape(-1, im_size, im_size)
@@ -449,7 +453,12 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
             
             # === SUBSTAGE 2D: LOSS COMPUTATION ===
             loss_comp_start = time.time()
-            recon_loss = reconstruction_loss_fn(reconstructed_data, target_data)
+            # Apply label smoothing equivalent: add small noise to targets
+            if torch.rand(1, device=target_data.device) < 0.8:  # Apply smoothing 80% of time
+                smoothed_target_data = target_data + torch.randn_like(target_data) * label_smoothing_factor * target_data.std()
+            else:
+                smoothed_target_data = target_data
+            recon_loss = reconstruction_loss_fn(reconstructed_data, smoothed_target_data)
             loss_comp_end = time.time()
             loss_comp_time = loss_comp_end - loss_comp_start
             
@@ -458,9 +467,27 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
                 # Get current regularization weight from scheduler
                 current_reg_weight = latent_reg_scheduler(epoch)
                 
+                # L2 regularization on latent predictions
                 latent_reg_main = nn.MSELoss()(y_pred1, y1)
                 latent_reg_hier = nn.MSELoss()(y_pred2_tensor.reshape(-1), y2.reshape(-1))
-                latent_reg_total = latent_reg_main + latent_reg_hier
+                
+                # L1 regularization for sparsity (additional regularization)
+                l1_reg_main = torch.mean(torch.abs(y_pred1))
+                l1_reg_hier = torch.mean(torch.abs(y_pred2_tensor))
+                l1_reg_total = l1_reg_main + l1_reg_hier
+                
+                latent_reg_total = latent_reg_main + latent_reg_hier + 0.1 * l1_reg_total
+                
+                # Add spectral regularization (weight matrix conditioning)
+                spectral_reg = 0.0
+                for name, param in latent_conditioner.named_parameters():
+                    if 'weight' in name and param.dim() >= 2:
+                        # Spectral regularization: penalize large singular values
+                        u, s, v = torch.svd(param.view(param.size(0), -1))
+                        spectral_reg += torch.sum(s ** 2)  # Frobenius norm squared
+                
+                spectral_reg_weight = 1e-6  # Small weight for spectral regularization
+                latent_reg_total += spectral_reg_weight * spectral_reg
                 
                 # Combine reconstruction loss with scheduled latent regularization
                 loss = recon_loss + current_reg_weight * latent_reg_total
@@ -494,6 +521,13 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
             
             # More aggressive gradient clipping to prevent overfitting
             total_grad_norm = torch.nn.utils.clip_grad_norm_(latent_conditioner.parameters(), max_norm=2.0)
+            
+            # Add gradient noise for better generalization (Langevin dynamics)
+            current_lr = latent_conditioner_optimized.param_groups[0]['lr']
+            gradient_noise_std = 0.01 * (current_lr / latent_conditioner_lr)  # Scale with learning rate
+            for param in latent_conditioner.parameters():
+                if param.grad is not None:
+                    param.grad.add_(torch.randn_like(param.grad) * gradient_noise_std)
             
             # Additional gradient health monitoring for e2e training
             if total_grad_norm > 2.0:
