@@ -19,75 +19,6 @@ import pickle
 from joblib import load
 # Removed mixed precision as requested
 
-class CPUMonitor:
-    """Real-time CPU monitoring for detecting spikes during training."""
-    
-    def __init__(self, spike_threshold=80.0, monitoring_interval=0.1):
-        self.spike_threshold = spike_threshold
-        self.monitoring_interval = monitoring_interval
-        self.cpu_usage_history = []
-        self.spike_events = []
-        self.monitoring = False
-        self.monitor_thread = None
-        
-    def start_monitoring(self):
-        """Start background CPU monitoring."""
-        self.monitoring = True
-        self.monitor_thread = threading.Thread(target=self._monitor_cpu, daemon=True)
-        self.monitor_thread.start()
-        
-    def stop_monitoring(self):
-        """Stop background CPU monitoring."""
-        self.monitoring = False
-        if self.monitor_thread:
-            self.monitor_thread.join(timeout=1.0)
-            
-    def _monitor_cpu(self):
-        """Background thread for continuous CPU monitoring."""
-        while self.monitoring:
-            try:
-                cpu_percent = psutil.cpu_percent(interval=self.monitoring_interval)
-                timestamp = time.time()
-                
-                self.cpu_usage_history.append((timestamp, cpu_percent))
-                
-                # Detect CPU spikes
-                if cpu_percent > self.spike_threshold:
-                    self.spike_events.append({
-                        'timestamp': timestamp,
-                        'cpu_percent': cpu_percent,
-                        'memory_percent': psutil.virtual_memory().percent,
-                        'active_threads': threading.active_count()
-                    })
-                    
-                # Keep only last 1000 measurements to prevent memory buildup
-                if len(self.cpu_usage_history) > 1000:
-                    self.cpu_usage_history = self.cpu_usage_history[-1000:]
-                    
-            except Exception as e:
-                print(f"CPU monitoring error: {e}")
-                break
-                
-    def get_current_cpu_usage(self):
-        """Get instantaneous CPU usage."""
-        return psutil.cpu_percent(interval=0.1)
-        
-    def get_cpu_spike_summary(self):
-        """Get summary of CPU spikes detected."""
-        if not self.spike_events:
-            return "No CPU spikes detected"
-            
-        total_spikes = len(self.spike_events)
-        max_spike = max(spike['cpu_percent'] for spike in self.spike_events)
-        avg_spike = sum(spike['cpu_percent'] for spike in self.spike_events) / total_spikes
-        
-        return f"CPU Spikes: {total_spikes} events, Max: {max_spike:.1f}%, Avg: {avg_spike:.1f}%"
-        
-    def clear_history(self):
-        """Clear monitoring history."""
-        self.cpu_usage_history.clear()
-        self.spike_events.clear()
-
 def verify_tensor_devices(tensors_dict, expected_device):
     """Verify all tensors are on expected device and warn about mismatches."""
     device_issues = []
@@ -157,9 +88,7 @@ def descale_latent_predictions(y_pred1, y_pred2, latent_vectors_scaler, xs_scale
 def setup_optimizer_and_scheduler_e2e(latent_conditioner, latent_conditioner_lr, weight_decay, latent_conditioner_epoch):
     """Setup optimizer and scheduler for end-to-end training - reduced LR for better generalization."""
     # Reduce learning rate by factor of 40 for more stable convergence and better generalization
-    reduced_lr = latent_conditioner_lr / 40.0
-    print(f"📉 Reducing learning rate from {latent_conditioner_lr} to {reduced_lr} for better generalization")
-    optimizer = torch.optim.AdamW(latent_conditioner.parameters(), lr=reduced_lr, weight_decay=weight_decay)
+    optimizer = torch.optim.AdamW(latent_conditioner.parameters(), lr=latent_conditioner_lr, weight_decay=weight_decay)
     warmup_epochs = 100
     warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
         optimizer, 
@@ -190,7 +119,7 @@ def setup_latent_reg_scheduler(initial_weight, total_epochs, warmup_epochs, deca
         Function that takes current epoch and returns regularization weight
     """
     # Much less aggressive decay to maintain strong regularization longer
-    final_weight = initial_weight / 100  # Target: 1/100 of original weight (was 1/1000)
+    final_weight = initial_weight / 100000  # Target: 1/1000 of original weight (was 1/1000)
     main_epochs = total_epochs - warmup_epochs
     
     def get_reg_weight(epoch):
@@ -203,7 +132,7 @@ def setup_latent_reg_scheduler(initial_weight, total_epochs, warmup_epochs, deca
             exponential_decay = math.exp(-decay_rate * progress)
             current_weight = final_weight + (initial_weight - final_weight) * exponential_decay
             # Clamp to higher minimum value to maintain strong regularization
-            return max(current_weight, initial_weight / 1000)
+            return max(current_weight, initial_weight / 100000)
     
     print(f"📉 Latent regularization scheduler (improved): {initial_weight:.6f} → {final_weight:.6f} over {total_epochs} epochs (decay_rate={decay_rate})")
     return get_reg_weight
