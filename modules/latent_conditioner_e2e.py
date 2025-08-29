@@ -92,14 +92,14 @@ def setup_optimizer_and_scheduler_e2e(latent_conditioner, latent_conditioner_lr,
     warmup_epochs = 10
     warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
         optimizer, 
-        start_factor=0.01,
+        start_factor=0.1,  # Increased from 0.01 for better gradient flow
         total_iters=warmup_epochs
     )
     
     main_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer, 
         T_max=latent_conditioner_epoch - warmup_epochs, 
-        eta_min=1e-8
+        eta_min=1e-6  # Increased from 1e-8 to prevent vanishing gradients
     )
     
     return optimizer, warmup_scheduler, main_scheduler, warmup_epochs
@@ -432,15 +432,15 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
             # === STAGE 4: OPTIMIZATION ===
             optimization_start_time = time.time()
             
-            # Standard gradient clipping for stability
-            total_grad_norm = torch.nn.utils.clip_grad_norm_(latent_conditioner.parameters(), max_norm=2.0)
+            # Standard gradient clipping for stability (slightly higher for E2E training)
+            total_grad_norm = torch.nn.utils.clip_grad_norm_(latent_conditioner.parameters(), max_norm=3.0)
             
             # Removed destructive gradient noise - was preventing stable convergence
             
             # Gradient health monitoring for e2e training
             if total_grad_norm > 2.0:
                 print(f"WARNING: Large gradient norm clipped: {total_grad_norm:.2f}")
-            elif total_grad_norm < 1e-5:
+            elif total_grad_norm < 1e-6:
                 print(f"WARNING: Very small gradient norm detected: {total_grad_norm:.2E}")
                 
             latent_conditioner_optimized.step()
@@ -452,10 +452,11 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
             total_optimization_time += batch_optimization_time
             
             if epoch % 100 == 0 and i == 0:  # Log every 100 epochs, first batch
-                print(f"DEBUG: Gradient norm: {total_grad_norm:.4f}, Recon Loss: {recon_loss.item():.4E}, Total Loss: {loss.item():.4E}")
+                current_lr = latent_conditioner_optimized.param_groups[0]['lr']
+                print(f"DEBUG: Gradient norm: {total_grad_norm:.4f}, LR: {current_lr:.2E}, Recon Loss: {recon_loss.item():.4E}, Total Loss: {loss.item():.4E}")
                 if total_grad_norm > 10.0:
                     print(f"WARNING: Large gradient norm detected: {total_grad_norm:.2f}")
-                elif total_grad_norm < 1e-4:
+                elif total_grad_norm < 1e-6:
                     print(f"WARNING: Very small gradient norm: {total_grad_norm:.2E}")
         
         
