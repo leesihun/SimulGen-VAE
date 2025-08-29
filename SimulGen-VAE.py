@@ -498,8 +498,43 @@ def main():
 
     print("Starting LatentConditioner training...")
     
+    # Check for Traditional ML mode
+    traditional_ml_mode = config.get('traditional_ml_mode', 'disabled').lower()
+    if traditional_ml_mode in ['rf', 'svm']:
+        print(' ' * 10)
+        print(' ' * 10)
+        print(f"Using Traditional ML ({traditional_ml_mode.upper()}) latent conditioner training")
+        print("Architecture: Input Conditions → Feature Engineering → Traditional ML → Latent Predictions")
+        
+        # Import traditional ML training function
+        from modules.traditional_ml_training import train_traditional_ml_conditioner
+        
+        # Add size2 and num_filter_enc to config for traditional ML training
+        config['size2'] = size2
+        config['num_filter_enc'] = num_filter_enc
+        
+        # Train using traditional ML
+        LatentConditioner_loss = train_traditional_ml_conditioner(
+            traditional_ml_epoch=latent_conditioner_epoch,
+            traditional_ml_dataloader=latent_conditioner_dataloader,
+            traditional_ml_validation_dataloader=latent_conditioner_validation_dataloader,
+            config=config,
+            is_image_data=image,
+            image_size=256
+        )
+        
+        print("Traditional ML training completed successfully")
+        
+        # Load the trained traditional ML model for evaluation
+        from modules.traditional_ml_training import load_traditional_ml_model
+        try:
+            latent_conditioner = load_traditional_ml_model('model_save/traditional_ml_latent_conditioner')
+            print("Traditional ML model loaded for evaluation")
+        except Exception as e:
+            print(f"Warning: Could not load traditional ML model for evaluation: {e}")
+    
     # Check for end-to-end training mode
-    if config.get('use_e2e_training', 0) == 1:
+    elif config.get('use_e2e_training', 0) == 1:
         print(' ' * 10)
         print(' ' * 10)
         print("Using end-to-end latent conditioner training")

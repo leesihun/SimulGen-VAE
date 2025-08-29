@@ -45,3 +45,12 @@ e2e_loss_function	Huber   #MSE, MAE, Huber, SmoothL1 - loss function for reconst
 e2e_vae_model_path	model_save/SimulGen-VAE	# path to pre-trained VAE model
 use_latent_regularization	1	# 0=disabled, 1=enabled - add latent space regularization
 latent_reg_weight	0.1 #weight for latent regularization term
+'
+%Traditional ML Configuration
+traditional_ml_mode	disabled	# rf, svm, disabled - traditional ML model type
+traditional_ml_n_components	500	# PCA components for dimensionality reduction
+traditional_ml_cv_folds	5	# Cross-validation folds for hyperparameter tuning
+traditional_ml_scaler	standard	# standard, robust, minmax - scaling method
+traditional_ml_use_spatial_features	0	# 0=disabled, 1=enabled - extract HOG/LBP spatial features
+traditional_ml_feature_selection	1	# 0=disabled, 1=enabled - apply statistical feature selection
+traditional_ml_k_best	300	# number of best features to select (if feature_selection=1)
