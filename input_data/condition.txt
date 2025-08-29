@@ -47,9 +47,9 @@ use_latent_regularization	1	# 0=disabled, 1=enabled - add latent space regulariz
 latent_reg_weight	0.1 #weight for latent regularization term
 '
 %Traditional ML Configuration
-traditional_ml_mode	disabled	# rf, svm, disabled - traditional ML model type
+traditional_ml_mode	rf	# rf, svm, disabled - traditional ML model type
 traditional_ml_n_components	500	# PCA components for dimensionality reduction
-traditional_ml_cv_folds	5	# Cross-validation folds for hyperparameter tuning
+traditional_ml_cv_folds	0	# Cross-validation folds for hyperparameter tuning
 traditional_ml_scaler	standard	# standard, robust, minmax - scaling method
 traditional_ml_use_spatial_features	0	# 0=disabled, 1=enabled - extract HOG/LBP spatial features
 traditional_ml_feature_selection	1	# 0=disabled, 1=enabled - apply statistical feature selection
