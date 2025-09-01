@@ -322,8 +322,9 @@ def main():
         )
 
         # Evaluate on whole dataset for final latent vectors (used for LatentConditioner training)
+        from modules.utils import Dataset
         dataloader_whole = torch.utils.data.DataLoader(
-            MyBaseDataset(new_x_train, False),  # Create dataset from raw data
+            Dataset(new_x_train, False),  # Create dataset from raw data
             batch_size=1,
             shuffle=False,
             num_workers=0,
