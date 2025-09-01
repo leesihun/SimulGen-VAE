@@ -91,22 +91,22 @@ class ResNetBlock(nn.Module):
         
         # First conv: channel reduction + spatial downsampling
         self.conv1 = add_sn(nn.Conv2d(in_channels, mid_channels, 1, 1, 0, bias=False))
-        self.gn1 = nn.GroupNorm(min(32, max(1, mid_channels//8)), mid_channels)
+        self.gn1 = nn.GroupNorm(self._get_num_groups(mid_channels), mid_channels)
         
         # Second conv: spatial processing with stride
         self.conv2 = add_sn(nn.Conv2d(mid_channels, mid_channels, 3, stride, 1, bias=False))
-        self.gn2 = nn.GroupNorm(min(32, max(1, mid_channels//8)), mid_channels)
+        self.gn2 = nn.GroupNorm(self._get_num_groups(mid_channels), mid_channels)
         
         # Third conv: channel expansion
         self.conv3 = add_sn(nn.Conv2d(mid_channels, out_channels, 1, 1, 0, bias=False))
-        self.gn3 = nn.GroupNorm(min(32, max(1, out_channels//8)), out_channels)
+        self.gn3 = nn.GroupNorm(self._get_num_groups(out_channels), out_channels)
         
         # Skip connection
         self.skip = nn.Identity()
         if stride != 1 or in_channels != out_channels:
             self.skip = nn.Sequential(
                 add_sn(nn.Conv2d(in_channels, out_channels, 1, stride, bias=False)),
-                nn.GroupNorm(min(32, max(1, out_channels//8)), out_channels)
+                nn.GroupNorm(self._get_num_groups(out_channels), out_channels)
             )
         
         # Attention mechanisms
@@ -118,6 +118,15 @@ class ResNetBlock(nn.Module):
         
         if use_spatial_attention:
             self.spatial_attn = SpatialAttention()
+    
+    def _get_num_groups(self, channels):
+        """Calculate appropriate number of groups that divides evenly."""
+        # Common divisors for GroupNorm
+        possible_groups = [1, 2, 4, 8, 16, 32]
+        for groups in reversed(possible_groups):
+            if channels % groups == 0 and groups <= channels:
+                return groups
+        return 1  # Fallback to LayerNorm equivalent
     
     def forward(self, x):
         identity = x
@@ -187,7 +196,7 @@ class LatentConditionerImg(nn.Module):
         # Initial convolution with large receptive field
         self.initial_conv = nn.Sequential(
             add_sn(nn.Conv2d(input_channels, latent_conditioner_filter[0], 7, 2, 3, bias=False)),
-            nn.GroupNorm(min(32, max(1, latent_conditioner_filter[0]//8)), latent_conditioner_filter[0]),
+            nn.GroupNorm(self._get_num_groups(latent_conditioner_filter[0]), latent_conditioner_filter[0]),
             nn.SiLU(),
             nn.MaxPool2d(3, 2, 1)
         )
@@ -225,19 +234,19 @@ class LatentConditionerImg(nn.Module):
             nn.Dropout(dropout_rate * 0.3),
             # First processing layer
             add_sn(nn.Linear(final_channels, hidden_dim)),
-            nn.GroupNorm(min(32, max(1, hidden_dim//8)), hidden_dim),
+            nn.GroupNorm(self._get_num_groups(hidden_dim), hidden_dim),
             nn.SiLU(),
             nn.Dropout(dropout_rate * 0.4),
             
             # Second processing layer with expansion
             add_sn(nn.Linear(hidden_dim, intermediate_dim)),
-            nn.GroupNorm(min(32, max(1, intermediate_dim//8)), intermediate_dim),
+            nn.GroupNorm(self._get_num_groups(intermediate_dim), intermediate_dim),
             nn.SiLU(),
             nn.Dropout(dropout_rate * 0.5),
             
             # Third processing layer with compression back to hidden_dim
             add_sn(nn.Linear(intermediate_dim, hidden_dim)),
-            nn.GroupNorm(min(32, max(1, hidden_dim//8)), hidden_dim),
+            nn.GroupNorm(self._get_num_groups(hidden_dim), hidden_dim),
             nn.SiLU(),
             nn.Dropout(dropout_rate * 0.4)
         )
@@ -246,25 +255,25 @@ class LatentConditionerImg(nn.Module):
         self.latent_main_head = nn.Sequential(
             # Layer 1
             add_sn(nn.Linear(hidden_dim, hidden_dim // 2)),
-            nn.GroupNorm(min(32, max(1, (hidden_dim//2)//8)), hidden_dim // 2),
+            nn.GroupNorm(self._get_num_groups(hidden_dim // 2), hidden_dim // 2),
             nn.SiLU(),
             nn.Dropout(dropout_rate * 0.3),
             
             # Layer 2
             add_sn(nn.Linear(hidden_dim // 2, hidden_dim // 3)),
-            nn.GroupNorm(min(32, max(1, (hidden_dim//3)//8)), hidden_dim // 3),
+            nn.GroupNorm(self._get_num_groups(hidden_dim // 3), hidden_dim // 3),
             nn.SiLU(),
             nn.Dropout(dropout_rate * 0.3),
             
             # Layer 3
             add_sn(nn.Linear(hidden_dim // 3, hidden_dim // 4)),
-            nn.GroupNorm(min(32, max(1, (hidden_dim//4)//8)), hidden_dim // 4),
+            nn.GroupNorm(self._get_num_groups(hidden_dim // 4), hidden_dim // 4),
             nn.SiLU(),
             nn.Dropout(dropout_rate * 0.2),
             
             # Layer 4
             add_sn(nn.Linear(hidden_dim // 4, hidden_dim // 6)),
-            nn.GroupNorm(min(32, max(1, (hidden_dim//6)//8)), hidden_dim // 6),
+            nn.GroupNorm(self._get_num_groups(hidden_dim // 6), hidden_dim // 6),
             nn.SiLU(),
             nn.Dropout(dropout_rate * 0.1),
             
@@ -276,25 +285,25 @@ class LatentConditionerImg(nn.Module):
         self.xs_head = nn.Sequential(
             # Layer 1
             add_sn(nn.Linear(hidden_dim, hidden_dim // 2)),
-            nn.GroupNorm(min(32, max(1, (hidden_dim//2)//8)), hidden_dim // 2),
+            nn.GroupNorm(self._get_num_groups(hidden_dim // 2), hidden_dim // 2),
             nn.SiLU(),
             nn.Dropout(dropout_rate * 0.3),
             
             # Layer 2
             add_sn(nn.Linear(hidden_dim // 2, hidden_dim // 3)),
-            nn.GroupNorm(min(32, max(1, (hidden_dim//3)//8)), hidden_dim // 3),
+            nn.GroupNorm(self._get_num_groups(hidden_dim // 3), hidden_dim // 3),
             nn.SiLU(),
             nn.Dropout(dropout_rate * 0.3),
             
             # Layer 3
             add_sn(nn.Linear(hidden_dim // 3, hidden_dim // 4)),
-            nn.GroupNorm(min(32, max(1, (hidden_dim//4)//8)), hidden_dim // 4),
+            nn.GroupNorm(self._get_num_groups(hidden_dim // 4), hidden_dim // 4),
             nn.SiLU(),
             nn.Dropout(dropout_rate * 0.2),
             
             # Layer 4
             add_sn(nn.Linear(hidden_dim // 4, hidden_dim // 6)),
-            nn.GroupNorm(min(32, max(1, (hidden_dim//6)//8)), hidden_dim // 6),
+            nn.GroupNorm(self._get_num_groups(hidden_dim // 6), hidden_dim // 6),
             nn.SiLU(),
             nn.Dropout(dropout_rate * 0.1),
             
@@ -304,6 +313,15 @@ class LatentConditionerImg(nn.Module):
         
         # Initialize weights
         self.apply(self._init_weights)
+    
+    def _get_num_groups(self, channels):
+        """Calculate appropriate number of groups that divides evenly."""
+        # Common divisors for GroupNorm
+        possible_groups = [1, 2, 4, 8, 16, 32]
+        for groups in reversed(possible_groups):
+            if channels % groups == 0 and groups <= channels:
+                return groups
+        return 1  # Fallback to LayerNorm equivalent
     
     def _init_weights(self, module):
         """Initialize weights using modern best practices."""
