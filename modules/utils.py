@@ -360,7 +360,7 @@ def parse_training_parameters(params):
     return config
 
 # CROSS-FUNCTION VRAM CLEANUP - Find memory from other functions
-def cross_function_vram_cleanup():
+def vram_cleanup():
     import torch
     print("=== CROSS-FUNCTION VRAM CLEANUP ===")
     

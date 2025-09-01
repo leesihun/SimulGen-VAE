@@ -94,7 +94,7 @@ def main():
         setup_distributed_training, parse_condition_file, parse_training_parameters,
         evaluate_vae_reconstruction
     )
-    from modules.utils import cross_function_vram_cleanup
+    from modules.utils import vram_cleanup
     from modules.augmentation import create_augmented_dataloaders
     from modules.plotter import temporal_plotter, dual_view_plotter
 
@@ -281,17 +281,15 @@ def main():
     num_time, FOM_data, num_node = reduce_dataset(data_save, num_time_to, num_node_red, num_param, num_time, num_node_red_start, num_node_red_end)
     del data_save
 
-    FOM_data_aug = data_augmentation(stretch, FOM_data, num_param, num_node)
-    
     # Enhanced plotting with dual view (temporal + nodal)
     if print_graph != "2":  # If plotting is enabled (not off mode)
         print("Generating dual-view plots for data visualization...")
-        dual_view_plotter(FOM_data_aug, param_idx=7, print_graph=print_graph)
-        temporal_plotter(FOM_data_aug, 0, 7, 0, print_graph, 7)
+        dual_view_plotter(FOM_data, param_idx=7, print_graph=print_graph)
+        temporal_plotter(FOM_data, 0, 7, 0, print_graph, 7)
     
-    new_x_train, _, _ = data_scaler(FOM_data_aug, FOM_data, num_time, num_node, data_No)
+    new_x_train, _, _ = data_scaler(FOM_data, FOM_data, num_time, num_node, data_No)
 
-    del FOM_data, FOM_data_aug
+    del FOM_data
 
     #pytorch: [batch_size, num_channels, seqe_length]
     new_x_train = new_x_train.transpose((0,2,1))
@@ -309,10 +307,6 @@ def main():
         val_split=0.2,  # 80% train, 20% validation
         num_workers=None  # Auto-determine optimal workers
     )
-    
-    # Create a reference to the dataset for later use
-    # This fixes the "dataset is not defined" error
-    dataset = dataloader.dataset
     
     print(f"Augmented dataloaders created - Training: {int(len(new_x_train) * 0.8)}, Validation: {int(len(new_x_train) * 0.2)} samples")
     print("Dataloader initialization complete")
@@ -366,21 +360,13 @@ def main():
         VAE_trained = torch.load('model_save/SimulGen-VAE', map_location=device, weights_only=False)
         VAE = VAE_trained.eval()
 
-    
-    cross_function_vram_cleanup()
-    
-    
+    vram_cleanup()
     # LatentConditioner training (runs for both train_latent_conditioner_only == 0 and train_latent_conditioner_only == 1)
     out_latent_vectors = latent_vectors.reshape([num_param, latent_dim_end])
     xs_vectors = hierarchical_latent_vectors.reshape([num_param, -1])
 
-
     if latent_conditioner_data_type=='image':
         print('Loading image data for CNN...')
-        image=True
-        latent_conditioner_data, latent_conditioner_data_shape = read_latent_conditioner_dataset_img(param_dir, param_data_type)
-    elif latent_conditioner_data_type=='image_vit':
-        print('Loading image data for ViT...')
         image=True
         latent_conditioner_data, latent_conditioner_data_shape = read_latent_conditioner_dataset_img(param_dir, param_data_type)
     elif latent_conditioner_data_type=='csv':
@@ -491,7 +477,7 @@ def main():
     else:
         raise NotImplementedError(f'Unrecognized latent_conditioner_data_type: {latent_conditioner_data_type}. Supported options: "image" (CNN), "image_vit" (ViT), "csv" (MLP)')
 
-    cross_function_vram_cleanup()
+    vram_cleanup()
 
     print("Starting LatentConditioner training...")
     
