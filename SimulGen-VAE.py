@@ -642,13 +642,6 @@ def main():
     print("Starting reconstruction evaluation...")
     evaluator = ReconstructionEvaluator(VAE, device, num_time)
     
-    # Validation plotting
-    # if config.get('use_e2e_training', 0) == 1:
-    #     evaluator.evaluate_reconstruction_comparison_e2e(
-    #         latent_conditioner, e2e_validation_dataloader, 
-    #         new_x_train, latent_vectors_scaler, xs_scaler
-    #     )
-
     # else:
     evaluator.evaluate_reconstruction_comparison(
         latent_conditioner, latent_conditioner_dataset, 

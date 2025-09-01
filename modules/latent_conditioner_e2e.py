@@ -294,41 +294,56 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
                 summary(latent_conditioner, (batch_size, 1, input_features))
                 model_summary_shown = True
             
-            # # Further reduced data augmentation to prevent training instability
-            # if is_image_data and torch.rand(1, device=x.device) < 0.0:
-            #     im_size = int(math.sqrt(x.shape[-1]))
-            #     x_2d = x.reshape(-1, im_size, im_size)
-            #     x_2d = apply_outline_preserving_augmentations(x_2d, prob=0.0)
-            #     x = x_2d.reshape(x.shape[0], -1)
-                
-            # # Further reduced mixup augmentation to prevent overfitting to augmented data
-            # if torch.rand(1, device=x.device) < 0.0 and x.size(0) > 1:
-            #     alpha = 0.2
-            #     lam = torch.tensor(np.random.beta(alpha, alpha), device=x.device, dtype=x.dtype)
-            #     batch_size = x.size(0)
-            #     index = torch.randperm(batch_size, device=x.device)
-                
-            #     x = lam * x + (1 - lam) * x[index, :]
-            #     target_data = lam * target_data + (1 - lam) * target_data[index, :]
-            #     if use_latent_regularization:
-            #         y1 = lam * y1 + (1 - lam) * y1[index, :]
-            #         y2 = lam * y2 + (1 - lam) * y2[index, :]
+            # Conservative physics-preserving data augmentation for image-to-numeric regression
             
-            # # Further reduced noise augmentation for better generalization
-            # if torch.rand(1, device=x.device) < 0.0:
-            #     # Further reduced noise intensity to prevent training instability
-            #     noise_intensity = 0.005 if epoch < latent_conditioner_epoch // 3 else 0.002
-            #     noise = torch.randn_like(x) * noise_intensity
-            #     x = x + noise
+            # 1. Gaussian Noise - simulates sensor/measurement uncertainty
+            if torch.rand(1, device=x.device) < 0.6:
+                noise_std = 0.005  # 0.5% of input range
+                noise = torch.randn_like(x) * noise_std
+                x = x + noise
             
-            # # Further reduced gaussian blur augmentation for images
-            # if is_image_data and torch.rand(1, device=x.device) < 0.0:
-            #     # Simple gaussian-like smoothing
-            #     im_size = int(math.sqrt(x.shape[-1]))
-            #     x_2d = x.reshape(-1, im_size, im_size)
-            #     # Apply light smoothing by averaging with shifted versions
-            #     x_smooth = 0.7 * x_2d + 0.15 * torch.roll(x_2d, 1, dims=1) + 0.15 * torch.roll(x_2d, 1, dims=2)
-            #     x = x_smooth.reshape(x.shape[0], -1)
+            # 2. Dropout-style occlusion - simulates missing data points
+            if torch.rand(1, device=x.device) < 0.4:
+                mask = torch.ones_like(x)
+                num_patches = int(0.02 * x.numel())  # Mask 2% of pixels
+                indices = torch.randperm(x.numel(), device=x.device)[:num_patches]
+                mask.view(-1)[indices] = 0.95  # Don't zero completely
+                x = x * mask
+            
+            # 3. Mild Gaussian Blur - preserves topology, simulates measurement smoothing
+            if is_image_data and torch.rand(1, device=x.device) < 0.3:
+                im_size = int(math.sqrt(x.shape[-1]))
+                x_2d = x.reshape(-1, im_size, im_size)
+                # Very light smoothing - preserves boundaries
+                x_smooth = 0.8 * x_2d + 0.1 * torch.roll(x_2d, 1, dims=1) + 0.1 * torch.roll(x_2d, 1, dims=2)
+                x = x_smooth.reshape(x.shape[0], -1)
+            
+            # 4. Conservative Mixup - only between similar samples
+            if torch.rand(1, device=x.device) < 0.2 and x.size(0) > 1:
+                # Find similar samples based on target similarity
+                target_dists = torch.cdist(target_data.view(target_data.size(0), -1), 
+                                         target_data.view(target_data.size(0), -1))
+                similar_threshold = torch.quantile(target_dists, 0.3)
+                similar_pairs = target_dists < similar_threshold
+                
+                # Only mix if we have similar samples
+                if similar_pairs.sum() > x.size(0):
+                    alpha = 0.1  # Very conservative mixing
+                    lam = torch.tensor(np.random.beta(alpha, alpha), device=x.device, dtype=x.dtype)
+                    batch_size = x.size(0)
+                    index = torch.randperm(batch_size, device=x.device)
+                    
+                    x = lam * x + (1 - lam) * x[index, :]
+                    target_data = lam * target_data + (1 - lam) * target_data[index, :]
+                    if use_latent_regularization:
+                        y1 = lam * y1 + (1 - lam) * y1[index, :]
+                        y2 = lam * y2 + (1 - lam) * y2[index, :]
+            
+            # 5. Brightness/Contrast Adjustment - simulates lighting variations
+            if torch.rand(1, device=x.device) < 0.5:
+                brightness_factor = 1.0 + (torch.rand(1, device=x.device) - 0.5) * 0.1  # ±5%
+                contrast_factor = 1.0 + (torch.rand(1, device=x.device) - 0.5) * 0.1
+                x = torch.clamp(x * contrast_factor + (brightness_factor - 1.0), 0, 1)
             
             other_ops_end_time = time.time()
             batch_other_time = other_ops_end_time - batch_start_time
@@ -432,8 +447,12 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
             # === STAGE 4: OPTIMIZATION ===
             optimization_start_time = time.time()
             
-            # Standard gradient clipping for stability (slightly higher for E2E training)
-            total_grad_norm = torch.nn.utils.clip_grad_norm_(latent_conditioner.parameters(), max_norm=3.0)
+            # Adaptive gradient clipping - higher during early training when reconstruction error is large
+            base_clip_norm = 5.0 if epoch < latent_conditioner_epoch // 3 else 3.0
+            adaptive_clip_norm = base_clip_norm * (1.0 + avg_train_recon_loss) if 'avg_train_recon_loss' in locals() else base_clip_norm
+            final_clip_norm = min(adaptive_clip_norm, 10.0)  # Cap at 10.0
+            
+            total_grad_norm = torch.nn.utils.clip_grad_norm_(latent_conditioner.parameters(), max_norm=final_clip_norm)
             
             # Removed destructive gradient noise - was preventing stable convergence
             
