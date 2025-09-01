@@ -2,11 +2,11 @@ import torch
 import numpy as np
 from torch.utils.data import Dataset
 import random
-from modules.utils import MyBaseDataset
+from modules.utils import Dataset
 
 device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
-class AugmentedDataset(MyBaseDataset):
+class AugmentedDataset(Dataset):
     """
     Dataset class that applies on-the-fly data augmentation to time series data
     Extends the MyBaseDataset class with various augmentation techniques
@@ -36,10 +36,6 @@ class AugmentedDataset(MyBaseDataset):
             'cutout_max': 0.0,        # Maximum cutout fraction
             'enabled': True           # Master switch for augmentation
         }
-        
-        # Update with user config if provided
-        if augmentation_config is not None:
-            self.augmentation_config.update(augmentation_config)
         
         # Initialize training mode
         self.training = True

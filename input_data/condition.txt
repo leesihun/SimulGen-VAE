@@ -31,27 +31,17 @@ num_param	1
 n_sample	484
 param_dir	/images
 n_epoch	5000
-latent_conditioner_lr	0.003	# Reduced from 0.01 for E2E stability
+latent_conditioner_lr	0.001	# 
 latent_conditioner_batch	16
 latent_conditioner_weight_decay	1e-4	# Increased from 1e-5 for better regularization
-latent_conditioner_dropout_rate	0.1
+latent_conditioner_dropout_rate	0.3
 use_spatial_attention	1	# 0=off, 1=on - spatial attention in CNN
-input_type	image	#image, csvs, image_vit
+input_type	image	#image, csvs
 param_data_type .png
 '
 %End-to-End Training Configuration
 use_e2e_training	1	# 0=disabled, 1=enabled - use end-to-end training
-use_improved_e2e	1	# 0=disabled, 1=enabled - use improved E2E with adaptive scheduling
-e2e_loss_function	Huber   #MSE, MAE, Huber, SmoothL1 - loss function for reconstruction
+e2e_loss_function	MSE #MSE, MAE, Huber, SmoothL1 - loss function for reconstruction
 e2e_vae_model_path	model_save/SimulGen-VAE	# path to pre-trained VAE model
 use_latent_regularization	1	# 0=disabled, 1=enabled - add latent space regularization
 latent_reg_weight	1   #increased from 0.001 for better latent guidance
-'
-%Traditional ML Configuration
-traditional_ml_mode	disabled	# rf, svm, disabled - traditional ML model type
-traditional_ml_n_components	500	# PCA components for dimensionality reduction
-traditional_ml_cv_folds	0	# Cross-validation folds for hyperparameter tuning
-traditional_ml_scaler	standard	# standard, robust, minmax - scaling method
-traditional_ml_use_spatial_features	0	# 0=disabled, 1=enabled - extract HOG/LBP spatial features
-traditional_ml_feature_selection	1	# 0=disabled, 1=enabled - apply statistical feature selection
-traditional_ml_k_best	300	# number of best features to select (if feature_selection=1)

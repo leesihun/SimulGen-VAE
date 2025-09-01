@@ -8,8 +8,7 @@ and inference of transient/static simulation data with Physics-Aware Neural Netw
 Features:
 - Single-GPU and multi-GPU distributed training (DDP)
 - Three latent conditioning architectures: MLP, CNN, Vision Transformer
-- Hierarchical latent space (main: 32D, hierarchical: 8D)
-- Advanced anti-overfitting measures with early stopping
+- Hierarchical latent space (main: 32D, hierarchical: 8D x hierachical layers)
 - Mixed precision training with gradient checkpointing
 - Comprehensive data augmentation and validation
 
@@ -46,8 +45,7 @@ def main():
     Training Modes:
         Full VAE (lc_only=0): Train VAE encoder/decoder + LatentConditioner
         LC Only (lc_only=1): Train only LatentConditioner using pre-trained VAE
-        End-to-End: Set use_e2e_training=1 in condition.txt for direct data reconstruction optimization
-    
+        
     Examples:
         python SimulGen-VAE.py --preset=1 --plot=2 --lc_only=0 --size=small
         torchrun --nproc_per_node=4 SimulGen-VAE.py --use_ddp --preset=1
@@ -79,7 +77,6 @@ def main():
     from modules.VAE_network import VAE
     from modules.latent_conditioner_model_cnn import LatentConditionerImg
     from modules.latent_conditioner_model_parametric import LatentConditioner
-    from modules.latent_conditioner_model_vit import TinyViTLatentConditioner
     
     # Training and evaluation
     from modules.train import train

@@ -35,7 +35,7 @@ def get_latest_file(directory, pattern='*'):
 
 device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
-class MyBaseDataset(Dataset):
+class Dataset(Dataset):
     def __init__(self, x_data, load_all):
         print("Loading data...")
         if load_all:
