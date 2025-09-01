@@ -119,7 +119,7 @@ def safe_to_device(tensor, device):
 
 class LatentConditionerDataset(Dataset):
     """GPU-optimized dataset for LatentConditioner training - eliminates CPU bottleneck."""
-    def __init__(self, input_data, output_data1, output_data2, preload_gpu=True):
+    def __init__(self, input_data, output_data1, output_data2, load_all=True):
         # Clean NaN values
         if np.isnan(input_data).any():
             print("Warning: NaN values detected in input_data, replacing with zeros")
@@ -134,7 +134,7 @@ class LatentConditionerDataset(Dataset):
             output_data2 = np.nan_to_num(output_data2, nan=0.0)
         
         # CRITICAL OPTIMIZATION: Pre-convert to tensors and preload to GPU if possible
-        if preload_gpu and torch.cuda.is_available():
+        if load_all and torch.cuda.is_available():
             try:
                 # GPU preloading without debug print for speed
                 self.input_data = torch.from_numpy(input_data).float().cuda()

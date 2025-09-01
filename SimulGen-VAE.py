@@ -298,6 +298,9 @@ def main():
     print(f"Augmented dataloaders created - Training: {int(len(new_x_train) * 0.8)}, Validation: {int(len(new_x_train) * 0.2)} samples")
     print("Dataloader initialization complete")
 
+
+
+
     # VAE training
     if train_latent_conditioner_only ==0:
 
@@ -347,25 +350,27 @@ def main():
         VAE_trained = torch.load('model_save/SimulGen-VAE', map_location=device, weights_only=False)
         VAE = VAE_trained.eval()
 
+
+
+
+    # LatentConditioner SETUP
     vram_cleanup()
-    # LatentConditioner training (runs for both train_latent_conditioner_only == 0 and train_latent_conditioner_only == 1)
     out_latent_vectors = latent_vectors.reshape([num_param, latent_dim_end])
     xs_vectors = hierarchical_latent_vectors.reshape([num_param, -1])
 
+    # Load LatentConditioner data
     if latent_conditioner_data_type=='image':
         print('Loading image data for CNN...')
         image=True
-        latent_conditioner_data, latent_conditioner_data_shape = read_latent_conditioner_dataset_img(param_dir, param_data_type)
+        physical_param_input, latent_conditioner_data_shape = read_latent_conditioner_dataset_img(param_dir, param_data_type)
     elif latent_conditioner_data_type=='csv':
         print('Loading csv data for MLP...')
         image=False
-        latent_conditioner_data = read_latent_conditioner_dataset(param_dir, param_data_type)
+        physical_param_input = read_latent_conditioner_dataset(param_dir, param_data_type)
     else:
         raise NotImplementedError(f'Unrecognized latent_conditioner_data_type: {latent_conditioner_data_type}. Supported options: "image" (CNN), "image_vit" (ViT), "csv" (MLP)')
 
-    physical_param_input = latent_conditioner_data
-
-    #physical_param_input, param_input_scaler = latent_conditioner_scaler(physical_param_input, './model_save/latent_conditioner_input_scaler.pkl')
+    # Scale LatentConditioner data
     if latent_conditioner_data_type == 'image':
         physical_param_input = physical_param_input / 255.0
     else:
@@ -378,21 +383,12 @@ def main():
     print(f"Main latent range: [{np.min(out_latent_vectors):.4f}, {np.max(out_latent_vectors):.4f}]")
     print(f"Hierarchical latent range: [{np.min(out_hierarchical_latent_vectors):.4f}, {np.max(out_hierarchical_latent_vectors):.4f}]")
     out_hierarchical_latent_vectors = out_hierarchical_latent_vectors.reshape([num_param, len(num_filter_enc)-1, latent_dim])
-
-    # Validate that all inputs have the same first dimension
-    input_lengths = [len(physical_param_input), len(out_latent_vectors), len(out_hierarchical_latent_vectors)]
-    if len(set(input_lengths)) > 1:
-        min_length = min(input_lengths)
-        print(f"Warning: Input arrays have different lengths {input_lengths}. Truncating to {min_length}")
-        physical_param_input = physical_param_input[:min_length]
-        out_latent_vectors = out_latent_vectors[:min_length]
-        out_hierarchical_latent_vectors = out_hierarchical_latent_vectors[:min_length]
     
     latent_conditioner_dataset = LatentConditionerDataset(
         np.float32(physical_param_input), 
         np.float32(out_latent_vectors), 
         np.float32(out_hierarchical_latent_vectors),
-        preload_gpu=True
+        load_all=True
     )
 
     # Get actual dataset size and calculate split sizes
@@ -402,34 +398,13 @@ def main():
     
     print(f"LatentConditioner dataset: {train_size} training, {val_size} validation samples")
     
-    # Verify that the split sizes add up to the dataset size
-    if train_size + val_size != latent_conditioner_dataset_size:
-        val_size = latent_conditioner_dataset_size - train_size
-        print(f"Adjusted validation size to: {val_size}")
-    
     latent_conditioner_train_dataset, latent_conditioner_validation_dataset = random_split(latent_conditioner_dataset, [train_size, val_size])
-    latent_conditioner_optimal_workers = get_optimal_workers(latent_conditioner_dataset_size, False, latent_conditioner_batch_size)
+    latent_conditioner_optimal_workers = get_optimal_workers(latent_conditioner_dataset_size, is_load_all=True, batch_size=latent_conditioner_batch_size)
     
     latent_conditioner_dataloader = torch.utils.data.DataLoader(
-        latent_conditioner_train_dataset, 
-        batch_size=latent_conditioner_batch_size, 
-        shuffle=True, 
-        num_workers=latent_conditioner_optimal_workers,
-        pin_memory=False,
-        persistent_workers=latent_conditioner_optimal_workers > 0,
-        prefetch_factor=2 if latent_conditioner_optimal_workers > 0 else None,
-        drop_last=True
-    )
+        latent_conditioner_train_dataset, latent_conditioner_batch_size, True, latent_conditioner_optimal_workers, False, latent_conditioner_optimal_workers > 0, 2 if latent_conditioner_optimal_workers > 0 else None, True)
     latent_conditioner_validation_dataloader = torch.utils.data.DataLoader(
-        latent_conditioner_validation_dataset, 
-        batch_size=latent_conditioner_batch_size, 
-        shuffle=False, 
-        num_workers=latent_conditioner_optimal_workers,
-        pin_memory=False,
-        persistent_workers=latent_conditioner_optimal_workers > 0,
-        prefetch_factor=2 if latent_conditioner_optimal_workers > 0 else None,
-        drop_last=False
-    )
+        latent_conditioner_validation_dataset, latent_conditioner_batch_size, False, latent_conditioner_optimal_workers, False, latent_conditioner_optimal_workers > 0, 2 if latent_conditioner_optimal_workers > 0 else None, False)
 
     size2 = len(num_filter_enc)-1
     device = safe_cuda_initialization()
@@ -437,27 +412,6 @@ def main():
     if latent_conditioner_data_type == 'image':
         print("Initializing LatentConditioner CNN image model...")
         latent_conditioner = LatentConditionerImg(latent_conditioner_filter, latent_dim_end, input_shape, latent_dim, size2, latent_conditioner_data_shape, dropout_rate=latent_conditioner_dropout_rate, use_attention=bool(use_spatial_attention)).to(device)
-
-    elif latent_conditioner_data_type == 'image_vit':
-        print("Initializing LatentConditioner ViT image model...")
-        img_size = int(latent_conditioner_data_shape[0])
-        patch_size = 16
-        embed_dim = 64
-        num_layers = 2
-        num_heads = 4
-        mlp_ratio = 2
-        latent_conditioner = TinyViTLatentConditioner(
-            latent_dim_end=latent_dim_end, 
-            latent_dim=latent_dim, 
-            size2=size2,
-            img_size=img_size,
-            patch_size=patch_size,
-            embed_dim=embed_dim,
-            num_layers=num_layers,
-            num_heads=num_heads,
-            mlp_ratio=mlp_ratio,
-            dropout=latent_conditioner_dropout_rate
-        ).to(device)
     elif latent_conditioner_data_type == 'csv':
         print("Initializing LatentConditioner MLP CSV model...")
         latent_conditioner = LatentConditioner(latent_conditioner_filter, latent_dim_end, input_shape, latent_dim, size2, dropout_rate=latent_conditioner_dropout_rate).to(device)
@@ -468,43 +422,8 @@ def main():
 
     print("Starting LatentConditioner training...")
     
-    # Check for Traditional ML mode
-    traditional_ml_mode = config.get('traditional_ml_mode', 'disabled').lower()
-    if traditional_ml_mode in ['rf', 'svm']:
-        print(' ' * 10)
-        print(' ' * 10)
-        print(f"Using Traditional ML ({traditional_ml_mode.upper()}) latent conditioner training")
-        print("Architecture: Input Conditions → Feature Engineering → Traditional ML → Latent Predictions")
-        
-        # Import traditional ML training function
-        from modules.traditional_ml_training import train_traditional_ml_conditioner
-        
-        # Add size2 and num_filter_enc to config for traditional ML training
-        config['size2'] = size2
-        config['num_filter_enc'] = num_filter_enc
-        
-        # Train using traditional ML
-        LatentConditioner_loss = train_traditional_ml_conditioner(
-            traditional_ml_epoch=latent_conditioner_epoch,
-            traditional_ml_dataloader=latent_conditioner_dataloader,
-            traditional_ml_validation_dataloader=latent_conditioner_validation_dataloader,
-            config=config,
-            is_image_data=image,
-            image_size=256
-        )
-        
-        print("Traditional ML training completed successfully")
-        
-        # Load the trained traditional ML model for evaluation
-        from modules.traditional_ml_training import load_traditional_ml_model
-        try:
-            latent_conditioner = load_traditional_ml_model('model_save/traditional_ml_latent_conditioner')
-            print("Traditional ML model loaded for evaluation")
-        except Exception as e:
-            print(f"Warning: Could not load traditional ML model for evaluation: {e}")
-    
     # Check for end-to-end training mode
-    elif config.get('use_e2e_training', 0) == 1:
+    if config.get('use_e2e_training', 0) == 1:
         print(' ' * 10)
         print(' ' * 10)
         print("Using end-to-end latent conditioner training")
@@ -559,8 +478,8 @@ def main():
         # Use improved E2E training if enabled
         if config.get('use_improved_e2e', 0) == 1:
             print("🚀 Using improved E2E training with adaptive scheduling")
-            from modules.latent_conditioner_e2e_improved import train_latent_conditioner_e2e_improved
-            LatentConditioner_loss = train_latent_conditioner_e2e_improved(
+            from modules.latent_conditioner_e2e import train_latent_conditioner_e2e
+            LatentConditioner_loss = train_latent_conditioner_e2e(
                 latent_conditioner_epoch=latent_conditioner_epoch,
                 e2e_dataloader=e2e_dataloader,
                 e2e_validation_dataloader=e2e_validation_dataloader,

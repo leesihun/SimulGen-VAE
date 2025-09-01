@@ -52,7 +52,6 @@ def setup_improved_optimizer_and_scheduler(latent_conditioner, latent_conditione
     Setup improved optimizer with adaptive learning rate scheduling.
     
     Key improvements:
-    1. Lower initial learning rate for stability
     2. Adaptive plateau detection
     3. Longer warmup period
     4. More conservative decay
@@ -134,7 +133,7 @@ def improved_data_augmentation(x, target_data, y1, y2, is_image_data, device, us
     
     return x, target_data, y1, y2
 
-def train_latent_conditioner_e2e_improved(latent_conditioner_epoch, e2e_dataloader, e2e_validation_dataloader, 
+def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_validation_dataloader, 
                                          latent_conditioner, latent_conditioner_lr, weight_decay, 
                                          is_image_data, image_size, config):
     """
