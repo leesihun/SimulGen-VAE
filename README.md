@@ -200,6 +200,7 @@ param_data_type            .png
 
 # End-to-End Training
 use_e2e_training           1         # 0=disabled, 1=enabled
+use_improved_e2e           1         # 0=standard, 1=improved with adaptive scheduling
 e2e_loss_function          Huber     # MSE, MAE, Huber, SmoothL1
 use_latent_regularization  1         # 0=disabled, 1=enabled
 ```
@@ -214,6 +215,51 @@ use_latent_regularization  1         # 0=disabled, 1=enabled
 | `--size` | small,large | small | Model architecture size |
 | `--load_all` | 0,1 | 0 | Memory mode (0=lazy loading, 1=preload) |
 | `--use_ddp` | flag | False | Enable distributed training |
+
+## 🔧 Loss Stagnation Solutions
+
+### Problem: Loss Plateaus After ~50 Epochs
+
+If you experience loss stagnation in end-to-end training, use these solutions:
+
+#### 1. **Enable Improved E2E Training** (Recommended)
+```bash
+# In condition.txt, set:
+use_improved_e2e    1    # Enable adaptive scheduling
+latent_conditioner_lr    0.003    # Reduced from 0.01
+latent_reg_weight    0.002    # Increased from 0.001
+```
+
+**Key Improvements:**
+- ✅ Adaptive learning rate scheduling with plateau detection
+- ✅ Improved regularization decay (maintains guidance longer)
+- ✅ Advanced gradient health monitoring
+- ✅ Conservative data augmentation
+- ✅ Loss stagnation detection and recovery
+
+#### 2. **Analyze Training Health**
+```bash
+# Run diagnostic analysis
+python analyze_training_stagnation.py --auto_find --plot_analysis
+
+# Analyze specific training run
+python analyze_training_stagnation.py --csv_file output/e2e_training_data_20241201_143022.csv --plot_analysis
+```
+
+#### 3. **Manual Hyperparameter Tuning**
+If not using improved E2E, adjust these parameters:
+
+| Parameter | Original | Improved | Reason |
+|-----------|----------|----------|---------|
+| `latent_conditioner_lr` | 0.01 | 0.003 | Prevent early overfitting |
+| `latent_reg_weight` | 0.001 | 0.002 | Better latent guidance |
+| `latent_conditioner_weight_decay` | 1e-5 | 1e-4 | Stronger regularization |
+
+#### 4. **Training Monitoring**
+Watch for these warning signs:
+- 🚨 Validation/Training ratio > 2.0 (overfitting)
+- 🚨 No improvement for 25+ epochs (plateau)
+- 🚨 Gradient norms consistently > 10.0 (instability)
 
 ## 🎯 Training Modes
 
@@ -579,6 +625,28 @@ If you use SimulGenVAE in your research, please cite:
   url={https://github.com/yourusername/SimulGenVAE}
 }
 ```
+
+## 📋 Version History
+
+- **v1.0** - Initial VAE implementation with latent conditioning
+- **v1.1** - Added end-to-end training capability  
+- **v1.2** - Enhanced loss functions and traditional ML integration
+- **v1.3** - Performance optimizations and distributed training support
+- **v1.4** - **Loss Stagnation Solutions** (Latest - December 2024)
+  - ✅ Added adaptive learning rate scheduling with plateau detection
+  - ✅ Implemented improved regularization decay strategies  
+  - ✅ Created gradient health monitoring system
+  - ✅ Built comprehensive training diagnostics tool
+  - ✅ Enhanced data augmentation for better generalization
+  - ✅ Added loss stagnation detection and recovery mechanisms
+  - 🔧 **Key Files Added:**
+    - `modules/adaptive_training_scheduler.py` - Adaptive scheduling tools
+    - `modules/latent_conditioner_e2e_improved.py` - Improved E2E training
+    - `analyze_training_stagnation.py` - Training diagnostics tool
+  - 🎯 **Configuration Updates:**
+    - Reduced `latent_conditioner_lr` from 0.01 to 0.003 for stability
+    - Increased `latent_reg_weight` from 0.001 to 0.002 for better guidance
+    - Added `use_improved_e2e` flag for enhanced training mode
 
 ## 📞 Support
 

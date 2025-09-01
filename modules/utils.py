@@ -342,10 +342,11 @@ def parse_training_parameters(params):
     
     # End-to-End Training Configuration (with defaults for backward compatibility)
     config['use_e2e_training'] = int(params.get('use_e2e_training', 0))
+    config['use_improved_e2e'] = int(params.get('use_improved_e2e', 0))  # New improved E2E flag
     config['e2e_loss_function'] = params.get('e2e_loss_function', 'MSE')
     config['e2e_vae_model_path'] = params.get('e2e_vae_model_path', 'model_save/SimulGen-VAE')
     config['use_latent_regularization'] = int(params.get('use_latent_regularization', 0))
-    config['latent_reg_weight'] = float(params.get('latent_reg_weight', 0.1))
+    config['latent_reg_weight'] = float(params.get('latent_reg_weight', 0.001))
     
     # Traditional ML Configuration (with defaults for backward compatibility)
     config['traditional_ml_mode'] = params.get('traditional_ml_mode', 'disabled')

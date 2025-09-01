@@ -586,17 +586,34 @@ def main():
             drop_last=False
         )
         
-        LatentConditioner_loss = train_latent_conditioner_e2e(
-            latent_conditioner_epoch=latent_conditioner_epoch,
-            e2e_dataloader=e2e_dataloader,
-            e2e_validation_dataloader=e2e_validation_dataloader,
-            latent_conditioner=latent_conditioner,
-            latent_conditioner_lr=latent_conditioner_lr,
-            weight_decay=latent_conditioner_weight_decay,
-            is_image_data=image,
-            image_size=256,
-            config=config
-        )
+        # Use improved E2E training if enabled
+        if config.get('use_improved_e2e', 0) == 1:
+            print("🚀 Using improved E2E training with adaptive scheduling")
+            from modules.latent_conditioner_e2e_improved import train_latent_conditioner_e2e_improved
+            LatentConditioner_loss = train_latent_conditioner_e2e_improved(
+                latent_conditioner_epoch=latent_conditioner_epoch,
+                e2e_dataloader=e2e_dataloader,
+                e2e_validation_dataloader=e2e_validation_dataloader,
+                latent_conditioner=latent_conditioner,
+                latent_conditioner_lr=latent_conditioner_lr,
+                weight_decay=latent_conditioner_weight_decay,
+                is_image_data=image,
+                image_size=256,
+                config=config
+            )
+        else:
+            print("📊 Using standard E2E training")
+            LatentConditioner_loss = train_latent_conditioner_e2e(
+                latent_conditioner_epoch=latent_conditioner_epoch,
+                e2e_dataloader=e2e_dataloader,
+                e2e_validation_dataloader=e2e_validation_dataloader,
+                latent_conditioner=latent_conditioner,
+                latent_conditioner_lr=latent_conditioner_lr,
+                weight_decay=latent_conditioner_weight_decay,
+                is_image_data=image,
+                image_size=256,
+                config=config
+            )
     
     # Use enhanced training if enabled for CNN models, otherwise use original training
     elif latent_conditioner_data_type == "image" and config.get('use_enhanced_loss', 0):
