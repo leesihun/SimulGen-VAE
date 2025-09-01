@@ -234,19 +234,19 @@ class LatentConditionerImg(nn.Module):
             nn.Dropout(dropout_rate * 0.3),
             # First processing layer
             add_sn(nn.Linear(final_channels, hidden_dim)),
-            nn.GroupNorm(self._get_num_groups(hidden_dim), hidden_dim),
+            nn.LayerNorm(hidden_dim),
             nn.SiLU(),
             nn.Dropout(dropout_rate * 0.4),
             
             # Second processing layer with expansion
             add_sn(nn.Linear(hidden_dim, intermediate_dim)),
-            nn.GroupNorm(self._get_num_groups(intermediate_dim), intermediate_dim),
+            nn.LayerNorm(intermediate_dim),
             nn.SiLU(),
             nn.Dropout(dropout_rate * 0.5),
             
             # Third processing layer with compression back to hidden_dim
             add_sn(nn.Linear(intermediate_dim, hidden_dim)),
-            nn.GroupNorm(self._get_num_groups(hidden_dim), hidden_dim),
+            nn.LayerNorm(hidden_dim),
             nn.SiLU(),
             nn.Dropout(dropout_rate * 0.4)
         )
@@ -255,25 +255,25 @@ class LatentConditionerImg(nn.Module):
         self.latent_main_head = nn.Sequential(
             # Layer 1
             add_sn(nn.Linear(hidden_dim, hidden_dim // 2)),
-            nn.GroupNorm(self._get_num_groups(hidden_dim // 2), hidden_dim // 2),
+            nn.LayerNorm(hidden_dim // 2),
             nn.SiLU(),
             nn.Dropout(dropout_rate * 0.3),
             
             # Layer 2
             add_sn(nn.Linear(hidden_dim // 2, hidden_dim // 3)),
-            nn.GroupNorm(self._get_num_groups(hidden_dim // 3), hidden_dim // 3),
+            nn.LayerNorm(hidden_dim // 3),
             nn.SiLU(),
             nn.Dropout(dropout_rate * 0.3),
             
             # Layer 3
             add_sn(nn.Linear(hidden_dim // 3, hidden_dim // 4)),
-            nn.GroupNorm(self._get_num_groups(hidden_dim // 4), hidden_dim // 4),
+            nn.LayerNorm(hidden_dim // 4),
             nn.SiLU(),
             nn.Dropout(dropout_rate * 0.2),
             
             # Layer 4
             add_sn(nn.Linear(hidden_dim // 4, hidden_dim // 6)),
-            nn.GroupNorm(self._get_num_groups(hidden_dim // 6), hidden_dim // 6),
+            nn.LayerNorm(hidden_dim // 6),
             nn.SiLU(),
             nn.Dropout(dropout_rate * 0.1),
             
@@ -285,25 +285,25 @@ class LatentConditionerImg(nn.Module):
         self.xs_head = nn.Sequential(
             # Layer 1
             add_sn(nn.Linear(hidden_dim, hidden_dim // 2)),
-            nn.GroupNorm(self._get_num_groups(hidden_dim // 2), hidden_dim // 2),
+            nn.LayerNorm(hidden_dim // 2),
             nn.SiLU(),
             nn.Dropout(dropout_rate * 0.3),
             
             # Layer 2
             add_sn(nn.Linear(hidden_dim // 2, hidden_dim // 3)),
-            nn.GroupNorm(self._get_num_groups(hidden_dim // 3), hidden_dim // 3),
+            nn.LayerNorm(hidden_dim // 3),
             nn.SiLU(),
             nn.Dropout(dropout_rate * 0.3),
             
             # Layer 3
             add_sn(nn.Linear(hidden_dim // 3, hidden_dim // 4)),
-            nn.GroupNorm(self._get_num_groups(hidden_dim // 4), hidden_dim // 4),
+            nn.LayerNorm(hidden_dim // 4),
             nn.SiLU(),
             nn.Dropout(dropout_rate * 0.2),
             
             # Layer 4
             add_sn(nn.Linear(hidden_dim // 4, hidden_dim // 6)),
-            nn.GroupNorm(self._get_num_groups(hidden_dim // 6), hidden_dim // 6),
+            nn.LayerNorm(hidden_dim // 6),
             nn.SiLU(),
             nn.Dropout(dropout_rate * 0.1),
             
