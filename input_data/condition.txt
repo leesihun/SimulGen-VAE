@@ -30,10 +30,10 @@ Dim3_end		95008
 num_param	1
 param_dir	/images
 n_epoch	3000
-latent_conditioner_lr	0.001	# 
+latent_conditioner_lr	0.005	# 
 latent_conditioner_batch	8
-latent_conditioner_weight_decay	1e-4	# Increased from 1e-5 for better regularization
-latent_conditioner_dropout_rate	0.2
+latent_conditioner_weight_decay	1e-5	# Increased from 1e-5 for better regularization
+latent_conditioner_dropout_rate	0.001
 use_spatial_attention	0	# 0=off, 1=on - spatial attention in CNN
 input_type	image	#image, csvs
 param_data_type .png

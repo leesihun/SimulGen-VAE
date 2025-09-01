@@ -122,8 +122,8 @@ class ResNetBlock(nn.Module):
         if self.use_spatial_attention:
             out = self.spatial_attn(out)
         
-        # Skip connection
-        out += self.skip(identity)
+        # Skip connection with gradient scaling
+        out = out + 0.1 * self.skip(identity)
         out = F.silu(out)
         
         return out
