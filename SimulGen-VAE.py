@@ -69,7 +69,7 @@ def main():
     # SimulGenVAE core modules
     from modules.input_variables import input_user_variables, input_dataset
     from modules.data_preprocess import (
-        reduce_dataset, data_augmentation, data_scaler, 
+        reduce_dataset, data_scaler, 
         latent_conditioner_scaler
     )
     
@@ -90,7 +90,7 @@ def main():
     
     # Utilities and data handling
     from modules.utils import (
-        Dataset, LatentConditionerDataset, E2ELatentConditionerDataset, get_optimal_workers,
+        LatentConditionerDataset, E2ELatentConditionerDataset, get_optimal_workers,
         setup_distributed_training, parse_condition_file, parse_training_parameters,
         evaluate_vae_reconstruction
     )

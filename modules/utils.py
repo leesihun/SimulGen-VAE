@@ -342,6 +342,7 @@ def parse_training_parameters(params):
     
     # End-to-End Training Configuration (with defaults for backward compatibility)
     config['use_e2e_training'] = int(params.get('use_e2e_training', 0))
+    config['use_improved_e2e'] = int(params.get('use_improved_e2e', 0))  # New improved E2E flag
     config['e2e_loss_function'] = params.get('e2e_loss_function', 'MSE')
     config['e2e_vae_model_path'] = params.get('e2e_vae_model_path', 'model_save/SimulGen-VAE')
     config['use_latent_regularization'] = int(params.get('use_latent_regularization', 0))
@@ -598,7 +599,7 @@ def evaluate_vae_simple(VAE, dataloader, device, dataset_name="Dataset"):
     
     return loss_total
 
-class E2ELatentConditionerDataset(Dataset):
+class E2ELatentConditionerDataset(torch.utils.data.Dataset):
     """
     Unified dataset for End-to-End Latent Conditioner training.
     Combines condition inputs, latent targets, and reconstruction targets in one dataset.
@@ -607,20 +608,21 @@ class E2ELatentConditionerDataset(Dataset):
     """
     
     def __init__(self, condition_data, latent_main_data, latent_hier_data, target_reconstruction_data, load_all=False):
-
         super().__init__()
         
         self.length = len(condition_data)
         self.load_all = load_all
         
+        # Get device reference
+        current_device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+        
         if load_all and torch.cuda.is_available():
-    
             # Optimized GPU loading - direct conversion without pin_memory for speed
             print("Converting datasets to contiguous GPU tensors...")
-            self.condition_data = torch.tensor(condition_data).to(device, non_blocking=False)
-            self.latent_main_data = torch.tensor(latent_main_data).to(device, non_blocking=False)
-            self.latent_hier_data = torch.tensor(latent_hier_data).to(device, non_blocking=False)
-            self.target_reconstruction_data = torch.tensor(target_reconstruction_data).to(device, non_blocking=False)
+            self.condition_data = torch.tensor(condition_data).to(current_device, non_blocking=False)
+            self.latent_main_data = torch.tensor(latent_main_data).to(current_device, non_blocking=False)
+            self.latent_hier_data = torch.tensor(latent_hier_data).to(current_device, non_blocking=False)
+            self.target_reconstruction_data = torch.tensor(target_reconstruction_data).to(current_device, non_blocking=False)
             
             
             print(f"E2E Dataset loaded to GPU: {self.length} samples")
