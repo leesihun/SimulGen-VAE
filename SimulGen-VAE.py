@@ -241,14 +241,16 @@ def main():
         print(f"Loss function: {loss}")
         
         # Display Latent conditioner data
-        print(f"Latent conditioner epochs: {latent_conditioner_epoch}")
-        print(f"Latent conditioner learning rate: {latent_conditioner_lr}")
-        print(f"Latent conditioner batch size: {latent_conditioner_batch_size}")
-        print(f"Latent conditioner weight decay: {latent_conditioner_weight_decay}")
-        print(f"Latent conditioner dropout rate: {latent_conditioner_dropout_rate}")
+        print(f"LC epochs: {latent_conditioner_epoch}")
+        print(f"LC learning rate: {latent_conditioner_lr}")
+        print(f"LC batch size: {latent_conditioner_batch_size}")
+        print(f"LC weight decay: {latent_conditioner_weight_decay}")
+        print(f"LC dropout rate: {latent_conditioner_dropout_rate}")
         print(f"Use spatial attention: {use_spatial_attention}")
-        print(f"Latent conditioner data type: {latent_conditioner_data_type}")
+        print(f"LC data type: {latent_conditioner_data_type}")
         print(f"Parameter data type: {param_data_type}")
+        # Latent conditioner filters
+        print(f"LC filters: {latent_conditioner_filter}")
         print("=" * 35)
 
     print_graph = args.plot
