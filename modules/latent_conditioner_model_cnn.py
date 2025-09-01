@@ -279,7 +279,8 @@ class LatentConditionerImg(nn.Module):
         # Handle input reshaping
         # Flattened input -> reshape to square image
         batch_size = x.shape[0]
-        spatial_dim = int(math.sqrt(x.shape[1]))
+        print(x.shape)
+        spatial_dim = int(math.sqrt(x.shape[-1]))
         x = x.reshape(batch_size, 1, spatial_dim, spatial_dim)
         
         # Ensure input is in expected range [0, 1] or [-1, 1]
