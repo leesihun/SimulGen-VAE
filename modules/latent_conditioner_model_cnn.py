@@ -226,7 +226,7 @@ class LatentConditionerImg(nn.Module):
             nn.SiLU(),
             nn.Dropout(dropout_rate * 0.3),
             nn.Linear(hidden_dim // 4, latent_dim_end),
-            nn.Tanh()  # Bounded output for stable training
+            #nn.Tanh()  # Bounded output for stable training
         )
         
         # Hierarchical latent prediction head
@@ -240,7 +240,7 @@ class LatentConditionerImg(nn.Module):
             nn.SiLU(),
             nn.Dropout(dropout_rate * 0.3),
             nn.Linear(hidden_dim // 4, latent_dim * size2),
-            nn.Tanh()  # Bounded output for stable training
+            #nn.Tanh()  # Bounded output for stable training
         )
         
         # Initialize weights
