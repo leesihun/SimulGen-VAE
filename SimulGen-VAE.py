@@ -422,119 +422,52 @@ def main():
 
     print("Starting LatentConditioner training...")
     
-    # Check for end-to-end training mode
-    if config.get('use_e2e_training', 0) == 1:
-        print(' ' * 10)
-        print(' ' * 10)
-        print("Using end-to-end latent conditioner training")
-        print("Architecture: Input Conditions → Latent Conditioner → VAE Decoder → Reconstructed Data")
-        # Create unified E2E dataset combining conditions and targets
-        print("Creating unified E2E dataset for optimized training...")
-        
-        e2e_dataset = E2ELatentConditionerDataset(
-            condition_data=np.float32(physical_param_input),
-            latent_main_data=np.float32(out_latent_vectors), 
-            latent_hier_data=np.float32(out_hierarchical_latent_vectors),
-            target_reconstruction_data=np.float32(new_x_train),
-            load_all=load_all
-        )
-        
-        print(f"E2E Dataset created: {len(e2e_dataset)} samples")
-        print(f"Target data shape per sample: {new_x_train.shape[1:]} = {np.prod(new_x_train.shape[1:])} elements")
-        print(f"E2E batch memory estimate: {latent_conditioner_batch_size * np.prod(new_x_train.shape[1:]) * 4 / 1024**3:.3f}GB")
-        
-        # Split E2E dataset into train/validation (follows existing pattern)
-        e2e_dataset_size = len(e2e_dataset)
-        e2e_train_size = int(0.8 * e2e_dataset_size)
-        e2e_val_size = e2e_dataset_size - e2e_train_size
-        
-        print(f"E2E dataset split: {e2e_train_size} training, {e2e_val_size} validation samples")
-        
-        e2e_train_dataset, e2e_validation_dataset = random_split(e2e_dataset, [e2e_train_size, e2e_val_size])
-        
-        # Create optimized E2E dataloaders for H100 (minimal overhead configuration)
-        e2e_dataloader = torch.utils.data.DataLoader(
-            e2e_train_dataset,
-            batch_size=latent_conditioner_batch_size,
-            shuffle=True,
-            num_workers=0 if load_all else min(2, latent_conditioner_optimal_workers),  # Reduce workers when data is on GPU
-            pin_memory=False if load_all else True,  # Disable pin_memory for performance
-            persistent_workers=False,  # Disable persistence to reduce overhead
-            prefetch_factor=None,  # Disable prefetching when data is already on GPU
-            drop_last=True
-        )
-        
-        e2e_validation_dataloader = torch.utils.data.DataLoader(
-            e2e_validation_dataset,
-            batch_size=latent_conditioner_batch_size,
-            shuffle=False,
-            num_workers=0 if load_all else min(2, latent_conditioner_optimal_workers),  # Reduce workers when data is on GPU
-            pin_memory=False if load_all else True,  # Disable pin_memory for performance
-            persistent_workers=False,  # Disable persistence to reduce overhead
-            prefetch_factor=None,  # Disable prefetching when data is already on GPU
-            drop_last=False
-        )
-        
-        # Use improved E2E training if enabled
-        if config.get('use_improved_e2e', 0) == 1:
-            print("🚀 Using improved E2E training with adaptive scheduling")
+    if latent_conditioner_data_type == 'image':
+        # Check for end-to-end training mode
+        if config.get('use_e2e_training', 0) == 1:
+            print(' ' * 10)
+            print(' ' * 10)
+            print("Using end-to-end latent conditioner training")
+            print("Architecture: Input Conditions → Latent Conditioner → VAE Decoder → Reconstructed Data")
+            # Create unified E2E dataset combining conditions and targets
+            print("Creating unified E2E dataset for optimized training...")
+            
+            e2e_dataset = E2ELatentConditionerDataset(
+                condition_data=np.float32(physical_param_input), latent_main_data=np.float32(out_latent_vectors), latent_hier_data=np.float32(out_hierarchical_latent_vectors), target_reconstruction_data=np.float32(new_x_train), load_all=load_all)
+            
+            # Split E2E dataset into train/validation (follows existing pattern)
+            e2e_dataset_size = len(e2e_dataset);e2e_train_size = int(0.8 * e2e_dataset_size);e2e_val_size = e2e_dataset_size - e2e_train_size            
+            e2e_train_dataset, e2e_validation_dataset = random_split(e2e_dataset, [e2e_train_size, e2e_val_size])
+            
+            e2e_dataloader = torch.utils.data.DataLoader(
+                e2e_train_dataset, latent_conditioner_batch_size, True, latent_conditioner_optimal_workers, False, latent_conditioner_optimal_workers > 0, 2 if latent_conditioner_optimal_workers > 0 else None, True)
+            
+            e2e_validation_dataloader = torch.utils.data.DataLoader(
+                e2e_validation_dataset, latent_conditioner_batch_size, False, latent_conditioner_optimal_workers, False, latent_conditioner_optimal_workers > 0, 2 if latent_conditioner_optimal_workers > 0 else None, False)
+            
+            # Use improved E2E training if enabled
             from modules.latent_conditioner_e2e import train_latent_conditioner_e2e
-            LatentConditioner_loss = train_latent_conditioner_e2e(
-                latent_conditioner_epoch=latent_conditioner_epoch,
-                e2e_dataloader=e2e_dataloader,
-                e2e_validation_dataloader=e2e_validation_dataloader,
-                latent_conditioner=latent_conditioner,
-                latent_conditioner_lr=latent_conditioner_lr,
-                weight_decay=latent_conditioner_weight_decay,
-                is_image_data=image,
-                image_size=256,
-                config=config
-            )
+            _ = train_latent_conditioner_e2e(
+                latent_conditioner_epoch=latent_conditioner_epoch, e2e_dataloader=e2e_dataloader, e2e_validation_dataloader=e2e_validation_dataloader, latent_conditioner=latent_conditioner, latent_conditioner_lr=latent_conditioner_lr, weight_decay=latent_conditioner_weight_decay, is_image_data=image, image_size=256, config=config)
+        
+        # Use enhanced training if enabled for CNN models, otherwise use original training
         else:
-            print("📊 Using standard E2E training")
-            LatentConditioner_loss = train_latent_conditioner_e2e(
-                latent_conditioner_epoch=latent_conditioner_epoch,
-                e2e_dataloader=e2e_dataloader,
-                e2e_validation_dataloader=e2e_validation_dataloader,
-                latent_conditioner=latent_conditioner,
-                latent_conditioner_lr=latent_conditioner_lr,
-                weight_decay=latent_conditioner_weight_decay,
-                is_image_data=image,
-                image_size=256,
-                config=config
-            )
-    
-    # Use enhanced training if enabled for CNN models, otherwise use original training
-    elif latent_conditioner_data_type == "image" and config.get('use_enhanced_loss', 0):
-        print(f"Using enhanced CNN latent conditioner training")
-        LatentConditioner_loss = train_latent_conditioner_with_enhancements(
-            latent_conditioner_epoch=latent_conditioner_epoch,
-            latent_conditioner_dataloader=latent_conditioner_dataloader,
-            latent_conditioner_validation_dataloader=latent_conditioner_validation_dataloader,
-            latent_conditioner=latent_conditioner,
-            latent_conditioner_lr=latent_conditioner_lr,
-            weight_decay=latent_conditioner_weight_decay,
-            is_image_data=image,
-            image_size=256,
-            config=config,
-            use_enhanced_loss=True
-        )
+            print(f"Using enhanced CNN latent conditioner training")
+            _ = train_latent_conditioner_with_enhancements(
+                latent_conditioner_epoch=latent_conditioner_epoch, latent_conditioner_dataloader=latent_conditioner_dataloader, latent_conditioner_validation_dataloader=latent_conditioner_validation_dataloader, latent_conditioner=latent_conditioner, latent_conditioner_lr=latent_conditioner_lr, weight_decay=latent_conditioner_weight_decay, is_image_data=image, image_size=256, config=config, use_enhanced_loss=True)
 
-        
-    else:
-        # Use original training (for non-CNN models or when enhanced loss is disabled)
-        if latent_conditioner_data_type == "image" and not config.get('use_enhanced_loss', 0):
-            print("Enhanced loss disabled - using original CNN training")
-        else:
-            print(f"Using original training for {latent_conditioner_data_type} model")
-        
+            
+    else: # csv parameteric data
+        print(config.get('input_type'))
         LatentConditioner_loss = train_latent_conditioner(
             latent_conditioner_epoch, latent_conditioner_dataloader, 
             latent_conditioner_validation_dataloader, latent_conditioner, 
             latent_conditioner_lr, weight_decay=latent_conditioner_weight_decay, 
-            is_image_data=image, image_size=256
+            is_image_data=image
         )
     
+    print();print();print()
+    print('=' * 35)
     print("LatentConditioner training completed successfully")
 
     eval_device = "cuda:0" if torch.cuda.is_available() else "cpu"
@@ -544,7 +477,7 @@ def main():
     VAE_trained = torch.load('model_save/SimulGen-VAE', map_location= device, weights_only=False)
     VAE = VAE_trained.eval()
 
-
+    print();print();print() 
     print("Starting reconstruction evaluation...")
     evaluator = ReconstructionEvaluator(VAE, device, num_time)
     

@@ -195,75 +195,34 @@ def setup_optimizer_and_scheduler(latent_conditioner, latent_conditioner_lr, wei
     
     return optimizer, warmup_scheduler, main_scheduler, warmup_epochs
 
-def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_dataloader, latent_conditioner_validation_dataloader, latent_conditioner, latent_conditioner_lr, weight_decay=1e-4, is_image_data=True, image_size=256):
+def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_dataloader, latent_conditioner_validation_dataloader, latent_conditioner, latent_conditioner_lr, weight_decay=1e-4, is_image_data=True):
 
     writer = SummaryWriter(log_dir = './LatentConditionerRuns', comment = 'LatentConditioner')
-
-    loss=0
     
     latent_conditioner, device = setup_device_and_model(latent_conditioner)
 
     latent_conditioner_optimized, warmup_scheduler, main_scheduler, warmup_epochs = setup_optimizer_and_scheduler(
-        latent_conditioner, latent_conditioner_lr, weight_decay, latent_conditioner_epoch
-    )
+        latent_conditioner, latent_conditioner_lr, weight_decay, latent_conditioner_epoch)
     
-    best_val_loss = float('inf')
-    patience = 100000
-    patience_counter = 0
-    min_delta = 1e-8
-    overfitting_threshold = 1000.0
-
-    
-    latent_conditioner = latent_conditioner.to(device)
-    
+    loss=0;best_val_loss = float('inf');patience = 100000;patience_counter = 0;min_delta = 1e-8;overfitting_threshold = 1000.0;model_summary_shown = False
+   
+    latent_conditioner = latent_conditioner.to(device)    
     latent_conditioner.apply(safe_initialize_weights_He)
-    
-    model_summary_shown = False
 
     for epoch in range(latent_conditioner_epoch):
         start_time = time.time()
         latent_conditioner.train(True)
         
-        epoch_loss = 0
-        epoch_loss_y1 = 0
-        epoch_loss_y2 = 0
-        num_batches = 0
+        epoch_loss = 0;epoch_loss_y1 = 0;epoch_loss_y2 = 0;num_batches = 0
         
         for i, (x, y1, y2) in enumerate(latent_conditioner_dataloader):
             if x.device != device:
                 x, y1, y2 = x.to(device, non_blocking=True), y1.to(device, non_blocking=True), y2.to(device, non_blocking=True)
             
-            # # Show ORIGINAL input before any augmentations (first batch, first epoch only)
-            # if i == 0 and epoch == 0:
-            #     input_features = x.shape[-1]
-            #     img_size = int(math.sqrt(input_features))
-            #     print(f"ORIGINAL INPUT - Range: [{x.min():.4f}, {x.max():.4f}]")
-                
-            #     # Show original image
-            #     x_cpu = x[0].cpu().numpy()
-            #     plt.figure(figsize=(12, 4))
-            #     plt.subplot(1, 3, 1)
-            #     plt.imshow(x_cpu.reshape(img_size, img_size), cmap='gray')
-            #     plt.title('Original Input')
-            #     plt.colorbar()
-            
             if not model_summary_shown:
                 batch_size = x.shape[0]
                 input_features = x.shape[-1]
                 img_size = int(math.sqrt(input_features))
-                
-                print(f"DEBUG: Input shape: {x.shape}, Input range: [{x.min():.4f}, {x.max():.4f}]")
-                print(f"DEBUG: Image size: {img_size}x{img_size} ({input_features} pixels)")
-                
-                # Check sample image statistics
-                sample_img = x[0].reshape(img_size, img_size)
-                print(f"DEBUG: Sample image - mean: {sample_img.mean():.4f}, std: {sample_img.std():.4f}")
-                print(f"DEBUG: Non-zero pixels: {(sample_img > 0.01).sum()}/{sample_img.numel()}")
-                
-                # Check target value ranges
-                print(f"DEBUG: Target y1 shape: {y1.shape}, range: [{y1.min():.4f}, {y1.max():.4f}], mean: {y1.mean():.4f}")
-                print(f"DEBUG: Target y2 shape: {y2.shape}, range: [{y2.min():.4f}, {y2.max():.4f}], mean: {y2.mean():.4f}")
-                
                 summary(latent_conditioner, (batch_size, 1, input_features))
                 model_summary_shown = True
             
@@ -272,14 +231,6 @@ def train_latent_conditioner(latent_conditioner_epoch, latent_conditioner_datalo
                 x_2d = x.reshape(-1, im_size, im_size)
                 x_2d = apply_outline_preserving_augmentations(x_2d, prob=0.8)
                 x = x_2d.reshape(x.shape[0], -1)
-                
-                # Show augmented image
-                # if i == 0 and epoch == 0:
-                #     x_aug_cpu = x[0].cpu().numpy()
-                #     plt.subplot(1, 3, 2)
-                #     plt.imshow(x_aug_cpu.reshape(img_size, img_size), cmap='gray')
-                #     plt.title('After Augmentation')
-                #     plt.colorbar()
                 
             if torch.rand(1, device=x.device) < 0.02 and x.size(0) > 1:
                 alpha = 0.2
