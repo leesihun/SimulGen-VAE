@@ -73,18 +73,18 @@ def data_scaler(FOM_data_aug, FOM_data, num_time, num_node, directory, chunk_siz
     print();print()
     print(f"Fitting scaler on dataset of shape: {FOM_data_aug.shape}")
     
-    if FOM_data_aug.dtype != np.float32:
-        print("Converting to float32...")
-        FOM_data_aug = FOM_data_aug.astype(np.float32)
-        gc.collect()
+    # if FOM_data_aug.dtype != np.float32:
+    #     print("Converting to float32...")
+    #     FOM_data_aug = FOM_data_aug.astype(np.float32)
+    #     gc.collect()
         
-    if FOM_data.dtype != np.float32:
-        FOM_data = FOM_data.astype(np.float32)
-        gc.collect()
+    # if FOM_data.dtype != np.float32:
+    #     FOM_data = FOM_data.astype(np.float32)
+    #     gc.collect()
     
-    after_conversion_memory = get_memory_usage()
-    conversion_change = after_conversion_memory - initial_memory
-    print(f"Memory after float32 conversion: {after_conversion_memory:.2f} GB ({conversion_change:+.2f} GB)")
+    # after_conversion_memory = get_memory_usage()
+    # conversion_change = after_conversion_memory - initial_memory
+    # print(f"Memory after float32 conversion: {after_conversion_memory:.2f} GB ({conversion_change:+.2f} GB)")
     
     # Wider range for better VAE training - VAEs work better with [-1, 1] or [-0.9, 0.9]
     scaler = MinMaxScaler(feature_range=(-0.7, 0.7))
@@ -120,7 +120,7 @@ def data_scaler(FOM_data_aug, FOM_data, num_time, num_node, directory, chunk_siz
     del representative_samples
     gc.collect()
     
-    print(f"✅ Scaler fitted on {len(sample_indices)} samples")
+    print(f"Scaler fitted on {len(sample_indices)} samples")
     
     # Transform data in chunks to avoid memory issues
     print("Transforming training data in chunks...")
@@ -163,7 +163,7 @@ def data_scaler(FOM_data_aug, FOM_data, num_time, num_node, directory, chunk_siz
     end = time.time()
     memory_change = final_memory - initial_memory
     
-    print(f"✅ Data scaling completed in {end - start:.2f} seconds")
+    print(f"   Data scaling completed in {end - start:.2f} seconds")
     print(f"   Final data shape: {new_x_train.shape}, dtype: {new_x_train.dtype}")
     print(f"   Memory usage: {initial_memory:.2f} GB → {final_memory:.2f} GB ({memory_change:+.2f} GB)")
     print(f"   Scaler saved to: ./model_save/scaler.pkl")

@@ -239,11 +239,19 @@ def main():
         print(f"Learning rate: {LR}")
         print(f"Latent dimensions: {latent_dim} (hierarchical), {latent_dim_end} (main)")
         print(f"Loss function: {loss}")
-        print(f"Initial beta: {init_beta}")
+        
+        # Display Latent conditioner data
+        print(f"Latent conditioner epochs: {latent_conditioner_epoch}")
+        print(f"Latent conditioner learning rate: {latent_conditioner_lr}")
+        print(f"Latent conditioner batch size: {latent_conditioner_batch_size}")
+        print(f"Latent conditioner weight decay: {latent_conditioner_weight_decay}")
+        print(f"Latent conditioner dropout rate: {latent_conditioner_dropout_rate}")
+        print(f"Use spatial attention: {use_spatial_attention}")
+        print(f"Latent conditioner data type: {latent_conditioner_data_type}")
+        print(f"Parameter data type: {param_data_type}")
         print("=" * 35)
 
     print_graph = args.plot
-
     train_latent_conditioner_only = int(args.train_latent_conditioner)
 
     if train_latent_conditioner_only == 0:
@@ -272,6 +280,7 @@ def main():
     new_x_train = new_x_train.transpose((0,2,1))
     new_x_train = np.float32(new_x_train)
 
+    print();print();print()
     print(f"Dataset value range: [{np.min(new_x_train):.4f}, {np.max(new_x_train):.4f}]")
     print("Creating augmented dataset with on-the-fly data augmentation...")
     
@@ -285,6 +294,7 @@ def main():
         num_workers=None  # Auto-determine optimal workers
     )
     
+    print();print();print()
     print(f"Augmented dataloaders created - Training: {int(len(new_x_train) * 0.8)}, Validation: {int(len(new_x_train) * 0.2)} samples")
     print("Dataloader initialization complete")
 
