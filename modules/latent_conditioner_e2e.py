@@ -476,7 +476,7 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
                (latent_conditioner_epoch-epoch)*epoch_duration/3600))
         
         # Early stopping check (more conservative)
-        if patience_counter >= 200:  # Increased patience
+        if patience_counter >= 1000:  # Increased patience
             print(f'🛑 Early stopping at epoch {epoch}. Best val loss: {best_val_loss:.4E}')
             break
 
