@@ -90,7 +90,7 @@ def main():
     
     # Utilities and data handling
     from modules.utils import (
-        MyBaseDataset, LatentConditionerDataset, E2ELatentConditionerDataset, get_optimal_workers,
+        Dataset, LatentConditionerDataset, E2ELatentConditionerDataset, get_optimal_workers,
         setup_distributed_training, parse_condition_file, parse_training_parameters,
         evaluate_vae_reconstruction
     )
