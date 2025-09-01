@@ -238,9 +238,8 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
     xs_scaler = load_scaler('./model_save/xs_scaler.pkl')
     
     if latent_vectors_scaler is None or xs_scaler is None:
-        print("⚠️ Warning: Could not load scalers. E2E training will use raw latent predictions.")
-        latent_vectors_scaler = None
-        xs_scaler = None
+        # raise error
+        raise ValueError("Could not load scalers. E2E training will use raw latent predictions.")
     else:
         print("✅ Scalers loaded successfully for latent prediction descaling")
     
@@ -259,8 +258,8 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
         print(f"Unknown loss function {loss_function_type}, using MSE")
 
     # Configuration for regularization
-    use_latent_regularization = config.get('use_latent_regularization', 0) == 1 if config else False
-    latent_reg_weight = float(config.get('latent_reg_weight', 0.001)) if config else 0.001
+    use_latent_regularization = config.get('use_latent_regularization') == 1 if config else False
+    latent_reg_weight = float(config.get('latent_reg_weight')) if config else 0.001
 
     # Setup improved optimizer and scheduler
     optimizer, adaptive_lr_scheduler = setup_improved_optimizer_and_scheduler(
@@ -268,26 +267,13 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
     )
     
     # Setup improved regularization scheduler
-    adaptive_reg_scheduler = AdaptiveRegularizationScheduler(
-        initial_weight=latent_reg_weight,
-        total_epochs=latent_conditioner_epoch,
-        warmup_epochs=30,
-        plateau_boost=1.5,  # More conservative boost
-        min_weight_ratio=0.2  # Keep more regularization
-    )
+    adaptive_reg_scheduler = AdaptiveRegularizationScheduler(latent_reg_weight, latent_conditioner_epoch, 30, 1.5, 0.2)
     
     # Setup gradient health monitor
-    grad_monitor = GradientHealthMonitor(
-        model=latent_conditioner,
-        base_clip_norm=3.0,  # More conservative base clipping
-        adaptive_factor=1.5
-    )
+    grad_monitor = GradientHealthMonitor(latent_conditioner, 3.0, 1.5)
     
     # Setup loss stagnation detector
-    stagnation_detector = LossStagnationDetector(
-        patience=25,  # Slightly more patient
-        min_improvement=1e-7
-    )
+    stagnation_detector = LossStagnationDetector(25, 1e-7)
     
     latent_conditioner = latent_conditioner.to(device)
     latent_conditioner.apply(safe_initialize_weights_He)
@@ -298,34 +284,18 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
     print(f"🎯 Latent regularization: {'Enabled' if use_latent_regularization else 'Disabled'}")
     
     # Initialize comprehensive loss tracking
-    train_losses = []
-    val_losses = []
-    train_recon_losses = []
-    val_recon_losses = []
-    train_latent_reg_losses = []
-    val_latent_reg_losses = []
-    learning_rates = []
-    regularization_weights = []
-    gradient_norms = []
-    
+    train_losses = [];val_losses = [];train_recon_losses = [];val_recon_losses = [];train_latent_reg_losses = [];val_latent_reg_losses = [];learning_rates = [];regularization_weights = [];gradient_norms = []    
     # Best model tracking
-    best_val_loss = float('inf')
-    best_model_state = None
-    patience_counter = 0
+    best_val_loss = float('inf');best_model_state = None;patience_counter = 0;
     
     for epoch in range(latent_conditioner_epoch):
         epoch_start_time = time.time()
         latent_conditioner.train(True)
         
         # Initialize per-epoch variables
-        epoch_loss = 0
-        epoch_recon_loss = 0
-        epoch_latent_reg_loss = 0
-        num_batches = 0
+        epoch_loss = 0;epoch_recon_loss = 0;epoch_latent_reg_loss = 0;num_batches = 0
         
         for i, (x, y1, y2, target_data) in enumerate(e2e_dataloader):
-            batch_start_time = time.time()
-            
             # Move to device
             x, y1, y2 = x.to(device, non_blocking=True), y1.to(device, non_blocking=True), y2.to(device, non_blocking=True)
             target_data = target_data.to(device, non_blocking=True)
@@ -340,17 +310,11 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
                 print(f"   Target shape: {target_data.shape}")
                 print(f"   Image size: {img_size}x{img_size} ({input_features} pixels)")
                 
-                try:
-                    summary(latent_conditioner, (batch_size, 1, input_features))
-                except Exception as e:
-                    print(f"Could not display model summary: {e}")
-                
+                summary(latent_conditioner, (batch_size, 1, input_features))
                 model_summary_shown = True
             
             # Apply improved data augmentation
-            x, target_data, y1, y2 = improved_data_augmentation(
-                x, target_data, y1, y2, is_image_data, device, use_latent_regularization
-            )
+            # x, target_data, y1, y2 = improved_data_augmentation(x, target_data, y1, y2, is_image_data, device, use_latent_regularization)
             
             # Forward pass
             optimizer.zero_grad(set_to_none=True)
@@ -358,9 +322,7 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
             y_pred1, y_pred2 = latent_conditioner(x)
             
             # Descale predictions for VAE decoder
-            y_pred1_descaled, y_pred2_descaled = descale_latent_predictions(
-                y_pred1, y_pred2, latent_vectors_scaler, xs_scaler
-            )
+            y_pred1_descaled, y_pred2_descaled = descale_latent_predictions(y_pred1, y_pred2, latent_vectors_scaler, xs_scaler)
             
             # Prepare hierarchical latents for VAE decoder
             y_pred2_tensor = y_pred2  # Keep original for regularization
