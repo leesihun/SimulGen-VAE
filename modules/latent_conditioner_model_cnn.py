@@ -277,14 +277,10 @@ class LatentConditionerImg(nn.Module):
                 - xs: Hierarchical latent predictions [batch, size2, latent_dim]
         """
         # Handle input reshaping
-        if x.dim() == 2:
-            # Flattened input -> reshape to square image
-            batch_size = x.shape[0]
-            spatial_dim = int(math.sqrt(x.shape[1]))
-            x = x.reshape(batch_size, 1, spatial_dim, spatial_dim)
-        elif x.dim() == 3:
-            # Add channel dimension
-            x = x.unsqueeze(1)
+        # Flattened input -> reshape to square image
+        batch_size = x.shape[0]
+        spatial_dim = int(math.sqrt(x.shape[1]))
+        x = x.reshape(batch_size, 1, spatial_dim, spatial_dim)
         
         # Ensure input is in expected range [0, 1] or [-1, 1]
         if x.min() < -0.1:  # Likely in [-1, 1] range
