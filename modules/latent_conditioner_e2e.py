@@ -373,16 +373,6 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
             
             # Optimizer step
             optimizer.step()
-            
-            # Log detailed info periodically
-            if epoch % 50 == 0 and i == 0:
-                current_lr = optimizer.param_groups[0]['lr']
-                print(f"🔍 Detailed Training Info (Epoch {epoch}):")
-                print(f"   Learning Rate: {current_lr:.2e}")
-                print(f"   Gradient Norm: {clipped_grad_norm:.4f}")
-                print(f"   Recon Loss: {recon_loss.item():.6e}")
-                print(f"   Reg Weight: {current_reg_weight:.6f}")
-                print(f"   Total Loss: {loss.item():.6e}")
         
         # Calculate training averages
         avg_train_loss = epoch_loss / num_batches if num_batches > 0 else 0.0
@@ -421,7 +411,7 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
                 if use_latent_regularization:
                     latent_reg_main_val = nn.MSELoss()(y_pred1_val, y1_val)
                     latent_reg_hier_val = nn.MSELoss()(y_pred2_val_tensor.reshape(-1), y2_val.reshape(-1))
-                    latent_reg_total_val = 0.3 * latent_reg_main_val + 0.7 * latent_reg_hier_val
+                    latent_reg_total_val = 0.9 * latent_reg_main_val + 0.1 * latent_reg_hier_val
                     
                     total_val_loss = recon_loss_val + current_reg_weight * latent_reg_total_val
                     val_latent_reg_loss += (current_reg_weight * latent_reg_total_val).item()
@@ -538,7 +528,7 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
     
     # Gradient norms
     if gradient_norms:
-        ax3.plot(gradient_norms, 'green', linewidth=1, alpha=0.7, label='Gradient Norm')
+        ax3.plot(gradient_norms.cpu(), 'green', linewidth=1, alpha=0.7, label='Gradient Norm')
         ax3.axhline(y=3.0, color='red', linestyle='--', alpha=0.5, label='Base Clip Norm')
         ax3.set_xlabel('Training Step')
         ax3.set_ylabel('Gradient Norm')
