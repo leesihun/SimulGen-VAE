@@ -197,8 +197,8 @@ class LatentConditionerImg(nn.Module):
         in_channels = latent_conditioner_filter[0]
         
         for i, out_channels in enumerate(latent_conditioner_filter[1:]):
-            # Determine stride - downsample every other layer
-            stride = 2 if i % 2 == 1 and i < len(latent_conditioner_filter) - 2 else 1
+            # Early-heavy downsampling: only at layers 1 and 3
+            stride = 2 if i in [1, 3] else 1
             
             # Enable spatial attention for more layers and SE for all layers
             use_spatial_attn = use_attention and i >= 1 and i <= 6  # More layers with spatial attention
