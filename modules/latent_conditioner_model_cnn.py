@@ -179,6 +179,8 @@ class ResidualBlock(nn.Module):
         self.use_attention = use_attention
         if use_attention:
             self.attention = CBAM(out_channels, reduction=8)
+
+        self.drop_rate = drop_rate
         
     def forward(self, x):
         identity = x
@@ -195,7 +197,7 @@ class ResidualBlock(nn.Module):
         if self.use_attention:
             out = self.attention(out)
             # Apply spectral dropout after attention
-            out = F.dropout2d(out, p=drop_rate * 0.3, training=self.training)
+            out = F.dropout2d(out, p=self.drop_rate * 0.3, training=self.training)
         
         if self.downsample is not None:
             identity = self.downsample(x)
