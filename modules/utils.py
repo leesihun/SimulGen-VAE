@@ -306,7 +306,8 @@ def parse_training_parameters(params):
     config['num_time'] = int(params['Dim2'])
     config['num_time_to'] = int(params['Dim2_red'])
     config['num_node'] = int(params['Dim3'])
-    config['num_node_to'] = int(params['Dim3_red'])
+    config['num_node_start'] = int(params['Dim3_start'])
+    config['num_node_end'] = int(params['Dim3_end'])
     config['num_var'] = int(params['num_var'])
     
     # Training parameters
@@ -322,12 +323,10 @@ def parse_training_parameters(params):
     # Augmentation parameters
     config['num_samples_f'] = int(params.get('num_aug_f', 0))
     config['num_samples_a'] = int(params.get('num_aug_a', 0))
-    config['print_graph_recon'] = int(params.get('rec_graph', 0))
     config['recon_iter'] = int(params.get('Recon_iter', 1))
     
     # Physical parameters
     config['num_physical_param'] = int(params['num_param'])
-    config['n_sample'] = int(params['n_sample'])
     config['param_dir'] = params['param_dir']
     
     # Latent conditioner parameters

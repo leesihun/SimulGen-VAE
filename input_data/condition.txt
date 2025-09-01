@@ -20,15 +20,14 @@ RESERVED	0
 alpha		1000000
 RESERVED	0
 RESERVED	0
-rec_graph	0
 Recon_iter	1
 % For shortend_dataset(GPU_RAM_OUT)
 Dim2_red		200
-Dim3_red		95008
+Dim3_start      0
+Dim3_end		95008
 '
 %LatentConditioner
 num_param	1
-n_sample	484
 param_dir	/images
 n_epoch	5000
 latent_conditioner_lr	0.001	# 

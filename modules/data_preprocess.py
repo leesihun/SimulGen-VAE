@@ -34,8 +34,9 @@ def reduce_dataset(data_save, num_time_to, num_node_red, num_param, num_time, nu
         FOM_data = FOM_data_temp
 
     end = time.time()
+    print();print()
     print(f"Dataset reduction completed in {end - start:.2f}s")
-    print(f"FOM data shape: {FOM_data.shape}")
+    print(f"Dataset reduced to FOM data shape: {FOM_data.shape}")
 
     return num_time, FOM_data, num_node
 
@@ -67,6 +68,10 @@ def data_scaler(FOM_data_aug, FOM_data, num_time, num_node, directory, chunk_siz
     
     if chunk_size is None:
         chunk_size = 10000
+
+    
+    print();print()
+    print(f"Fitting scaler on dataset of shape: {FOM_data_aug.shape}")
     
     if FOM_data_aug.dtype != np.float32:
         print("Converting to float32...")
@@ -78,7 +83,8 @@ def data_scaler(FOM_data_aug, FOM_data, num_time, num_node, directory, chunk_siz
         gc.collect()
     
     after_conversion_memory = get_memory_usage()
-    print(f"Memory after float32 conversion: {after_conversion_memory:.2f} GB (saved: {initial_memory - after_conversion_memory:.2f} GB)")
+    conversion_change = after_conversion_memory - initial_memory
+    print(f"Memory after float32 conversion: {after_conversion_memory:.2f} GB ({conversion_change:+.2f} GB)")
     
     # Wider range for better VAE training - VAEs work better with [-1, 1] or [-0.9, 0.9]
     scaler = MinMaxScaler(feature_range=(-0.7, 0.7))
@@ -87,57 +93,59 @@ def data_scaler(FOM_data_aug, FOM_data, num_time, num_node, directory, chunk_siz
     print("Fitting scaler on representative sample...")
     total_samples = FOM_data_aug.shape[0] * FOM_data_aug.shape[1]
     
-    # Use a much smaller sample size to prevent hanging - limit to 10k samples max
-    max_samples = min(10000, total_samples // 100)  # Use 1% of data or 10k samples, whichever is smaller
+    # Simplified and efficient sampling - use every Nth sample
+    max_samples = min(50000, total_samples // 10)  # Use 10% of data or 50k samples
+    if max_samples < 1000:
+        max_samples = min(1000, total_samples)  # Minimum 1000 samples
+    
     sample_stride = max(1, total_samples // max_samples)
-    sample_indices = np.arange(0, total_samples, sample_stride)[:max_samples]  # Cap at max_samples
+    print(f"Sampling {max_samples} representative samples (every {sample_stride}th sample)")
     
-    print(f"Using {len(sample_indices)} samples for fitting (stride: {sample_stride})")
+    # Simple random sampling approach - much more efficient
+    np.random.seed(42)  # Reproducible sampling
+    if total_samples > max_samples:
+        sample_indices = np.random.choice(total_samples, max_samples, replace=False)
+    else:
+        sample_indices = np.arange(total_samples)
     
-    # Convert indices to param/time coordinates
+    # Convert to coordinates and extract samples efficiently
     param_indices = sample_indices // num_time
     time_indices = sample_indices % num_time
     
-    # Extract representative samples more efficiently with smaller batches
-    representative_data = []
-    small_batch_size = min(1000, len(param_indices))  # Smaller batches
+    print("Extracting representative samples...")
+    representative_samples = FOM_data_aug[param_indices, time_indices, :]
     
-    for i in range(0, len(param_indices), small_batch_size):
-        end_i = min(i + small_batch_size, len(param_indices))
-        batch_params = param_indices[i:end_i]
-        batch_times = time_indices[i:end_i]
-        
-        # Extract samples
-        samples = FOM_data_aug[batch_params, batch_times, :]
-        representative_data.append(samples)
-        
-        # Progress update
-        if i % (small_batch_size * 5) == 0:
-            print(f"  Extracted {end_i}/{len(param_indices)} sample batches...")
-    
-    # Concatenate and fit
-    print("Concatenating samples and fitting scaler...")
-    representative_samples = np.vstack(representative_data)
+    print("Fitting scaler...")
     scaler.fit(representative_samples)
-    del representative_data, representative_samples
+    del representative_samples
     gc.collect()
     
-    print(f"Scaler fitted on {len(sample_indices)} representative samples")
+    print(f"✅ Scaler fitted on {len(sample_indices)} samples")
     
-    # Transform data in-place to save memory
+    # Transform data in chunks to avoid memory issues
     print("Transforming training data in chunks...")
     FOM_data_aug_flat = FOM_data_aug.reshape(-1, num_node)
+    total_samples = FOM_data_aug_flat.shape[0]
+    
+    # More reasonable chunk size for progress reporting
+    if total_samples > 100000:
+        report_interval = chunk_size * 5  # Report every 5 chunks for large datasets
+    else:
+        report_interval = chunk_size  # Report every chunk for smaller datasets
+    
+    chunks_processed = 0
+    total_chunks = (total_samples + chunk_size - 1) // chunk_size
     
     # Process in chunks to avoid memory issues
-    for start_idx in range(0, FOM_data_aug_flat.shape[0], chunk_size):
-        end_idx = min(start_idx + chunk_size, FOM_data_aug_flat.shape[0])
+    for start_idx in range(0, total_samples, chunk_size):
+        end_idx = min(start_idx + chunk_size, total_samples)
         FOM_data_aug_flat[start_idx:end_idx] = scaler.transform(FOM_data_aug_flat[start_idx:end_idx])
+        chunks_processed += 1
         
-        # Progress indicator for large datasets
-        if start_idx % (chunk_size * 10) == 0:
-            progress = (start_idx / FOM_data_aug_flat.shape[0]) * 100
-            current_memory = get_memory_usage()
-            print(f"Progress: {progress:.1f}% | Memory: {current_memory:.2f} GB")
+        # Clean progress reporting
+        if start_idx % report_interval == 0 or end_idx == total_samples:
+            progress = (end_idx / total_samples) * 100
+            print(f"  Progress: {progress:.1f}% ({chunks_processed}/{total_chunks} chunks)")
     
     # Reshape back in-place
     new_x_train = FOM_data_aug_flat.reshape(FOM_data_aug.shape)
@@ -147,14 +155,18 @@ def data_scaler(FOM_data_aug, FOM_data, num_time, num_node, directory, chunk_siz
     del FOM_data_aug_flat
     gc.collect()
     
-    final_memory = get_memory_usage()
-    print(f"Peak memory usage: {final_memory:.2f} GB")
-    
+    # Save scaler
     dump(scaler, open('./model_save/scaler.pkl', 'wb'))
+    
+    # Final summary
+    final_memory = get_memory_usage()
     end = time.time()
-    print(f"Optimized scaling time: {end - start:.2f} seconds")
-    print(f"Final data shape: {new_x_train.shape}, dtype: {new_x_train.dtype}")
-    print(f"Memory efficiency: {((initial_memory - final_memory) / initial_memory * 100):.1f}% reduction")
+    memory_change = final_memory - initial_memory
+    
+    print(f"✅ Data scaling completed in {end - start:.2f} seconds")
+    print(f"   Final data shape: {new_x_train.shape}, dtype: {new_x_train.dtype}")
+    print(f"   Memory usage: {initial_memory:.2f} GB → {final_memory:.2f} GB ({memory_change:+.2f} GB)")
+    print(f"   Scaler saved to: ./model_save/scaler.pkl")
     
     return new_x_train, DATA_shape, scaler
 

@@ -68,10 +68,7 @@ def main():
 
     # SimulGenVAE core modules
     from modules.input_variables import input_user_variables, input_dataset
-    from modules.data_preprocess import (
-        reduce_dataset, data_scaler, 
-        latent_conditioner_scaler
-    )
+    from modules.data_preprocess import reduce_dataset, data_scaler, latent_conditioner_scaler
     
     # Model architectures
     from modules.VAE_network import VAE
@@ -80,45 +77,28 @@ def main():
     
     # Training and evaluation
     from modules.train import train
-    from modules.latent_conditioner import (
-        train_latent_conditioner, read_latent_conditioner_dataset_img,
-        read_latent_conditioner_dataset, safe_cuda_initialization
-    )
-    from modules.latent_conditioner_e2e import train_latent_conditioner_e2e
+    from modules.latent_conditioner import train_latent_conditioner, read_latent_conditioner_dataset_img, read_latent_conditioner_dataset, safe_cuda_initialization
     from modules.enhanced_latent_conditioner_training import train_latent_conditioner_with_enhancements
     from modules.reconstruction_evaluator import ReconstructionEvaluator
     
     # Utilities and data handling
-    from modules.utils import (
-        LatentConditionerDataset, E2ELatentConditionerDataset, get_optimal_workers,
-        setup_distributed_training, parse_condition_file, parse_training_parameters,
-        evaluate_vae_reconstruction
-    )
-    from modules.utils import vram_cleanup
+    from modules.utils import LatentConditionerDataset, E2ELatentConditionerDataset, get_optimal_workers, setup_distributed_training, parse_condition_file, parse_training_parameters, evaluate_vae_reconstruction, vram_cleanup, initialize_folder
     from modules.augmentation import create_augmented_dataloaders
     from modules.plotter import temporal_plotter, dual_view_plotter
 
-    from modules.utils import initialize_folder
-
     # Parse command line arguments
-    parser = argparse.ArgumentParser(
-        description="SimulGenVAE: High-Performance Physics-Aware Variational Autoencoder",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""Examples:
+    parser = argparse.ArgumentParser(description="SimulGenVAE: High-Performance Physics-Aware Variational Autoencoder",formatter_class=argparse.RawDescriptionHelpFormatter,epilog="""Examples:
   Single GPU:  python SimulGen-VAE.py --preset=1 --plot=2 --lc_only=0 --size=small
   Multi-GPU:   torchrun --nproc_per_node=4 SimulGen-VAE.py --use_ddp --preset=1
   LC Training: python SimulGen-VAE.py --preset=1 --lc_only=1 --size=small"""
     )
     
-    parser.add_argument("--preset", dest="preset", default="1", 
-                       help="Dataset preset selection (1-5, default: 1)")
-    parser.add_argument("--plot", dest="plot", default="2",
-                       help="Visualization mode: 0=interactive, 1=save, 2=off (default: 2)")
-    parser.add_argument("--lc_only", dest="train_latent_conditioner", default="0",
-                       help="Training mode: 0=full VAE, 1=LatentConditioner only (default: 0)")
+    parser.add_argument("--preset", dest="preset")
+    parser.add_argument("--plot", dest="plot")
+    parser.add_argument("--lc_only", dest="train_latent_conditioner")
     parser.add_argument("--size", dest="size", default="small", choices=["small", "large"],
                        help="Model architecture size (default: small)")
-    parser.add_argument("--load_all", dest="load_all", default="0",
+    parser.add_argument("--load_all", dest="load_all", default="1",
                        help="Memory mode: 0=lazy loading, 1=preload all data (default: 0)")
     parser.add_argument("--use_ddp", action="store_true",
                        help="Enable distributed data parallel training")
@@ -129,6 +109,11 @@ def main():
     is_distributed = setup_distributed_training(args)
     
     # Load and parse configuration files
+    print();print();print();print();print();
+    print('Starting SimulGen-VAE...')
+    print('Designed by SiHun Lee, Ph.D.')
+    print('Version 2.0.0')
+    print();print();print();print();print();
     print("Loading configuration...")
     try:
         params = parse_condition_file('input_data/condition.txt')
@@ -147,8 +132,8 @@ def main():
     num_time = config['num_time']
     num_time_to = config['num_time_to']
     num_node = config['num_node']
-    num_node_to = config['num_node_to']
-    num_var = config['num_var']
+    num_node_start = config['num_node_start']
+    num_node_to = config['num_node_end']
     
     # Training parameters
     n_epochs = config['n_epochs']
@@ -161,15 +146,8 @@ def main():
     latent_dim = config['latent_dim']  # Hierarchical latent dimension
     latent_dim_end = config['latent_dim_end']  # Main latent dimension
     
-    # Data processing
-    stretch = config['stretch']
-    num_samples_f = config['num_samples_f']
-    num_samples_a = config['num_samples_a']
-    
     # Evaluation parameters
-    print_graph_recon = config['print_graph_recon']
     recon_iter = config['recon_iter']
-    n_sample = config['n_sample']
     
     # LatentConditioner parameters
     num_physical_param = config['num_physical_param']
@@ -243,14 +221,13 @@ def main():
     num_layer_enc = len(num_filter_enc)
     num_layer_dec = len(num_filter_dec)
 
-    num_node_red_start = 0
-    num_node_red_end = num_node
+    num_node_red_start = num_node_start
+    num_node_red_end = num_node_to
     num_node_red = num_node_red_end - num_node_red_start
-    initial_learning_rate = LR
-    data_division = 1
-    warm_up_rate = 1
 
     if not is_distributed or dist.get_rank() == 0:
+        print();print();print();print();print();
+        print("=" * 35)
         print("\n=== SimulGen-VAE Configuration ===")
         print(f"Parameters: {num_param}")
         print(f"Time steps: {num_time}")

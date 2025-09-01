@@ -2,6 +2,7 @@ def input_user_variables():
     import pandas as pd
     import numpy as np
     
+    print();print()
     print('Input dataset number of pickle file, dataset%d.pickle')
     datasetNo = int(input())
 
@@ -30,6 +31,7 @@ def input_dataset(num_param, num_time, num_node, data_No):
     start= time.time()
     data_save = np.zeros((num_param, num_time, num_node))\
 
+    print();print()
     print('Opening dataset file: dataset%d.pickle' % data_No)
 
     with open('dataset%d.pickle' % data_No, 'rb') as fr:
