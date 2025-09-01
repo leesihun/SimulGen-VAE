@@ -440,10 +440,10 @@ def main():
             e2e_train_dataset, e2e_validation_dataset = random_split(e2e_dataset, [e2e_train_size, e2e_val_size])
             
             e2e_dataloader = torch.utils.data.DataLoader(
-                e2e_train_dataset, latent_conditioner_batch_size, True, latent_conditioner_optimal_workers, False, latent_conditioner_optimal_workers > 0, 2 if latent_conditioner_optimal_workers > 0 else None, True)
+                e2e_train_dataset, batch_size =latent_conditioner_batch_size, shuffle=True, num_workers=latent_conditioner_optimal_workers, pin_memory=False, persistent_workers=latent_conditioner_optimal_workers > 0, prefetch_factor=2 if latent_conditioner_optimal_workers > 0 else None, drop_last=True)
             
             e2e_validation_dataloader = torch.utils.data.DataLoader(
-                e2e_validation_dataset, latent_conditioner_batch_size, False, latent_conditioner_optimal_workers, False, latent_conditioner_optimal_workers > 0, 2 if latent_conditioner_optimal_workers > 0 else None, False)
+                e2e_validation_dataset, batch_size =latent_conditioner_batch_size, shuffle=False, num_workers=latent_conditioner_optimal_workers, pin_memory=False, persistent_workers=latent_conditioner_optimal_workers > 0, prefetch_factor=2 if latent_conditioner_optimal_workers > 0 else None, drop_last=False)
             
             # Use improved E2E training if enabled
             from modules.latent_conditioner_e2e import train_latent_conditioner_e2e
