@@ -90,7 +90,6 @@ def data_scaler(FOM_data_aug, FOM_data, num_time, num_node, directory, chunk_siz
     scaler = MinMaxScaler(feature_range=(-0.7, 0.7))
     
     # For MinMaxScaler, we need to fit on a representative sample since it doesn't support partial_fit
-    print("Fitting scaler on representative sample...")
     total_samples = FOM_data_aug.shape[0] * FOM_data_aug.shape[1]
     
     # Simplified and efficient sampling - use every Nth sample
@@ -112,16 +111,11 @@ def data_scaler(FOM_data_aug, FOM_data, num_time, num_node, directory, chunk_siz
     param_indices = sample_indices // num_time
     time_indices = sample_indices % num_time
     
-    print("Extracting representative samples...")
     representative_samples = FOM_data_aug[param_indices, time_indices, :]
-    
-    print("Fitting scaler...")
+
     scaler.fit(representative_samples)
     del representative_samples
-    gc.collect()
-    
-    print(f"Scaler fitted on {len(sample_indices)} samples")
-    
+
     # Transform data in chunks to avoid memory issues
     print("Transforming training data in chunks...")
     FOM_data_aug_flat = FOM_data_aug.reshape(-1, num_node)

@@ -113,7 +113,7 @@ def main():
     print('Starting SimulGen-VAE...')
     print('Designed by SiHun Lee, Ph.D.')
     print('Version 2.0.0')
-    print();print();print();print();print();
+    print();print();print()
     print("Loading configuration...")
     try:
         params = parse_condition_file('input_data/condition.txt')
@@ -226,7 +226,7 @@ def main():
     num_node_red = num_node_red_end - num_node_red_start
 
     if not is_distributed or dist.get_rank() == 0:
-        print();print();print();print();print();
+        print();print();print()
         print("=" * 35)
         print("\n=== SimulGen-VAE Configuration ===")
         print(f"Parameters: {num_param}")
