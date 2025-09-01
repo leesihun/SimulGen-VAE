@@ -72,24 +72,34 @@ class SpatialAttention(nn.Module):
 
 
 class ResNetBlock(nn.Module):
-    """Enhanced ResNet block with modern components.
+    """Enhanced ResNet block with deeper architecture and modern components.
     
     Features:
+    - 3-convolution layer architecture for richer representations
     - GroupNormalization for better performance across batch sizes
     - SiLU activation for improved gradient flow
     - Squeeze-and-Excitation attention
     - Optional spatial attention
     - Spectral normalization for stability
+    - Gradient scaling for deeper networks
     """
     def __init__(self, in_channels, out_channels, stride=1, use_attention=True, use_spatial_attention=False):
         super().__init__()
         
-        # Main convolution path
-        self.conv1 = add_sn(nn.Conv2d(in_channels, out_channels, 3, stride, 1, bias=False))
-        self.gn1 = nn.GroupNorm(min(32, max(1, out_channels//8)), out_channels)
+        # Three-layer convolution path for richer feature extraction
+        mid_channels = out_channels // 2  # Bottleneck design
         
-        self.conv2 = add_sn(nn.Conv2d(out_channels, out_channels, 3, 1, 1, bias=False))
-        self.gn2 = nn.GroupNorm(min(32, max(1, out_channels//8)), out_channels)
+        # First conv: channel reduction + spatial downsampling
+        self.conv1 = add_sn(nn.Conv2d(in_channels, mid_channels, 1, 1, 0, bias=False))
+        self.gn1 = nn.GroupNorm(min(32, max(1, mid_channels//8)), mid_channels)
+        
+        # Second conv: spatial processing with stride
+        self.conv2 = add_sn(nn.Conv2d(mid_channels, mid_channels, 3, stride, 1, bias=False))
+        self.gn2 = nn.GroupNorm(min(32, max(1, mid_channels//8)), mid_channels)
+        
+        # Third conv: channel expansion
+        self.conv3 = add_sn(nn.Conv2d(mid_channels, out_channels, 1, 1, 0, bias=False))
+        self.gn3 = nn.GroupNorm(min(32, max(1, out_channels//8)), out_channels)
         
         # Skip connection
         self.skip = nn.Identity()
@@ -112,8 +122,10 @@ class ResNetBlock(nn.Module):
     def forward(self, x):
         identity = x
         
+        # Three-layer convolution path
         out = F.silu(self.gn1(self.conv1(x)))
-        out = self.gn2(self.conv2(out))
+        out = F.silu(self.gn2(self.conv2(out)))
+        out = self.gn3(self.conv3(out))
         
         # Apply attention mechanisms
         if self.use_attention:
@@ -122,7 +134,7 @@ class ResNetBlock(nn.Module):
         if self.use_spatial_attention:
             out = self.spatial_attn(out)
         
-        # Skip connection with gradient scaling
+        # Skip connection with gradient scaling for deeper networks
         out = out + 0.1 * self.skip(identity)
         out = F.silu(out)
         
@@ -188,13 +200,14 @@ class LatentConditionerImg(nn.Module):
             # Determine stride - downsample every other layer
             stride = 2 if i % 2 == 1 and i < len(latent_conditioner_filter) - 2 else 1
             
-            # Enable spatial attention for middle layers only
-            use_spatial_attn = use_attention and i >= 1 and i <= 3
+            # Enable spatial attention for more layers and SE for all layers
+            use_spatial_attn = use_attention and i >= 1 and i <= 6  # More layers with spatial attention
+            use_se_attention = use_attention  # All layers get SE attention
             
             layer = ResNetBlock(
                 in_channels, out_channels, 
                 stride=stride,
-                use_attention=use_attention,
+                use_attention=use_se_attention,
                 use_spatial_attention=use_spatial_attn
             )
             self.layers.append(layer)
@@ -203,44 +216,90 @@ class LatentConditionerImg(nn.Module):
         # Global adaptive pooling
         self.global_pool = nn.AdaptiveAvgPool2d(1)
         
-        # Feature processing
+        # Enhanced feature processing with 4x capacity
         final_channels = latent_conditioner_filter[-1]
-        hidden_dim = max(512, final_channels * 2)
+        hidden_dim = final_channels * 4  # 4x capacity increase
+        intermediate_dim = hidden_dim * 2  # Even larger intermediate processing
         
         self.feature_processor = nn.Sequential(
-            nn.Dropout(dropout_rate * 0.5),
+            nn.Dropout(dropout_rate * 0.3),
+            # First processing layer
             add_sn(nn.Linear(final_channels, hidden_dim)),
             nn.GroupNorm(min(32, max(1, hidden_dim//8)), hidden_dim),
             nn.SiLU(),
-            nn.Dropout(dropout_rate * 0.7)
+            nn.Dropout(dropout_rate * 0.4),
+            
+            # Second processing layer with expansion
+            add_sn(nn.Linear(hidden_dim, intermediate_dim)),
+            nn.GroupNorm(min(32, max(1, intermediate_dim//8)), intermediate_dim),
+            nn.SiLU(),
+            nn.Dropout(dropout_rate * 0.5),
+            
+            # Third processing layer with compression back to hidden_dim
+            add_sn(nn.Linear(intermediate_dim, hidden_dim)),
+            nn.GroupNorm(min(32, max(1, hidden_dim//8)), hidden_dim),
+            nn.SiLU(),
+            nn.Dropout(dropout_rate * 0.4)
         )
         
-        # Main latent prediction head
+        # Deeper main latent prediction head (5 layers)
         self.latent_main_head = nn.Sequential(
+            # Layer 1
             add_sn(nn.Linear(hidden_dim, hidden_dim // 2)),
             nn.GroupNorm(min(32, max(1, (hidden_dim//2)//8)), hidden_dim // 2),
             nn.SiLU(),
-            nn.Dropout(dropout_rate * 0.4),
-            add_sn(nn.Linear(hidden_dim // 2, hidden_dim // 4)),
-            nn.GroupNorm(min(32, max(1, (hidden_dim//4)//8)), hidden_dim // 4),
+            nn.Dropout(dropout_rate * 0.3),
+            
+            # Layer 2
+            add_sn(nn.Linear(hidden_dim // 2, hidden_dim // 3)),
+            nn.GroupNorm(min(32, max(1, (hidden_dim//3)//8)), hidden_dim // 3),
             nn.SiLU(),
             nn.Dropout(dropout_rate * 0.3),
-            nn.Linear(hidden_dim // 4, latent_dim_end),
-            #nn.Tanh()  # Bounded output for stable training
+            
+            # Layer 3
+            add_sn(nn.Linear(hidden_dim // 3, hidden_dim // 4)),
+            nn.GroupNorm(min(32, max(1, (hidden_dim//4)//8)), hidden_dim // 4),
+            nn.SiLU(),
+            nn.Dropout(dropout_rate * 0.2),
+            
+            # Layer 4
+            add_sn(nn.Linear(hidden_dim // 4, hidden_dim // 6)),
+            nn.GroupNorm(min(32, max(1, (hidden_dim//6)//8)), hidden_dim // 6),
+            nn.SiLU(),
+            nn.Dropout(dropout_rate * 0.1),
+            
+            # Layer 5 - Output
+            nn.Linear(hidden_dim // 6, latent_dim_end)
         )
         
-        # Hierarchical latent prediction head
+        # Deeper hierarchical latent prediction head (5 layers)
         self.xs_head = nn.Sequential(
+            # Layer 1
             add_sn(nn.Linear(hidden_dim, hidden_dim // 2)),
             nn.GroupNorm(min(32, max(1, (hidden_dim//2)//8)), hidden_dim // 2),
             nn.SiLU(),
-            nn.Dropout(dropout_rate * 0.4),
-            add_sn(nn.Linear(hidden_dim // 2, hidden_dim // 4)),
-            nn.GroupNorm(min(32, max(1, (hidden_dim//4)//8)), hidden_dim // 4),
+            nn.Dropout(dropout_rate * 0.3),
+            
+            # Layer 2
+            add_sn(nn.Linear(hidden_dim // 2, hidden_dim // 3)),
+            nn.GroupNorm(min(32, max(1, (hidden_dim//3)//8)), hidden_dim // 3),
             nn.SiLU(),
             nn.Dropout(dropout_rate * 0.3),
-            nn.Linear(hidden_dim // 4, latent_dim * size2),
-            #nn.Tanh()  # Bounded output for stable training
+            
+            # Layer 3
+            add_sn(nn.Linear(hidden_dim // 3, hidden_dim // 4)),
+            nn.GroupNorm(min(32, max(1, (hidden_dim//4)//8)), hidden_dim // 4),
+            nn.SiLU(),
+            nn.Dropout(dropout_rate * 0.2),
+            
+            # Layer 4
+            add_sn(nn.Linear(hidden_dim // 4, hidden_dim // 6)),
+            nn.GroupNorm(min(32, max(1, (hidden_dim//6)//8)), hidden_dim // 6),
+            nn.SiLU(),
+            nn.Dropout(dropout_rate * 0.1),
+            
+            # Layer 5 - Output
+            nn.Linear(hidden_dim // 6, latent_dim * size2)
         )
         
         # Initialize weights
