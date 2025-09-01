@@ -29,9 +29,86 @@ import pickle
 from joblib import load
 
 # Import original utilities
-from modules.latent_conditioner_e2e import (
-    verify_tensor_devices, load_scaler, descale_latent_predictions, load_vae_model
-)
+def load_vae_model(vae_model_path, device):
+    """Load and prepare VAE model for end-to-end training."""
+    try:
+        # Try loading complete model first
+        if os.path.exists(vae_model_path):
+            vae_model = torch.load(vae_model_path, map_location=device, weights_only=False)
+            print(f"Loaded VAE model from {vae_model_path}")
+        else:
+            # output error message
+            print(f"VAE model not found at {vae_model_path}")
+            raise FileNotFoundError(f"VAE model not found at {vae_model_path}")
+        
+        # Freeze VAE weights if it's a real model
+        if hasattr(vae_model, 'parameters'):
+            for param in vae_model.parameters():
+                param.requires_grad = False
+            vae_model.eval()
+            print("VAE model weights frozen for end-to-end training")
+        
+        return vae_model
+        
+    except Exception as e:
+        print(f"Error loading VAE model: {e}")
+
+def load_scaler(scaler_path):
+    """Load a scaler from a pickle file."""
+    try:
+        with open(scaler_path, 'rb') as f:
+            scaler = load(f)
+        return scaler
+    except Exception as e:
+        print(f"Error loading scaler from {scaler_path}: {e}")
+        return None
+
+def descale_latent_predictions(y_pred1, y_pred2, latent_vectors_scaler, xs_scaler):
+    """Descale latent conditioner predictions to match VAE decoder expectations."""
+    if latent_vectors_scaler is None or xs_scaler is None:
+        # Return original predictions without descaling
+        return y_pred1, y_pred2
+    
+    # Convert to numpy for scaler operations
+    y_pred1_np = y_pred1.detach().cpu().numpy()
+    y_pred2_np = y_pred2.detach().cpu().numpy()
+    
+    # Descale predictions
+    y_pred1_descaled_np = latent_vectors_scaler.inverse_transform(y_pred1_np)
+    
+    # Handle hierarchical latent vectors (y_pred2) - need to reshape for scaler
+    if len(y_pred2_np.shape) == 3:
+        original_shape = y_pred2_np.shape
+        y_pred2_reshaped = y_pred2_np.reshape(original_shape[0], -1)
+        y_pred2_descaled_np = xs_scaler.inverse_transform(y_pred2_reshaped)
+        y_pred2_descaled_np = y_pred2_descaled_np.reshape(original_shape)
+    else:
+        y_pred2_descaled_np = xs_scaler.inverse_transform(y_pred2_np)
+    
+    # Convert back to tensors on the same device
+    y_pred1_descaled = torch.from_numpy(y_pred1_descaled_np).to(y_pred1.device).float()
+    y_pred2_descaled = torch.from_numpy(y_pred2_descaled_np).to(y_pred2.device).float()
+    
+    return y_pred1_descaled, y_pred2_descaled
+
+def verify_tensor_devices(tensors_dict, expected_device):
+    """Verify all tensors are on expected device and warn about mismatches."""
+    device_issues = []
+    
+    for name, tensor in tensors_dict.items():
+        if torch.is_tensor(tensor):
+            if tensor.device != expected_device:
+                device_issues.append(f"{name}: {tensor.device} (expected {expected_device})")
+        elif isinstance(tensor, (list, tuple)):
+            for i, t in enumerate(tensor):
+                if torch.is_tensor(t) and t.device != expected_device:
+                    device_issues.append(f"{name}[{i}]: {t.device} (expected {expected_device})")
+    
+    if device_issues:
+        print(f"⚠️ DEVICE MISMATCH DETECTED:")
+        for issue in device_issues:
+            print(f"   • {issue}")
+        return False
 
 from modules.latent_conditioner import (
     DEFAULT_IMAGE_SIZE, INTERPOLATION_METHOD,
