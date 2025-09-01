@@ -402,9 +402,9 @@ def main():
     latent_conditioner_optimal_workers = get_optimal_workers(latent_conditioner_dataset_size, is_load_all=True, batch_size=latent_conditioner_batch_size)
     
     latent_conditioner_dataloader = torch.utils.data.DataLoader(
-        latent_conditioner_train_dataset, latent_conditioner_batch_size, True, latent_conditioner_optimal_workers, False, latent_conditioner_optimal_workers > 0, 2 if latent_conditioner_optimal_workers > 0 else None, True)
+        latent_conditioner_train_dataset, batch_size =latent_conditioner_batch_size, shuffle=True, num_workers=latent_conditioner_optimal_workers, pin_memory=False, persistent_workers=latent_conditioner_optimal_workers > 0, prefetch_factor=2 if latent_conditioner_optimal_workers > 0 else None, drop_last=True)
     latent_conditioner_validation_dataloader = torch.utils.data.DataLoader(
-        latent_conditioner_validation_dataset, latent_conditioner_batch_size, False, latent_conditioner_optimal_workers, False, latent_conditioner_optimal_workers > 0, 2 if latent_conditioner_optimal_workers > 0 else None, False)
+        latent_conditioner_validation_dataset, batch_size =latent_conditioner_batch_size, shuffle=False, num_workers=latent_conditioner_optimal_workers, pin_memory=False, persistent_workers=latent_conditioner_optimal_workers > 0, prefetch_factor=2 if latent_conditioner_optimal_workers > 0 else None, drop_last=False)
 
     size2 = len(num_filter_enc)-1
     device = safe_cuda_initialization()
