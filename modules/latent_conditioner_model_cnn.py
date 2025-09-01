@@ -254,7 +254,7 @@ class LatentConditionerImg(nn.Module):
         elif isinstance(module, nn.Linear):
             # Xavier initialization for final layers, Kaiming for intermediate
             if module.out_features in [self.latent_dim_end, self.latent_dim * self.size2]:
-                nn.init.xavier_normal_(module.weight, gain=0.1)  # Small gain for output layers
+                nn.init.xavier_normal_(module.weight, gain=1.0)  # Normal gain for output layers
             else:
                 nn.init.kaiming_normal_(module.weight, mode='fan_out')
             if module.bias is not None:
