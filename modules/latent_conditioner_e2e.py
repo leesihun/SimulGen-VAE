@@ -297,6 +297,7 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
         
         # Initialize per-epoch variables
         epoch_loss = 0;epoch_recon_loss = 0;epoch_latent_reg_loss = 0;num_batches = 0
+        epoch_gradient_sum = 0.0;gradient_count = 0
         
         for i, (x, y1, y2, target_data) in enumerate(e2e_dataloader):
             # Move to device
@@ -381,8 +382,12 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
                 if p.grad is not None:
                     param_norm = p.grad.data.norm(2)
                     total_norm += param_norm.item() ** 2
-            clipped_grad_norm = total_norm ** (1. / 2)
-            gradient_norms.append(clipped_grad_norm)
+            gradient_norm = total_norm ** (1. / 2)
+            gradient_norms.append(gradient_norm)
+            
+            # Accumulate for epoch averaging
+            epoch_gradient_sum += gradient_norm
+            gradient_count += 1
             
             # Optimizer step
             optimizer.step()
@@ -390,7 +395,7 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
         # Calculate training averages
         avg_train_loss = epoch_loss / num_batches if num_batches > 0 else 0.0
         avg_train_recon_loss = epoch_recon_loss / num_batches if num_batches > 0 else 0.0
-        avg_train_latent_reg_loss = epoch_latent_reg_loss/reg_weight_info / num_batches if num_batches > 0 else 0.0
+        avg_train_latent_reg_loss = epoch_latent_reg_loss / num_batches if num_batches > 0 else 0.0
 
         # Validation
         latent_conditioner.eval()
@@ -443,7 +448,7 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
         # Calculate validation averages
         avg_val_loss = val_loss / val_batches if val_batches > 0 else 0.0
         avg_val_recon_loss = val_recon_loss / val_batches if val_batches > 0 else 0.0
-        avg_val_latent_reg_loss = val_latent_reg_loss/reg_weight_info / val_batches if val_batches > 0 else 0.0
+        avg_val_latent_reg_loss = val_latent_reg_loss / val_batches if val_batches > 0 else 0.0
         
         # Update learning rate scheduler
         lr_scheduler.step()
@@ -473,13 +478,16 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
         epoch_end_time = time.time()
         epoch_duration = epoch_end_time - epoch_start_time
         
+        # Calculate average gradient norm for the epoch
+        avg_gradient_norm = epoch_gradient_sum / gradient_count if gradient_count > 0 else 0.0
+        
         scheduler_info = "CosineAnnealing"
         reg_weight_info = f", RegW: {current_reg_weight:.4f}" if use_latent_regularization else ""
         
-        print('[%d/%d]\tTrain: %.4E (recon:%.4E, reg:%.4E), Val: %.4E (recon:%.4E, reg:%.4E), LR: %.2E (%s)%s, Best: %.4E, ETA: %.2f h' % 
+        print('[%d/%d]\tTrain: %.4E (recon:%.4E, reg:%.4E), Val: %.4E (recon:%.4E, reg:%.4E), LR: %.2E (%s)%s, AvgGrad: %.4E, Best: %.4E, ETA: %.2f h' % 
               (epoch, latent_conditioner_epoch, avg_train_loss, avg_train_recon_loss, avg_train_latent_reg_loss, 
                avg_val_loss, avg_val_recon_loss, avg_val_latent_reg_loss,
-               current_lr, scheduler_info, reg_weight_info, best_val_loss,  
+               current_lr, scheduler_info, reg_weight_info, avg_gradient_norm, best_val_loss,  
                (latent_conditioner_epoch-epoch)*epoch_duration/3600))
         
     # Save improved model

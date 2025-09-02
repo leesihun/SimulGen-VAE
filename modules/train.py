@@ -125,6 +125,10 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
         kl_loss_save = 0.0
         recon_loss_MSE_save = 0.0
         
+        # Initialize gradient tracking
+        epoch_gradient_sum = 0.0
+        gradient_count = 0
+        
         
         for i, image in enumerate(train_dataloader):
             if load_all == False:
@@ -147,6 +151,18 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
 
             # Backward pass
             loss.backward()
+            
+            # Calculate gradient norm
+            total_norm = 0.0
+            for p in model.parameters():
+                if p.grad is not None:
+                    param_norm = p.grad.data.norm(2)
+                    total_norm += param_norm.item() ** 2
+            gradient_norm = total_norm ** (1. / 2)
+            
+            # Accumulate gradient statistics
+            epoch_gradient_sum += gradient_norm
+            gradient_count += 1
             
             # Optimizer step
             optimizer.step()
@@ -222,9 +238,12 @@ def train(epochs, batch_size, train_dataloader, val_dataloader, LR, num_filter_e
 
         end_time = time.time()
         epoch_duration = end_time - start_time
+        
+        # Calculate average gradient norm for the epoch
+        avg_gradient_norm = epoch_gradient_sum / gradient_count if gradient_count > 0 else 0.0
 
-        log_str = "\r[Epoch {}/{}] Loss: {:.4E}   val_loss: {:.2E}   Recon:{:.4E}   Recon_val:{:.4E}   KL:{:.4E}   Beta:{:.4E}   Time: {:.2f}s   ETA: {:.2f}h    LR: {:.2E}".format(
-            epoch+1, epochs, loss_print[epoch], loss_val_print[epoch], recon_print[epoch], recon_loss_val_print[epoch], kl_print[epoch], beta, epoch_duration, (epochs-epoch)*epoch_duration/3600, current_lr
+        log_str = "\r[Epoch {}/{}] Loss: {:.4E}   val_loss: {:.2E}   Recon:{:.4E}   Recon_val:{:.4E}   KL:{:.4E}   Beta:{:.4E}   AvgGrad:{:.4E}   Time: {:.2f}s   ETA: {:.2f}h    LR: {:.2E}".format(
+            epoch+1, epochs, loss_print[epoch], loss_val_print[epoch], recon_print[epoch], recon_loss_val_print[epoch], kl_print[epoch], beta, avg_gradient_norm, epoch_duration, (epochs-epoch)*epoch_duration/3600, current_lr
         )
 
         logging.info(log_str)
