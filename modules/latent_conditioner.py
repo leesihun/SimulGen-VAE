@@ -17,7 +17,7 @@ DEFAULT_IMAGE_SIZE = 256
 INTERPOLATION_METHOD = cv2.INTER_CUBIC
 im_size = DEFAULT_IMAGE_SIZE
 
-def image_to_canny_edges(image, low_threshold=10, high_threshold=250):
+def image_to_canny_edges(image, low_threshold=10, high_threshold=200):
     # Convert to grayscale if needed
     if len(image.shape) == 3:
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
