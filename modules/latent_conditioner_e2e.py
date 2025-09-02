@@ -379,8 +379,8 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
             loss.backward()
             
             # Hybrid gradient clipping with minimum and maximum bounds
-            min_grad_norm = 1e-4  # Minimum gradient norm (5x current 2e-5)
-            max_grad_norm = 1.0   # Maximum gradient norm (prevent explosion)
+            min_grad_norm = 1e-4  # Minimum gradient norm
+            max_grad_norm = 5   # Maximum gradient norm
             
             # Calculate original gradient norm
             total_norm = 0.0
