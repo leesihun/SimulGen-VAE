@@ -218,6 +218,8 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
     loss = 0
     latent_conditioner, device = setup_device_and_model(latent_conditioner)
 
+    LC_alpha = float(config.get('LC_alpha')) if config else 1.0
+
     # Load VAE model for end-to-end training
     vae_model_path = config.get('e2e_vae_model_path', 'model_save/SimulGen-VAE') if config else 'model_save/SimulGen-VAE'
     vae_model = load_vae_model(vae_model_path, device)
@@ -345,7 +347,7 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
             reconstructed_data, _ = vae_model.decoder(y_pred1_descaled, y_pred2_for_decoder)
             
             # Compute reconstruction loss
-            recon_loss = reconstruction_loss_fn(reconstructed_data, target_data)
+            recon_loss = reconstruction_loss_fn(reconstructed_data, target_data)*LC_alpha
             
             # Fixed regularization with label smoothing
             if use_latent_regularization:
@@ -450,7 +452,7 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
                 
                 # VAE decoder
                 reconstructed_val_data, _ = vae_model.decoder(y_pred1_val_descaled, y_pred2_val_for_decoder)
-                recon_loss_val = reconstruction_loss_fn(reconstructed_val_data, target_val_data)
+                recon_loss_val = reconstruction_loss_fn(reconstructed_val_data, target_val_data)*LC_alpha
                 
                 if use_latent_regularization:
                     # Apply label smoothing to validation targets (0.05 factor)
