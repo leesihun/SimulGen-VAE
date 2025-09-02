@@ -345,6 +345,7 @@ def parse_training_parameters(params):
     config['e2e_loss_function'] = params.get('e2e_loss_function', 'MSE')
     config['e2e_vae_model_path'] = params.get('e2e_vae_model_path', 'model_save/SimulGen-VAE')
     config['use_latent_regularization'] = int(params.get('use_latent_regularization', 0))
+    config['LC_alpha'] = float(params.get('LC_alpha', 1.0))
     config['latent_reg_weight'] = float(params.get('latent_reg_weight', 0.001))
     
     return config
