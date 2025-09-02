@@ -268,7 +268,7 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
         elif isinstance(m, nn.Linear):
             # For final prediction layers (typically small output dims), use smaller initialization
             if m.out_features <= 64:  # Final prediction layers
-                nn.init.normal_(m.weight, mean=0, std=0.01)
+                nn.init.normal_(m.weight, mean=0, std=0.1)
             else:
                 nn.init.kaiming_uniform_(m.weight, nonlinearity='relu')
             if m.bias is not None:
@@ -376,17 +376,43 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
             # Backward pass
             loss.backward()
             
-            # Monitor gradient norm without clipping
+            # Hybrid gradient clipping with minimum and maximum bounds
+            min_grad_norm = 1e-4  # Minimum gradient norm (5x current 2e-5)
+            max_grad_norm = 1.0   # Maximum gradient norm (prevent explosion)
+            
+            # Calculate original gradient norm
             total_norm = 0.0
             for p in latent_conditioner.parameters():
                 if p.grad is not None:
                     param_norm = p.grad.data.norm(2)
                     total_norm += param_norm.item() ** 2
-            gradient_norm = total_norm ** (1. / 2)
-            gradient_norms.append(gradient_norm)
+            original_gradient_norm = total_norm ** (1. / 2)
             
-            # Accumulate for epoch averaging
-            epoch_gradient_sum += gradient_norm
+            # Apply hybrid gradient clipping
+            if original_gradient_norm > 0:
+                if original_gradient_norm < min_grad_norm:
+                    # Scale up small gradients
+                    scale_factor = min_grad_norm / original_gradient_norm
+                    torch.nn.utils.clip_grad_norm_(latent_conditioner.parameters(), min_grad_norm)
+                    final_gradient_norm = min_grad_norm
+                    if i % 10 == 0:  # Print occasionally to avoid spam
+                        print(f"  Batch {i}: Scaled up gradients by {scale_factor:.2f} ({original_gradient_norm:.2E} -> {final_gradient_norm:.2E})")
+                elif original_gradient_norm > max_grad_norm:
+                    # Scale down large gradients
+                    torch.nn.utils.clip_grad_norm_(latent_conditioner.parameters(), max_grad_norm)
+                    final_gradient_norm = max_grad_norm
+                    if i % 10 == 0:
+                        print(f"  Batch {i}: Scaled down gradients ({original_gradient_norm:.2E} -> {final_gradient_norm:.2E})")
+                else:
+                    # Gradients are in acceptable range
+                    final_gradient_norm = original_gradient_norm
+            else:
+                final_gradient_norm = 0.0
+            
+            gradient_norms.append(final_gradient_norm)
+            
+            # Accumulate for epoch averaging (use final gradient norm)
+            epoch_gradient_sum += final_gradient_norm
             gradient_count += 1
             
             # Optimizer step
