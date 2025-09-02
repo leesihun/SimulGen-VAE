@@ -395,7 +395,7 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
         # Calculate training averages
         avg_train_loss = epoch_loss / num_batches if num_batches > 0 else 0.0
         avg_train_recon_loss = epoch_recon_loss / num_batches if num_batches > 0 else 0.0
-        avg_train_latent_reg_loss = epoch_latent_reg_loss / num_batches if num_batches > 0 else 0.0
+        avg_train_latent_reg_loss = epoch_latent_reg_loss/current_reg_weight / num_batches if num_batches > 0 else 0.0
 
         # Validation
         latent_conditioner.eval()
@@ -448,7 +448,7 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
         # Calculate validation averages
         avg_val_loss = val_loss / val_batches if val_batches > 0 else 0.0
         avg_val_recon_loss = val_recon_loss / val_batches if val_batches > 0 else 0.0
-        avg_val_latent_reg_loss = val_latent_reg_loss / val_batches if val_batches > 0 else 0.0
+        avg_val_latent_reg_loss = val_latent_reg_loss/current_reg_weight / val_batches if val_batches > 0 else 0.0
         
         # Update learning rate scheduler
         lr_scheduler.step()
