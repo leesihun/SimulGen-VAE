@@ -17,7 +17,7 @@ DEFAULT_IMAGE_SIZE = 256
 INTERPOLATION_METHOD = cv2.INTER_CUBIC
 im_size = DEFAULT_IMAGE_SIZE
 
-def image_to_canny_edges(image, low_threshold=10, high_threshold=200):
+def Clear_images(image, threshold=150):
     # Convert to grayscale if needed
     if len(image.shape) == 3:
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -25,8 +25,8 @@ def image_to_canny_edges(image, low_threshold=10, high_threshold=200):
         gray = image
 
     # Apply Canny edge detection
-    edges = cv2.Canny(gray, low_threshold, high_threshold)
-    return edges
+    _, binary = cv2.threshold(gray, threshold, 255, cv2.THRESH_BINARY)
+    return binary
 
 def read_latent_conditioner_dataset_img(param_dir, param_data_type):
     cur_dir = os.getcwd()
@@ -44,7 +44,7 @@ def read_latent_conditioner_dataset_img(param_dir, param_data_type):
             resized_im = cv2.resize(im, (im_size, im_size), interpolation=INTERPOLATION_METHOD)
 
             # Perform edge detection (Canny Edge detection)
-            latent_conditioner_data = image_to_canny_edges(resized_im)
+            latent_conditioner_data = Clear_images(resized_im)
             raw_images[i] = latent_conditioner_data
 
         latent_conditioner_data = raw_images.reshape(len(files), -1)
