@@ -17,6 +17,17 @@ DEFAULT_IMAGE_SIZE = 256
 INTERPOLATION_METHOD = cv2.INTER_CUBIC
 im_size = DEFAULT_IMAGE_SIZE
 
+def image_to_canny_edges(image, low_threshold=10, high_threshold=250):
+    # Convert to grayscale if needed
+    if len(image.shape) == 3:
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    else:
+        gray = image
+
+    # Apply Canny edge detection
+    edges = cv2.Canny(gray, low_threshold, high_threshold)
+    return edges
+
 def read_latent_conditioner_dataset_img(param_dir, param_data_type):
     cur_dir = os.getcwd()
     file_dir = cur_dir + param_dir
@@ -35,6 +46,9 @@ def read_latent_conditioner_dataset_img(param_dir, param_data_type):
 
         latent_conditioner_data = raw_images.reshape(len(files), -1)
         latent_conditioner_data_shape = (im_size, im_size)
+
+        # Perform edge detection (Canny Edge detection)
+        latent_conditioner_data = image_to_canny_edges(latent_conditioner_data)
             
     else:
         raise NotImplementedError('Data type not supported')
