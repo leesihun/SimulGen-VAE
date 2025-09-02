@@ -347,7 +347,7 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
             reconstructed_data, _ = vae_model.decoder(y_pred1_descaled, y_pred2_for_decoder)
             
             # Compute reconstruction loss
-            recon_loss = reconstruction_loss_fn(reconstructed_data, target_data)*LC_alpha
+            recon_loss = reconstruction_loss_fn(reconstructed_data, target_data)
             
             # Fixed regularization with label smoothing
             if use_latent_regularization:
@@ -365,7 +365,7 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
                 # Weight main regularization more heavily (it's more important)
                 latent_reg_total = 0.9 * latent_reg_main + 0.1 * latent_reg_hier
                 
-                loss = recon_loss + current_reg_weight * latent_reg_total
+                loss = LC_alpha * recon_loss + current_reg_weight * latent_reg_total
                 epoch_latent_reg_loss += (current_reg_weight * latent_reg_total).item()
             else:
                 loss = recon_loss
@@ -452,7 +452,7 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
                 
                 # VAE decoder
                 reconstructed_val_data, _ = vae_model.decoder(y_pred1_val_descaled, y_pred2_val_for_decoder)
-                recon_loss_val = reconstruction_loss_fn(reconstructed_val_data, target_val_data)*LC_alpha
+                recon_loss_val = reconstruction_loss_fn(reconstructed_val_data, target_val_data)
                 
                 if use_latent_regularization:
                     # Apply label smoothing to validation targets (0.05 factor)
@@ -464,7 +464,7 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
                     latent_reg_hier_val = nn.MSELoss()(y_pred2_val_tensor.reshape(-1), y2_val_smooth.reshape(-1))
                     latent_reg_total_val = 0.9 * latent_reg_main_val + 0.1 * latent_reg_hier_val
                     
-                    total_val_loss = recon_loss_val + current_reg_weight * latent_reg_total_val
+                    total_val_loss = LC_alpha * recon_loss_val + current_reg_weight * latent_reg_total_val
                     val_latent_reg_loss += (current_reg_weight * latent_reg_total_val).item()
                 else:
                     total_val_loss = recon_loss_val
