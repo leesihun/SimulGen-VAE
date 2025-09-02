@@ -477,8 +477,8 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
         reg_weight_info = f", RegW: {current_reg_weight:.4f}" if use_latent_regularization else ""
         
         print('[%d/%d]\tTrain: %.4E (recon:%.4E, reg:%.4E), Val: %.4E (recon:%.4E, reg:%.4E), LR: %.2E (%s)%s, Best: %.4E, ETA: %.2f h' % 
-              (epoch, latent_conditioner_epoch, avg_train_loss, avg_train_recon_loss, avg_train_latent_reg_loss, 
-               avg_val_loss, avg_val_recon_loss, avg_val_latent_reg_loss,
+              (epoch, latent_conditioner_epoch, avg_train_loss, avg_train_recon_loss, avg_train_latent_reg_loss/reg_weight_info, 
+               avg_val_loss, avg_val_recon_loss, avg_val_latent_reg_loss/reg_weight_info,
                current_lr, scheduler_info, reg_weight_info, best_val_loss,
                (latent_conditioner_epoch-epoch)*epoch_duration/3600))
         
