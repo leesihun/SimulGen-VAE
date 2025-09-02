@@ -390,7 +390,7 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
         # Calculate training averages
         avg_train_loss = epoch_loss / num_batches if num_batches > 0 else 0.0
         avg_train_recon_loss = epoch_recon_loss / num_batches if num_batches > 0 else 0.0
-        avg_train_latent_reg_loss = epoch_latent_reg_loss / num_batches if num_batches > 0 else 0.0
+        avg_train_latent_reg_loss = epoch_latent_reg_loss/reg_weight_info / num_batches if num_batches > 0 else 0.0
 
         # Validation
         latent_conditioner.eval()
@@ -443,7 +443,7 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
         # Calculate validation averages
         avg_val_loss = val_loss / val_batches if val_batches > 0 else 0.0
         avg_val_recon_loss = val_recon_loss / val_batches if val_batches > 0 else 0.0
-        avg_val_latent_reg_loss = val_latent_reg_loss / val_batches if val_batches > 0 else 0.0
+        avg_val_latent_reg_loss = val_latent_reg_loss/reg_weight_info / val_batches if val_batches > 0 else 0.0
         
         # Update learning rate scheduler
         lr_scheduler.step()
@@ -477,9 +477,9 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
         reg_weight_info = f", RegW: {current_reg_weight:.4f}" if use_latent_regularization else ""
         
         print('[%d/%d]\tTrain: %.4E (recon:%.4E, reg:%.4E), Val: %.4E (recon:%.4E, reg:%.4E), LR: %.2E (%s)%s, Best: %.4E, ETA: %.2f h' % 
-              (epoch, latent_conditioner_epoch, avg_train_loss, avg_train_recon_loss, avg_train_latent_reg_loss/reg_weight_info, 
-               avg_val_loss, avg_val_recon_loss, avg_val_latent_reg_loss/reg_weight_info,
-               current_lr, scheduler_info, reg_weight_info, best_val_loss,
+              (epoch, latent_conditioner_epoch, avg_train_loss, avg_train_recon_loss, avg_train_latent_reg_loss, 
+               avg_val_loss, avg_val_recon_loss, avg_val_latent_reg_loss,
+               current_lr, scheduler_info, reg_weight_info, best_val_loss,  
                (latent_conditioner_epoch-epoch)*epoch_duration/3600))
         
     # Save improved model
