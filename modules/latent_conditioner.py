@@ -42,13 +42,13 @@ def read_latent_conditioner_dataset_img(param_dir, param_data_type):
             file_path = os.path.join(file_dir, file)
             im = cv2.imread(file_path, 0)
             resized_im = cv2.resize(im, (im_size, im_size), interpolation=INTERPOLATION_METHOD)
-            raw_images[i] = resized_im
+
+            # Perform edge detection (Canny Edge detection)
+            latent_conditioner_data = image_to_canny_edges(resized_im)
+            raw_images[i] = latent_conditioner_data
 
         latent_conditioner_data = raw_images.reshape(len(files), -1)
         latent_conditioner_data_shape = (im_size, im_size)
-
-        # Perform edge detection (Canny Edge detection)
-        latent_conditioner_data = image_to_canny_edges(latent_conditioner_data)
             
     else:
         raise NotImplementedError('Data type not supported')
