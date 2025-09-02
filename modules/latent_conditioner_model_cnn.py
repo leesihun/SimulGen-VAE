@@ -227,41 +227,47 @@ class LatentConditionerImg(nn.Module):
             nn.Dropout(dropout_rate * 0.4)
         )
         
-        # Simplified main latent prediction head (3 layers)
-        self.latent_main_head = nn.Sequential(
-            # Layer 1
+        # Main latent prediction head with residual connections
+        self.latent_main_layer1 = nn.Sequential(
             add_sn(nn.Linear(hidden_dim, hidden_dim // 2)),
-            nn.LayerNorm(hidden_dim // 2),
+            nn.BatchNorm1d(hidden_dim // 2),
             nn.SiLU(),
-            nn.Dropout(dropout_rate * 0.3),
-            
-            # Layer 2
-            add_sn(nn.Linear(hidden_dim // 2, hidden_dim // 4)),
-            nn.LayerNorm(hidden_dim // 4),
-            nn.SiLU(),
-            nn.Dropout(dropout_rate * 0.2),
-            
-            # Layer 3 - Output
-            nn.Linear(hidden_dim // 4, latent_dim_end)
+            nn.Dropout(dropout_rate * 0.3)
         )
         
-        # Simplified hierarchical latent prediction head (3 layers)
-        self.xs_head = nn.Sequential(
-            # Layer 1
-            add_sn(nn.Linear(hidden_dim, hidden_dim // 2)),
-            nn.LayerNorm(hidden_dim // 2),
-            nn.SiLU(),
-            nn.Dropout(dropout_rate * 0.3),
-            
-            # Layer 2
+        self.latent_main_layer2 = nn.Sequential(
             add_sn(nn.Linear(hidden_dim // 2, hidden_dim // 4)),
-            nn.LayerNorm(hidden_dim // 4),
+            nn.BatchNorm1d(hidden_dim // 4),
             nn.SiLU(),
-            nn.Dropout(dropout_rate * 0.2),
-            
-            # Layer 3 - Output
-            nn.Linear(hidden_dim // 4, latent_dim * size2)
+            nn.Dropout(0.2)  # Increased dropout for final layers
         )
+        
+        # Skip connection projection
+        self.main_skip_proj = nn.Linear(hidden_dim, hidden_dim // 4)
+        
+        # Final output layer
+        self.latent_main_output = nn.Linear(hidden_dim // 4, latent_dim_end)
+        
+        # Hierarchical latent prediction head with residual connections
+        self.xs_layer1 = nn.Sequential(
+            add_sn(nn.Linear(hidden_dim, hidden_dim // 2)),
+            nn.BatchNorm1d(hidden_dim // 2),
+            nn.SiLU(),
+            nn.Dropout(dropout_rate * 0.3)
+        )
+        
+        self.xs_layer2 = nn.Sequential(
+            add_sn(nn.Linear(hidden_dim // 2, hidden_dim // 4)),
+            nn.BatchNorm1d(hidden_dim // 4),
+            nn.SiLU(),
+            nn.Dropout(0.2)  # Increased dropout for final layers
+        )
+        
+        # Skip connection projection
+        self.xs_skip_proj = nn.Linear(hidden_dim, hidden_dim // 4)
+        
+        # Final output layer
+        self.xs_output = nn.Linear(hidden_dim // 4, latent_dim * size2)
         
         # Initialize weights
         self.apply(self._init_weights)
@@ -326,9 +332,23 @@ class LatentConditionerImg(nn.Module):
         x = self.global_pool(x).flatten(1)
         features = self.feature_processor(x)
         
-        # Prediction heads
-        latent_main = self.latent_main_head(features)
-        xs = self.xs_head(features)
+        # Main latent prediction with residual connection
+        main_intermediate = self.latent_main_layer1(features)
+        main_features = self.latent_main_layer2(main_intermediate)
+        
+        # Skip connection from original features to final layer
+        main_skip = self.main_skip_proj(features)
+        main_combined = main_features + main_skip
+        latent_main = self.latent_main_output(main_combined)
+        
+        # Hierarchical latent prediction with residual connection
+        xs_intermediate = self.xs_layer1(features)
+        xs_features = self.xs_layer2(xs_intermediate)
+        
+        # Skip connection from original features to final layer
+        xs_skip = self.xs_skip_proj(features)
+        xs_combined = xs_features + xs_skip
+        xs = self.xs_output(xs_combined)
         
         # Reshape hierarchical latents
         xs = xs.unflatten(1, (self.size2, self.latent_dim))

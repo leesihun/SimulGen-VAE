@@ -117,12 +117,6 @@ from modules.latent_conditioner import (
     safe_cuda_initialization, safe_initialize_weights_He, setup_device_and_model
 )
 
-# Import new adaptive scheduling tools
-from modules.adaptive_training_scheduler import (
-    AdaptiveLearningRateScheduler, AdaptiveRegularizationScheduler,
-    GradientHealthMonitor, LossStagnationDetector, create_loss_stagnation_plot
-)
-
 def setup_improved_optimizer_and_scheduler(latent_conditioner, latent_conditioner_lr, 
                                          weight_decay, latent_conditioner_epoch):
     """
@@ -143,17 +137,13 @@ def setup_improved_optimizer_and_scheduler(latent_conditioner, latent_conditione
     )
     
     # Use adaptive scheduler instead of fixed cosine
-    adaptive_scheduler = AdaptiveLearningRateScheduler(
-        optimizer=optimizer,
-        initial_lr=latent_conditioner_lr,
-        patience=100,  # Wait 20 epochs before reducing
-        factor=0.8,   # Reduce by 20% each time
-        min_lr=1e-6,
-        plateau_threshold=1e-6,
-        warmup_epochs=30  # Longer warmup for E2E
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer,
+        T_max=latent_conditioner_epoch,
+        eta_min=1e-8
     )
     
-    return optimizer, adaptive_scheduler
+    return optimizer, scheduler
 
 def improved_data_augmentation(x, target_data, y1, y2, is_image_data, device, use_latent_regularization):
     """
@@ -167,20 +157,20 @@ def improved_data_augmentation(x, target_data, y1, y2, is_image_data, device, us
         x = x + noise
     
     # 2. Conservative dropout-style occlusion
-    if torch.rand(1, device=device) < 0.3:
-        mask = torch.ones_like(x)
-        num_patches = int(0.01 * x.numel())  # Mask only 1% of pixels
-        indices = torch.randperm(x.numel(), device=device)[:num_patches]
-        mask.view(-1)[indices] = 0.95  # Very light masking
-        x = x * mask
+    # if torch.rand(1, device=device) < 0.3:
+    #     mask = torch.ones_like(x)
+    #     num_patches = int(0.01 * x.numel())  # Mask only 1% of pixels
+    #     indices = torch.randperm(x.numel(), device=device)[:num_patches]
+    #     mask.view(-1)[indices] = 0.95  # Very light masking
+    #     x = x * mask
     
     # 3. Very mild Gaussian blur (only if image data)
-    if is_image_data and torch.rand(1, device=device) < 0.2:
-        im_size = int(math.sqrt(x.shape[-1]))
-        x_2d = x.reshape(-1, im_size, im_size)
-        # Extremely light smoothing
-        x_smooth = 0.9 * x_2d + 0.05 * torch.roll(x_2d, 1, dims=1) + 0.05 * torch.roll(x_2d, 1, dims=2)
-        x = x_smooth.reshape(x.shape[0], -1)
+    # if is_image_data and torch.rand(1, device=device) < 0.2:
+    #     im_size = int(math.sqrt(x.shape[-1]))
+    #     x_2d = x.reshape(-1, im_size, im_size)
+    #     # Extremely light smoothing
+    #     x_smooth = 0.9 * x_2d + 0.05 * torch.roll(x_2d, 1, dims=1) + 0.05 * torch.roll(x_2d, 1, dims=2)
+    #     x = x_smooth.reshape(x.shape[0], -1)
     
     # 4. Ultra-conservative mixup (reduced probability and strength)
     if torch.rand(1, device=device) < 0.1 and x.size(0) > 1:
@@ -203,10 +193,10 @@ def improved_data_augmentation(x, target_data, y1, y2, is_image_data, device, us
                 y2 = lam * y2 + (1 - lam) * y2[index, :]
     
     # 5. Very light brightness/contrast (reduced from ±10% to ±3%)
-    if torch.rand(1, device=device) < 0.3:
-        brightness_factor = 1.0 + (torch.rand(1, device=device) - 0.5) * 0.06  # ±3%
-        contrast_factor = 1.0 + (torch.rand(1, device=device) - 0.5) * 0.06
-        x = torch.clamp(x * contrast_factor + (brightness_factor - 1.0), 0, 1)
+    # if torch.rand(1, device=device) < 0.3:
+    #     brightness_factor = 1.0 + (torch.rand(1, device=device) - 0.5) * 0.06  # ±3%
+    #     contrast_factor = 1.0 + (torch.rand(1, device=device) - 0.5) * 0.06
+    #     x = torch.clamp(x * contrast_factor + (brightness_factor - 1.0), 0, 1)
     
     return x, target_data, y1, y2
 
@@ -262,21 +252,34 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
     latent_reg_weight = float(config.get('latent_reg_weight')) if config else 0.001
 
     # Setup improved optimizer and scheduler
-    optimizer, adaptive_lr_scheduler = setup_improved_optimizer_and_scheduler(
+    optimizer, lr_scheduler = setup_improved_optimizer_and_scheduler(
         latent_conditioner, latent_conditioner_lr, weight_decay, latent_conditioner_epoch
     )
     
-    # Setup improved regularization scheduler
-    adaptive_reg_scheduler = AdaptiveRegularizationScheduler(latent_reg_weight, latent_conditioner_epoch, 30, 1.5, 0.2)
-    
-    # Setup gradient health monitor
-    grad_monitor = GradientHealthMonitor(latent_conditioner, 3.0, 1.5)
-    
-    # Setup loss stagnation detector
-    stagnation_detector = LossStagnationDetector(25, 1e-7)
-    
     latent_conditioner = latent_conditioner.to(device)
-    latent_conditioner.apply(safe_initialize_weights_He)
+    
+    # Proper weight initialization for SiLU activation
+    def init_weights(m):
+        if isinstance(m, nn.Conv2d):
+            # He initialization for conv layers with SiLU activation
+            nn.init.kaiming_uniform_(m.weight, nonlinearity='relu')
+            if m.bias is not None:
+                nn.init.zeros_(m.bias)
+        elif isinstance(m, nn.Linear):
+            # For final prediction layers (typically small output dims), use smaller initialization
+            if m.out_features <= 64:  # Final prediction layers
+                nn.init.normal_(m.weight, mean=0, std=0.01)
+            else:
+                nn.init.kaiming_uniform_(m.weight, nonlinearity='relu')
+            if m.bias is not None:
+                nn.init.zeros_(m.bias)
+        elif isinstance(m, (nn.GroupNorm, nn.LayerNorm, nn.BatchNorm2d)):
+            if hasattr(m, 'weight') and m.weight is not None:
+                nn.init.ones_(m.weight)
+            if hasattr(m, 'bias') and m.bias is not None:
+                nn.init.zeros_(m.bias)
+    
+    latent_conditioner.apply(init_weights)
     model_summary_shown = False
 
     print(f"🚀 Starting improved end-to-end latent conditioner training for {latent_conditioner_epoch} epochs")
@@ -343,13 +346,18 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
             # Compute reconstruction loss
             recon_loss = reconstruction_loss_fn(reconstructed_data, target_data)
             
-            # Adaptive regularization
+            # Fixed regularization with label smoothing
             if use_latent_regularization:
-                current_reg_weight = adaptive_reg_scheduler.get_weight(epoch, recon_loss.item())
+                current_reg_weight = latent_reg_weight
+                
+                # Apply label smoothing to latent targets (0.05 factor)
+                smoothing_factor = 0.05
+                y1_smooth = y1 + smoothing_factor * torch.randn_like(y1)
+                y2_smooth = y2 + smoothing_factor * torch.randn_like(y2)
                 
                 # Improved regularization with better weighting
-                latent_reg_main = nn.MSELoss()(y_pred1, y1)
-                latent_reg_hier = nn.MSELoss()(y_pred2_tensor.reshape(-1), y2.reshape(-1))
+                latent_reg_main = nn.MSELoss()(y_pred1, y1_smooth)
+                latent_reg_hier = nn.MSELoss()(y_pred2_tensor.reshape(-1), y2_smooth.reshape(-1))
                 
                 # Weight main regularization more heavily (it's more important)
                 latent_reg_total = 0.9 * latent_reg_main + 0.1 * latent_reg_hier
@@ -367,8 +375,13 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
             # Backward pass
             loss.backward()
             
-            # Adaptive gradient clipping and monitoring
-            clipped_grad_norm = grad_monitor.clip_and_monitor(epoch)
+            # Monitor gradient norm without clipping
+            total_norm = 0.0
+            for p in latent_conditioner.parameters():
+                if p.grad is not None:
+                    param_norm = p.grad.data.norm(2)
+                    total_norm += param_norm.item() ** 2
+            clipped_grad_norm = total_norm ** (1. / 2)
             gradient_norms.append(clipped_grad_norm)
             
             # Optimizer step
@@ -409,8 +422,13 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
                 recon_loss_val = reconstruction_loss_fn(reconstructed_val_data, target_val_data)
                 
                 if use_latent_regularization:
-                    latent_reg_main_val = nn.MSELoss()(y_pred1_val, y1_val)
-                    latent_reg_hier_val = nn.MSELoss()(y_pred2_val_tensor.reshape(-1), y2_val.reshape(-1))
+                    # Apply label smoothing to validation targets (0.05 factor)
+                    smoothing_factor = 0.05
+                    y1_val_smooth = y1_val + smoothing_factor * torch.randn_like(y1_val)
+                    y2_val_smooth = y2_val + smoothing_factor * torch.randn_like(y2_val)
+                    
+                    latent_reg_main_val = nn.MSELoss()(y_pred1_val, y1_val_smooth)
+                    latent_reg_hier_val = nn.MSELoss()(y_pred2_val_tensor.reshape(-1), y2_val_smooth.reshape(-1))
                     latent_reg_total_val = 0.9 * latent_reg_main_val + 0.1 * latent_reg_hier_val
                     
                     total_val_loss = recon_loss_val + current_reg_weight * latent_reg_total_val
@@ -427,8 +445,9 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
         avg_val_recon_loss = val_recon_loss / val_batches if val_batches > 0 else 0.0
         avg_val_latent_reg_loss = val_latent_reg_loss / val_batches if val_batches > 0 else 0.0
         
-        # Update adaptive learning rate scheduler
-        current_lr = adaptive_lr_scheduler.step(avg_val_loss)
+        # Update learning rate scheduler
+        lr_scheduler.step()
+        current_lr = optimizer.param_groups[0]['lr']
         
         # Check for best model
         if avg_val_loss < best_val_loss:
@@ -438,19 +457,7 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
         else:
             patience_counter += 1
         
-        # Loss stagnation detection
-        stagnation_info = stagnation_detector.update(avg_train_loss, avg_val_loss, epoch)
-        if stagnation_info:
-            print(f"🚨 Loss Stagnation Detected at Epoch {epoch}:")
-            print(f"   Stagnant for {stagnation_info['stagnation_epochs']} epochs")
-            print(f"   Issues: {', '.join(stagnation_info['issues'])}")
-            
-            # Implement recovery strategies
-            if 'learning_rate_too_low' in stagnation_info['issues']:
-                # Boost learning rate temporarily
-                for param_group in optimizer.param_groups:
-                    param_group['lr'] *= 2.0
-                print(f"   Recovery: Boosted LR to {optimizer.param_groups[0]['lr']:.2e}")
+        # Simple progress tracking (removed stagnation detection)
         
         # Store metrics for plotting
         train_losses.append(avg_train_loss)
@@ -466,7 +473,7 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
         epoch_end_time = time.time()
         epoch_duration = epoch_end_time - epoch_start_time
         
-        scheduler_info = f"Adaptive (patience: {adaptive_lr_scheduler.plateau_count}/{adaptive_lr_scheduler.patience})"
+        scheduler_info = "CosineAnnealing"
         reg_weight_info = f", RegW: {current_reg_weight:.4f}" if use_latent_regularization else ""
         
         print('[%d/%d]\tTrain: %.4E (recon:%.4E, reg:%.4E), Val: %.4E (recon:%.4E, reg:%.4E), LR: %.2E (%s)%s, Best: %.4E, ETA: %.2f h' % 
