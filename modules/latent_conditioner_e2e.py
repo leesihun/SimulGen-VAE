@@ -361,7 +361,13 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
                 # Improved regularization with better weighting
                 latent_reg_main = nn.MSELoss()(y_pred1, y1_smooth)
                 latent_reg_hier = nn.MSELoss()(y_pred2_tensor.reshape(-1), y2_smooth.reshape(-1))
-                
+
+
+
+                print(f"latent range: {y_pred1.min():.4f}, {y_pred1.max():.4f}")
+                print(f"model latent range: {y1.min():.4f}, {y1.max():.4f}")
+
+
                 # Weight main regularization more heavily (it's more important)
                 latent_reg_total = 0.9 * latent_reg_main + 0.1 * latent_reg_hier
                 
