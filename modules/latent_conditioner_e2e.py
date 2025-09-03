@@ -447,21 +447,24 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
                 # Prepare for VAE decoder
                 y_pred2_val_tensor = y_pred2_val
                 y_pred2_val_for_decoder = y_pred2_val_descaled
+                
                 if torch.is_tensor(y_pred2_val_for_decoder):
-                    y_pred2_val_for_decoder = [y_pred2_val_for_decoder[:, i, :] for i in range(y_pred2_val_for_decoder.shape[1])]
+                    if y_pred2_val_for_decoder.dim() == 3 and y_pred2_val_for_decoder.shape[1] == 3:
+                        y_pred2_val_for_decoder = [y_pred2_val_for_decoder[:, i, :] for i in range(y_pred2_val_for_decoder.shape[1])]
+                    elif y_pred2_val_for_decoder.dim() == 2:
+                        num_layers = 3
+                        latent_dim = y_pred2_val_for_decoder.shape[1] // num_layers
+                        y_pred2_val_for_decoder = y_pred2_val_for_decoder.view(y_pred2_val_for_decoder.shape[0], num_layers, latent_dim)
+                        y_pred2_val_for_decoder = [y_pred2_val_for_decoder[:, i, :] for i in range(num_layers)]
                 
                 # VAE decoder
                 reconstructed_val_data, _ = vae_model.decoder(y_pred1_val_descaled, y_pred2_val_for_decoder)
                 recon_loss_val = reconstruction_loss_fn(reconstructed_val_data, target_val_data)
                 
                 if use_latent_regularization:
-                    # Apply label smoothing to validation targets (0.05 factor)
-                    smoothing_factor = 0.05
-                    y1_val_smooth = y1_val + smoothing_factor * torch.randn_like(y1_val)
-                    y2_val_smooth = y2_val + smoothing_factor * torch.randn_like(y2_val)
-                    
-                    latent_reg_main_val = nn.MSELoss()(y_pred1_val, y1_val_smooth)
-                    latent_reg_hier_val = nn.MSELoss()(y_pred2_val_tensor.reshape(-1), y2_val_smooth.reshape(-1))
+                    # NO label smoothing for validation - use clean targets
+                    latent_reg_main_val = nn.MSELoss()(y_pred1_val, y1_val)
+                    latent_reg_hier_val = nn.MSELoss()(y_pred2_val_tensor.reshape(-1), y2_val.reshape(-1))
                     latent_reg_total_val = 0.9 * latent_reg_main_val + 0.1 * latent_reg_hier_val
                     
                     total_val_loss = LC_alpha * recon_loss_val + current_reg_weight * latent_reg_total_val
