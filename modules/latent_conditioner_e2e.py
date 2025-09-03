@@ -145,7 +145,7 @@ def setup_improved_optimizer_and_scheduler(latent_conditioner, latent_conditione
     
     return optimizer, scheduler
 
-def improved_data_augmentation(x, target_data, y1, y2, is_image_data, device, use_latent_regularization):
+def data_augmentation(x, target_data, y1, y2, is_image_data, device, use_latent_regularization):
     """
     Improved data augmentation that's more conservative and physics-aware.
     """
@@ -320,7 +320,7 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
                 model_summary_shown = True
             
             # Apply improved data augmentation
-            # x, target_data, y1, y2 = improved_data_augmentation(x, target_data, y1, y2, is_image_data, device, use_latent_regularization)
+            x, target_data, y1, y2 = data_augmentation(x, target_data, y1, y2, is_image_data, device, use_latent_regularization)
             
             # Forward pass
             optimizer.zero_grad(set_to_none=True)
