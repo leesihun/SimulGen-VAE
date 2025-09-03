@@ -1,231 +1,393 @@
 # SimulGenVAE v2.0.0
 
-A high-performance Physics-Aware Variational Autoencoder system designed for fast generation and inference of transient/static simulation data with Physics-Aware Neural Network (PANN) integration.
+**High-Performance Physics-Aware Variational Autoencoder for Simulation Data Generation**
 
-## Features
+SimulGenVAE is a state-of-the-art deep learning system designed for fast generation and inference of transient and static simulation data. It features hierarchical latent spaces, multiple conditioning architectures, and distributed training capabilities optimized for physics simulation workflows.
 
-- **Multi-GPU Support**: Single-GPU and distributed training (DDP) with automatic scaling
-- **Multiple Architectures**: Three latent conditioning architectures (MLP, CNN, Vision Transformer)
-- **Hierarchical Latent Space**: Main latent space (32D) with hierarchical dimensions (8D × layers)
-- **Mixed Precision Training**: Optimized memory usage with gradient checkpointing support
-- **Comprehensive Data Processing**: Advanced augmentation and validation pipelines
-- **Flexible Input Types**: Support for simulation arrays, parametric CSV, and image data
+[![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://python.org)
+[![PyTorch](https://img.shields.io/badge/PyTorch-Latest-orange.svg)](https://pytorch.org)
+[![CUDA](https://img.shields.io/badge/CUDA-Compatible-green.svg)](https://developer.nvidia.com/cuda-zone)
 
-## Supported Input Types
+## 🚀 Key Features
 
-| Input Type | Format | Description |
-|------------|--------|-------------|
-| **Simulation Data** | 3D arrays [parameters, timesteps, nodes] | Primary physics simulation data |
-| **Parametric Data** | CSV files | For MLP-based latent conditioning |
-| **Image Data** | PNG/JPG files | For CNN/Vision Transformer conditioning |
-| **PCA-processed** | Reduced dimensionality | Efficient MLP conditioning from images |
+### Advanced Architecture
+- **Hierarchical Variational Autoencoder** with 32D main + 8D hierarchical latent spaces
+- **Three Conditioning Architectures**: MLP (parametric), CNN (images), Vision Transformer (images)
+- **Physics-Aware Neural Networks (PANN)** integration for domain constraints
+- **Multi-scale Feature Processing** with progressive encoder-decoder networks
 
-## Installation
+### High-Performance Training
+- **Multi-GPU Distributed Training** with automatic scaling (DDP)
+- **Mixed Precision Training** with gradient checkpointing for memory efficiency  
+- **Advanced Loss Functions**: MSE, MAE, SmoothL1, Huber with KL warmup scheduling
+- **Comprehensive Data Augmentation** pipelines for robust training
 
-### Prerequisites
+### Flexible Data Support
+- **Simulation Arrays**: 3D physics data [parameters × timesteps × nodes]
+- **Images**: PNG/JPG for CNN/Vision Transformer conditioning
+- **Parametric Data**: CSV files for MLP-based conditioning
+- **PCA Processing**: Efficient dimensionality reduction for large datasets
 
-- Python 3.8+
-- CUDA-compatible GPU (recommended)
-- PyTorch with CUDA support
+## 📋 System Requirements
 
-### Install Dependencies
+### Minimum Requirements
+- **Python**: 3.8 or higher
+- **Memory**: 8GB RAM (16GB+ recommended)
+- **GPU**: CUDA-compatible GPU with 6GB+ VRAM
+- **Storage**: 10GB free space
 
+### Recommended Configuration
+- **Python**: 3.9-3.11
+- **GPU**: RTX 3080/4080 or A100 with 12GB+ VRAM
+- **Multi-GPU**: 2-8 GPUs for distributed training
+- **Memory**: 32GB+ RAM for large datasets
+
+## 🛠️ Installation
+
+### 1. Clone Repository
+```bash
+git clone https://github.com/yourusername/SimulGenVAE.git
+cd SimulGenVAE
+```
+
+### 2. Install Dependencies
 ```bash
 pip install -r requirements.txt
 ```
 
-### Key Dependencies
-
-- PyTorch + torchvision
-- NumPy, pandas, scikit-learn
-- matplotlib, OpenCV
-- librosa, audiomentations
-- TensorBoard for monitoring
-
-## Quick Start
-
-### Basic Training
-
+### 3. Verify Installation
 ```bash
-# Single GPU training
+python SimulGen-VAE.py --help
+```
+
+## ⚡ Quick Start
+
+### Single GPU Training
+```bash
+# Train full VAE with small architecture
 python SimulGen-VAE.py --preset=1 --plot=2 --lc_only=0 --size=small
 
-# Multi-GPU training
-torchrun --nproc_per_node=4 SimulGen-VAE.py --use_ddp --preset=1
-
-# Latent Conditioner only
+# Train only latent conditioner (requires pre-trained VAE)
 python SimulGen-VAE.py --preset=1 --lc_only=1 --size=small
 ```
 
-### Using the DDP Launcher
-
+### Multi-GPU Distributed Training
 ```bash
-# Simplified multi-GPU launch
+# Use torchrun directly
+torchrun --nproc_per_node=4 SimulGen-VAE.py --use_ddp --preset=1
+
+# Use convenience launcher
 python launch_ddp.py --gpus=2 --preset=1 --plot=2 --size=small
 ```
 
-## Configuration
+## 📁 Project Structure
 
-### Preset System
-
-Configure training parameters in `preset.txt`:
 ```
-data_No, init_beta_divisior, num_filter_enc, latent_conditioner_filter
-1
-0
-1024 512 256 128
-8 16 32 64 96 128 160 192 160 128 96 64 48 32
+SimulGenVAE/
+├── SimulGen-VAE.py              # Main training script
+├── launch_ddp.py                # Distributed training launcher
+├── preset.txt                   # Model architecture presets
+├── requirements.txt             # Python dependencies
+│
+├── input_data/
+│   └── condition.txt            # Primary configuration file
+│
+├── modules/                     # Core implementation modules
+│   ├── VAE_network.py          # Hierarchical VAE architecture
+│   ├── encoder.py              # Progressive encoder networks
+│   ├── decoder.py              # Progressive decoder networks
+│   ├── train.py                # Main training loops
+│   ├── latent_conditioner*.py  # Conditioning model variants
+│   ├── data_preprocess.py      # Data processing pipeline
+│   ├── augmentation.py         # Data augmentation systems
+│   ├── losses.py               # Loss function implementations
+│   ├── utils.py                # Core utilities and data loading
+│   └── plotter.py              # Visualization and monitoring
+│
+├── checkpoints/                 # Training checkpoints
+├── model_save/                  # Final trained models
+├── output/                      # Training logs and results
+└── images/                      # Image data (when using image conditioning)
 ```
 
-### Detailed Configuration
+## 🔧 Configuration
 
-Edit `input_data/condition.txt` for comprehensive settings:
+### Quick Configuration (preset.txt)
+The preset system provides pre-configured architectures:
 
+```
+data_No, init_beta_divisor, num_filter_enc, latent_conditioner_filter
+1                          # Dataset/preset number
+0                          # Beta divisor (0 = no KL warmup)
+1024 512 256 128          # VAE encoder filter progression
+8 16 32 64 128 256 128    # Latent conditioner filter progression
+```
+
+### Detailed Configuration (input_data/condition.txt)
+
+#### Dataset Dimensions
 ```ini
-# Dataset dimensions
-Dim1        484     # number of parameters
-Dim2        200     # number of timesteps  
-Dim3        95008   # number of nodes
-
-# VAE Training Parameters
-Training_epochs     10002
-Batch_size         8
-LearningR          0.001
-Latent_dim         8      # Hierarchical latent dimension
-Latent_dim_end     32     # Main latent dimension
-Loss_type          1      # 1:MSE, 2:MAE, 3:SmoothL1, 4:Huber
-
-# Latent Conditioner Settings
-input_type         image  # image, csvs
-param_dir          /images
-n_epoch            3000
-latent_conditioner_lr    0.003
-use_spatial_attention    1
+Dim1        484      # Number of parameters in simulation
+Dim2        200      # Number of timesteps  
+Dim3        95008    # Number of spatial nodes
+num_var     1        # Number of variables
 ```
 
-## Command Line Arguments
-
-| Argument | Description | Options |
-|----------|-------------|---------|
-| `--preset` | Dataset preset selection | 1-5 (reads from preset.txt) |
-| `--plot` | Visualization mode | 0=interactive, 1=save, 2=off |
-| `--lc_only` | Training mode | 0=full VAE, 1=LatentConditioner only |
-| `--size` | Model architecture | small, large |
-| `--load_all` | Memory strategy | 0=lazy loading, 1=preload all |
-| `--use_ddp` | Enable distributed training | flag |
-
-## Architecture Overview
-
-### Core Components
-
-```
-SimulGen-VAE.py                 # Main training script
-├── modules/
-│   ├── VAE_network.py         # Core VAE with hierarchical latent space
-│   ├── encoder.py             # Encoder architecture
-│   ├── decoder.py             # Decoder architecture
-│   ├── latent_conditioner_model_parametric.py  # MLP conditioning
-│   ├── latent_conditioner_model_cnn.py         # CNN/ViT conditioning
-│   ├── train.py               # VAE training loops
-│   ├── latent_conditioner.py  # LC training
-│   └── utils.py               # Core utilities & data loading
+#### Training Parameters
+```ini
+Training_epochs     10002    # Total training epochs
+Batch_size         16       # Training batch size
+LearningR          0.001    # Learning rate
+Latent_dim         8        # Hierarchical latent dimension
+Latent_dim_end     32       # Main latent dimension
+Loss_type          1        # 1:MSE, 2:MAE, 3:SmoothL1, 4:Huber
+alpha              1000000  # KL loss scaling factor
 ```
 
-### Training Modes
-
-1. **Full VAE Training** (`--lc_only=0`)
-   - Trains complete VAE encoder/decoder + LatentConditioner
-   - Best for new datasets or architecture changes
-
-2. **Latent Conditioner Only** (`--lc_only=1`) 
-   - Trains only LatentConditioner using pre-trained VAE
-   - Efficient for parameter space exploration
-
-3. **End-to-End Training**
-   - Joint optimization of VAE and conditioning network
-   - Configured via `use_e2e_training=1` in condition.txt
-
-## Data Preparation
-
-### Dataset Structure
-
-```
-input_data/
-├── condition.txt              # Main configuration
-├── dataset1.pickle           # Simulation data (3D arrays)
-├── dataset2.pickle           # Additional datasets
-└── images/                   # Image data for conditioning
-    ├── param_001.png
-    ├── param_002.png
-    └── ...
+#### Latent Conditioner Settings
+```ini
+input_type                 image    # 'image' or 'csvs'
+param_dir                 /images   # Directory containing conditioning data
+param_data_type           .png      # File extension for image data
+n_epoch                   10000     # Conditioner training epochs
+latent_conditioner_lr     0.001     # Conditioner learning rate
+latent_conditioner_batch  16        # Conditioner batch size
+use_spatial_attention     1         # Enable spatial attention (1=on)
 ```
 
-### Data Format
+## 🎯 Training Modes
 
-- **Simulation Data**: Pickled NumPy arrays with shape `[parameters, timesteps, nodes]`
-- **Image Data**: PNG/JPG files in `/images` directory 
-- **CSV Data**: Parametric data for MLP conditioning
+### 1. Full VAE Training (`--lc_only=0`)
+Trains the complete pipeline: encoder, decoder, and latent conditioner.
+- **Use case**: New datasets, architecture changes
+- **Time**: Longer training duration
+- **Memory**: Higher memory requirements
 
-## Monitoring and Output
+### 2. Latent Conditioner Only (`--lc_only=1`) 
+Trains only the conditioning network using a pre-trained VAE.
+- **Use case**: Parameter space exploration, conditioning optimization
+- **Time**: Faster training
+- **Memory**: Lower memory requirements
 
-### Directory Structure
+### 3. End-to-End Training
+Joint optimization of VAE and conditioning networks.
+- **Configuration**: Set `use_e2e_training=1` in condition.txt
+- **Use case**: Fine-tuning for specific downstream tasks
+- **Benefits**: Optimal end-to-end performance
 
+## 💾 Data Preparation
+
+### Simulation Data Format
+```python
+# Expected format: 3D NumPy array
+data_shape = (n_parameters, n_timesteps, n_nodes)
+# Example: (484, 200, 95008)
+
+# Save as pickle file
+import pickle
+import numpy as np
+
+simulation_data = np.random.random((484, 200, 95008))
+with open('dataset1.pickle', 'wb') as f:
+    pickle.dump(simulation_data, f)
 ```
-├── checkpoints/              # Model checkpoints during training
-├── model_save/              # Final saved models
-├── output/                  # Training logs and results
-└── images/                  # Generated/reconstructed samples
+
+### Image Conditioning Data
 ```
+images/
+├── param_001.png    # First parameter set
+├── param_002.png    # Second parameter set  
+├── param_003.png    # Third parameter set
+└── ...
+```
+- **Format**: PNG/JPG images
+- **Resolution**: Automatically resized to 256×256
+- **Naming**: Sequential or parameter-based naming
+
+### CSV Parametric Data
+```csv
+param1,param2,param3,param4,...
+0.1,0.5,0.8,0.3,...
+0.2,0.4,0.9,0.1,...
+0.3,0.6,0.7,0.5,...
+```
+- **Format**: Standard CSV with header
+- **Processing**: Automatic PCA reduction for efficiency
+- **Features**: Numerical parameters only
+
+## 📊 Monitoring and Evaluation
 
 ### TensorBoard Integration
-
-Monitor training progress:
 ```bash
+# Start TensorBoard
 tensorboard --logdir=output/
+
+# Access at http://localhost:6006
 ```
 
-## Performance Optimization
+**Tracked Metrics:**
+- Training/validation losses (reconstruction, KL divergence)
+- Learning rate schedules
+- GPU memory utilization
+- Training speed (samples/second)
+- Reconstruction quality metrics
+
+### Output Directory Structure
+```
+output/
+├── tensorboard_logs/     # TensorBoard log files
+├── training_plots/       # Generated visualization plots  
+├── checkpoints/          # Model checkpoints with timestamps
+├── validation_results/   # Validation outputs and metrics
+└── generated_samples/    # Sample reconstructions and generations
+```
+
+## 🚄 Performance Optimization
 
 ### Memory Management
-- Use `--load_all=0` for large datasets (lazy loading)
-- Adjust batch sizes based on GPU memory
-- Enable gradient checkpointing for memory efficiency
-
-### Multi-GPU Training
-- Automatic GPU detection and scaling
-- Optimized data distribution across devices
-- Synchronized batch normalization for stable training
-
-## Examples
-
-### Physics Simulation Training
-
 ```bash
-# Train on simulation data with small model
-python SimulGen-VAE.py --preset=1 --size=small --plot=1
+# For large datasets - enable lazy loading
+python SimulGen-VAE.py --load_all=0 --preset=1
 
-# Large-scale distributed training
-torchrun --nproc_per_node=8 SimulGen-VAE.py --use_ddp --preset=2 --size=large
+# Reduce batch size for memory constraints
+# Edit Batch_size in input_data/condition.txt
 ```
 
-### Image-Conditioned Generation
-
+### Multi-GPU Scaling
 ```bash
-# Train with image conditioning
-python SimulGen-VAE.py --preset=3 --lc_only=0 --size=small
+# Scale across available GPUs
+torchrun --nproc_per_node=$(nvidia-smi --list-gpus | wc -l) SimulGen-VAE.py --use_ddp
 
-# Focus on latent conditioner with pre-trained VAE  
-python SimulGen-VAE.py --preset=3 --lc_only=1 --size=small
+# Custom GPU count
+python launch_ddp.py --gpus=4 --preset=1 --size=large
 ```
 
-## Contributing
+### Architecture Sizing
+- **`--size=small`**: Memory-efficient, suitable for development and limited hardware
+- **`--size=large`**: Full performance architecture for production training
 
-This project was developed for physics-aware simulation data processing. For questions or collaboration:
+## 🔬 Advanced Usage Examples
 
-**Author**: SiHun Lee, Ph.D.  
-**Contact**: kevin1007kr@gmail.com  
-**Version**: 2.0.0 (Refactored & Documented)
+### Physics Simulation Workflow
+```bash
+# 1. Train VAE on simulation data
+python SimulGen-VAE.py --preset=1 --lc_only=0 --size=small --plot=1
 
-## License
+# 2. Train image conditioner using pre-trained VAE
+python SimulGen-VAE.py --preset=1 --lc_only=1 --size=small
 
-This project is available for research and educational purposes. Please cite appropriately if used in academic work.
+# 3. End-to-end fine-tuning (set use_e2e_training=1 in condition.txt)
+python SimulGen-VAE.py --preset=1 --lc_only=0 --size=small
+```
+
+### Large-Scale Distributed Training
+```bash
+# Multi-node, multi-GPU training
+torchrun \
+  --nproc_per_node=8 \
+  --nnodes=4 \
+  --node_rank=$NODE_RANK \
+  --master_addr=$MASTER_ADDR \
+  --master_port=29500 \
+  SimulGen-VAE.py --use_ddp --preset=2 --size=large
+```
+
+### Hyperparameter Sweeps
+```bash
+# Different architectures
+for size in small large; do
+  for preset in 1 2 3; do
+    python SimulGen-VAE.py --preset=$preset --size=$size --lc_only=1
+  done
+done
+```
+
+## 🛠️ Command Line Reference
+
+| Parameter | Description | Options | Default |
+|-----------|-------------|---------|---------|
+| `--preset` | Configuration preset | 1-5 | 1 |
+| `--plot` | Visualization mode | 0=interactive, 1=save, 2=off | 2 |
+| `--lc_only` | Training scope | 0=full VAE, 1=conditioner only | 0 |
+| `--size` | Model architecture | small, large | small |
+| `--load_all` | Data loading strategy | 0=lazy, 1=preload | 1 |
+| `--use_ddp` | Distributed training | flag | False |
+
+### DDP Launcher Options
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `--gpus` | Number of GPUs | 2 |
+| `--master_port` | DDP communication port | 29500 |
+| `--train_latent_conditioner_only` | LC-only mode | 0 |
+
+## 🔍 Troubleshooting
+
+### Common Issues
+
+#### Out of Memory Errors
+```bash
+# Solution 1: Reduce batch size
+# Edit Batch_size in input_data/condition.txt
+
+# Solution 2: Use small architecture  
+python SimulGen-VAE.py --size=small
+
+# Solution 3: Enable lazy loading
+python SimulGen-VAE.py --load_all=0
+```
+
+#### Training Instability
+```bash
+# Check learning rates in condition.txt
+LearningR                    0.0001  # Reduce if unstable
+latent_conditioner_lr        0.0001  # Reduce if unstable
+
+# Adjust KL warmup (beta divisor in preset.txt)
+# Higher values = slower KL warmup = more stable
+```
+
+#### Distributed Training Issues
+```bash
+# Ensure consistent PyTorch versions across nodes
+pip install torch==1.13.1 torchvision==0.14.1
+
+# Check CUDA compatibility
+python -c "import torch; print(torch.cuda.is_available(), torch.version.cuda)"
+
+# Use different port if conflicts occur
+python launch_ddp.py --master_port=29501
+```
+
+### Data Issues
+- **File not found**: Verify dataset files exist and paths are correct
+- **Shape mismatch**: Check Dim1, Dim2, Dim3 match actual data dimensions
+- **Memory issues with large datasets**: Use lazy loading (`--load_all=0`)
+
+## 📖 Citation
+
+If you use SimulGenVAE in your research, please cite:
+
+```bibtex
+@software{simulgen_vae_2024,
+  title={SimulGenVAE: High-Performance Physics-Aware Variational Autoencoder},
+  author={Lee, SiHun},
+  version={2.0.0},
+  year={2024},
+  url={https://github.com/yourusername/SimulGenVAE}
+}
+```
+
+## 👨‍💻 Author & Contact
+
+**SiHun Lee, Ph.D.**  
+📧 kevin1007kr@gmail.com  
+🔬 Specializing in Physics-Aware Neural Networks and Simulation Data Processing
+
+## 📄 License
+
+This project is available for research and educational purposes. Commercial use requires explicit permission from the author.
+
+---
+
+**Version**: 2.0.0 (Refactored & Documented)  
+**Last Updated**: September 2025

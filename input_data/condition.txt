@@ -44,4 +44,4 @@ e2e_loss_function	Huber   #MSE, MAE, Huber, SmoothL1 - loss function for reconst
 e2e_vae_model_path	model_save/SimulGen-VAE	# path to pre-trained VAE model
 use_latent_regularization	1	# 0=disabled, 1=enabled - add latent space regularization
 LC_alpha    1000000
-latent_reg_weight	0.001   #increased from 0.001 for better latent guidance
+latent_reg_weight	1   #increased from 0.001 for better latent guidance
