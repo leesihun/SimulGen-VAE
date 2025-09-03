@@ -173,24 +173,24 @@ def data_augmentation(x, target_data, y1, y2, is_image_data, device, use_latent_
     #     x = x_smooth.reshape(x.shape[0], -1)
     
     # 4. Ultra-conservative mixup (reduced probability and strength)
-    if torch.rand(1, device=device) < 0.1 and x.size(0) > 1:
-        # Only mix very similar samples
-        target_dists = torch.cdist(target_data.view(target_data.size(0), -1), 
-                                 target_data.view(target_data.size(0), -1))
-        similar_threshold = torch.quantile(target_dists, 0.2)  # Top 20% most similar
-        similar_pairs = target_dists < similar_threshold
+    # if torch.rand(1, device=device) < 0.1 and x.size(0) > 1:
+    #     # Only mix very similar samples
+    #     target_dists = torch.cdist(target_data.view(target_data.size(0), -1), 
+    #                              target_data.view(target_data.size(0), -1))
+    #     similar_threshold = torch.quantile(target_dists, 0.2)  # Top 20% most similar
+    #     similar_pairs = target_dists < similar_threshold
         
-        if similar_pairs.sum() > x.size(0):
-            alpha = 0.05  # Very conservative mixing (was 0.1)
-            lam = torch.tensor(np.random.beta(alpha, alpha), device=device, dtype=x.dtype)
-            batch_size = x.size(0)
-            index = torch.randperm(batch_size, device=device)
+    #     if similar_pairs.sum() > x.size(0):
+    #         alpha = 0.05  # Very conservative mixing (was 0.1)
+    #         lam = torch.tensor(np.random.beta(alpha, alpha), device=device, dtype=x.dtype)
+    #         batch_size = x.size(0)
+    #         index = torch.randperm(batch_size, device=device)
             
-            x = lam * x + (1 - lam) * x[index, :]
-            target_data = lam * target_data + (1 - lam) * target_data[index, :]
-            if use_latent_regularization:
-                y1 = lam * y1 + (1 - lam) * y1[index, :]
-                y2 = lam * y2 + (1 - lam) * y2[index, :]
+    #         x = lam * x + (1 - lam) * x[index, :]
+    #         target_data = lam * target_data + (1 - lam) * target_data[index, :]
+    #         if use_latent_regularization:
+    #             y1 = lam * y1 + (1 - lam) * y1[index, :]
+    #             y2 = lam * y2 + (1 - lam) * y2[index, :]
     
     # 5. Very light brightness/contrast (reduced from ±10% to ±3%)
     # if torch.rand(1, device=device) < 0.3:
@@ -361,12 +361,6 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
                 # Improved regularization with better weighting
                 latent_reg_main = nn.MSELoss()(y_pred1, y1_smooth)
                 latent_reg_hier = nn.MSELoss()(y_pred2_tensor.reshape(-1), y2_smooth.reshape(-1))
-
-
-
-                print(f"latent range: {y_pred1.min():.4f}, {y_pred1.max():.4f}")
-                print(f"model latent range: {y1.min():.4f}, {y1.max():.4f}")
-
 
                 # Weight main regularization more heavily (it's more important)
                 latent_reg_total = 0.9 * latent_reg_main + 0.1 * latent_reg_hier
