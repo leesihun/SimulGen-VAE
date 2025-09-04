@@ -439,7 +439,7 @@ def main():
                 condition_data=np.float32(physical_param_input), latent_main_data=np.float32(out_latent_vectors), latent_hier_data=np.float32(out_hierarchical_latent_vectors), target_reconstruction_data=np.float32(new_x_train), load_all=load_all)
             
             # Split E2E dataset into train/validation (follows existing pattern)
-            e2e_dataset_size = len(e2e_dataset);e2e_train_size = int(0.8 * e2e_dataset_size);e2e_val_size = e2e_dataset_size - e2e_train_size            
+            e2e_dataset_size = len(e2e_dataset);e2e_train_size = int(0.7 * e2e_dataset_size);e2e_val_size = e2e_dataset_size - e2e_train_size            
             e2e_train_dataset, e2e_validation_dataset = random_split(e2e_dataset, [e2e_train_size, e2e_val_size])
             
             e2e_dataloader = torch.utils.data.DataLoader(
