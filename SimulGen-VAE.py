@@ -411,10 +411,13 @@ def main():
 
     size2 = len(num_filter_enc)-1
     device = safe_cuda_initialization()
+
+    from modules.latent_conditioner_model_simple_cnn import SimpleLatentConditionerImg
     
     if latent_conditioner_data_type == 'image':
         print("Initializing LatentConditioner CNN image model...")
-        latent_conditioner = LatentConditionerImg(latent_conditioner_filter, latent_dim_end, input_shape, latent_dim, size2, latent_conditioner_data_shape, dropout_rate=latent_conditioner_dropout_rate, use_attention=bool(use_spatial_attention)).to(device)
+        #latent_conditioner = LatentConditionerImg(latent_conditioner_filter, latent_dim_end, input_shape, latent_dim, size2, latent_conditioner_data_shape, dropout_rate=latent_conditioner_dropout_rate, use_attention=bool(use_spatial_attention)).to(device)
+        latent_conditioner = SimpleLatentConditionerImg(latent_conditioner_filter, latent_dim_end, input_shape, latent_dim, size2, latent_conditioner_data_shape, dropout_rate=latent_conditioner_dropout_rate, use_attention=bool(use_spatial_attention)).to(device)
     elif latent_conditioner_data_type == 'csv':
         print("Initializing LatentConditioner MLP CSV model...")
         latent_conditioner = LatentConditioner(latent_conditioner_filter, latent_dim_end, input_shape, latent_dim, size2, dropout_rate=latent_conditioner_dropout_rate).to(device)
