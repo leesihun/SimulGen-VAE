@@ -8,7 +8,7 @@ Key Features:
 - ResNet-style backbone with GroupNorm and Squeeze-and-Excitation attention
 - Adaptive average pooling for flexible input sizes
 - Spectral normalization for training stability
-- Progressive channel scaling with modern activations (SiLU)
+- Progressive channel scaling with ReLU activations
 - Dual output heads for main and hierarchical latent predictions
 - Optional spatial attention mechanisms
 - Comprehensive dropout and regularization
@@ -77,7 +77,7 @@ class ResNetBlock(nn.Module):
     Features:
     - Standard 2-convolution bottleneck architecture
     - GroupNormalization for better performance across batch sizes
-    - SiLU activation for improved gradient flow
+    - ReLU activation for improved gradient flow
     - Squeeze-and-Excitation attention on select layers
     - Spectral normalization for stability
     """
@@ -121,7 +121,7 @@ class ResNetBlock(nn.Module):
         identity = x
         
         # Two-layer convolution path
-        out = F.silu(self.gn1(self.conv1(x)))
+        out = F.relu(self.gn1(self.conv1(x)))
         out = self.gn2(self.conv2(out))
         
         # Apply SE attention if enabled
@@ -130,7 +130,7 @@ class ResNetBlock(nn.Module):
         
         # Standard skip connection
         out = out + self.skip(identity)
-        out = F.silu(out)
+        out = F.relu(out)
         
         return out
 
@@ -182,7 +182,7 @@ class LatentConditionerImg(nn.Module):
         self.initial_conv = nn.Sequential(
             add_sn(nn.Conv2d(input_channels, latent_conditioner_filter[0], 7, 1, 3, bias=False)),
             nn.GroupNorm(self._get_num_groups(latent_conditioner_filter[0]), latent_conditioner_filter[0]),
-            nn.SiLU(),
+            nn.ReLU(),
             nn.MaxPool2d(3, 2, 1)
         )
         
@@ -217,13 +217,13 @@ class LatentConditionerImg(nn.Module):
             # First processing layer
             add_sn(nn.Linear(final_channels, hidden_dim)),
             nn.LayerNorm(hidden_dim),
-            nn.SiLU(),
+            nn.ReLU(),
             nn.Dropout(dropout_rate * 0.4),
             
             # Second processing layer
             add_sn(nn.Linear(hidden_dim, hidden_dim)),
             nn.LayerNorm(hidden_dim),
-            nn.SiLU(),
+            nn.ReLU(),
             nn.Dropout(dropout_rate * 0.4)
         )
         
@@ -231,14 +231,14 @@ class LatentConditionerImg(nn.Module):
         self.latent_main_layer1 = nn.Sequential(
             add_sn(nn.Linear(hidden_dim, hidden_dim // 2)),
             nn.BatchNorm1d(hidden_dim // 2),
-            nn.SiLU(),
+            nn.ReLU(),
             nn.Dropout(dropout_rate * 0.3)
         )
         
         self.latent_main_layer2 = nn.Sequential(
             add_sn(nn.Linear(hidden_dim // 2, hidden_dim // 4)),
             nn.BatchNorm1d(hidden_dim // 4),
-            nn.SiLU(),
+            nn.ReLU(),
             nn.Dropout(0.2)  # Increased dropout for final layers
         )
         
@@ -252,14 +252,14 @@ class LatentConditionerImg(nn.Module):
         self.xs_layer1 = nn.Sequential(
             add_sn(nn.Linear(hidden_dim, hidden_dim // 2)),
             nn.BatchNorm1d(hidden_dim // 2),
-            nn.SiLU(),
+            nn.ReLU(),
             nn.Dropout(dropout_rate * 0.3)
         )
         
         self.xs_layer2 = nn.Sequential(
             add_sn(nn.Linear(hidden_dim // 2, hidden_dim // 4)),
             nn.BatchNorm1d(hidden_dim // 4),
-            nn.SiLU(),
+            nn.ReLU(),
             nn.Dropout(0.2)  # Increased dropout for final layers
         )
         
@@ -284,7 +284,7 @@ class LatentConditionerImg(nn.Module):
     def _init_weights(self, module):
         """Initialize weights using modern best practices."""
         if isinstance(module, nn.Conv2d):
-            # Kaiming initialization for SiLU/ReLU-like activations
+            # Kaiming initialization for ReLU activations
             nn.init.kaiming_normal_(module.weight, mode='fan_out', nonlinearity='relu')
         elif isinstance(module, nn.Linear):
             # Xavier initialization for final layers, Kaiming for intermediate
