@@ -353,10 +353,14 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
             if use_latent_regularization:
                 current_reg_weight = latent_reg_weight
                 
-                # Apply label smoothing to latent targets (0.05 factor)
-                smoothing_factor = 0.05
-                y1_smooth = y1 + smoothing_factor * torch.randn_like(y1)
-                y2_smooth = y2 + smoothing_factor * torch.randn_like(y2)
+                # # Apply label smoothing to latent targets (0.05 factor)
+                # smoothing_factor = 0.05
+                # y1_smooth = y1 + smoothing_factor * torch.randn_like(y1)
+                # y2_smooth = y2 + smoothing_factor * torch.randn_like(y2)
+                
+                # Deleted label smoothing
+                y1_smooth = y1
+                y2_smooth = y2
                 
                 # Improved regularization with better weighting
                 latent_reg_main = nn.MSELoss()(y_pred1, y1_smooth)
