@@ -61,48 +61,51 @@ class SimpleLatentConditionerImg(nn.Module):
         else:
             input_channels = 1  # Default to grayscale
         
-        # Ultra-simple CNN backbone - only 3 layers
-        # Layer 1: 1→32 channels, large receptive field
+        # Ultra-simple CNN backbone - only 3 layers with dropout
+        # Layer 1: 1→16 channels (reduced capacity), large receptive field
         self.conv1 = nn.Sequential(
-            nn.Conv2d(input_channels, 32, kernel_size=7, stride=1, padding=3, bias=False),
-            nn.BatchNorm2d(32),
+            nn.Conv2d(input_channels, 16, kernel_size=7, stride=1, padding=3, bias=False),
+            nn.BatchNorm2d(16),
             nn.GELU(),
+            nn.Dropout2d(0.3),  # Add conv dropout for regularization
             nn.MaxPool2d(kernel_size=2, stride=2)  # 256→128
         )
         
-        # Layer 2: 32→64 channels
+        # Layer 2: 16→32 channels (reduced capacity)
         self.conv2 = nn.Sequential(
-            nn.Conv2d(32, 64, kernel_size=5, stride=1, padding=2, bias=False),
-            nn.BatchNorm2d(64),
+            nn.Conv2d(16, 32, kernel_size=5, stride=1, padding=2, bias=False),
+            nn.BatchNorm2d(32),
             nn.GELU(),
+            nn.Dropout2d(0.3),  # Add conv dropout for regularization
             nn.MaxPool2d(kernel_size=2, stride=2)  # 128→64
         )
         
-        # Layer 3: 64→128 channels
+        # Layer 3: 32→64 channels (reduced capacity)
         self.conv3 = nn.Sequential(
-            nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1, bias=False),
-            nn.BatchNorm2d(128),
+            nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.BatchNorm2d(64),
             nn.GELU(),
+            nn.Dropout2d(0.3),  # Add conv dropout for regularization
             nn.MaxPool2d(kernel_size=2, stride=2)  # 64→32
         )
         
         # Global pooling to handle any input size
         self.global_pool = nn.AdaptiveAvgPool2d(1)
         
-        # Simple feature processing with strong regularization
+        # Simple feature processing with very strong regularization
         self.feature_processor = nn.Sequential(
             nn.Dropout(dropout_rate),
-            nn.Linear(128, 256),
+            nn.Linear(64, 128),  # Reduced from 128→256 to 64→128
             nn.GELU(),
             nn.Dropout(dropout_rate),
-            nn.Linear(256, 128),
+            nn.Linear(128, 64),  # Reduced from 256→128 to 128→64
             nn.GELU(),
-            nn.Dropout(dropout_rate * 0.5)  # Slightly less dropout before final outputs
+            nn.Dropout(dropout_rate * 0.8)  # Higher dropout before final outputs
         )
         
-        # Dual output heads - simple single-layer projections
-        self.latent_main_head = nn.Linear(128, latent_dim_end)
-        self.xs_head = nn.Linear(128, latent_dim * size2)
+        # Dual output heads - simple single-layer projections (reduced input size)
+        self.latent_main_head = nn.Linear(64, latent_dim_end)  # Changed from 128 to 64
+        self.xs_head = nn.Linear(64, latent_dim * size2)  # Changed from 128 to 64
         
         # Initialize weights properly for GELU
         self.apply(self._init_weights)
