@@ -66,7 +66,7 @@ class SimpleLatentConditionerImg(nn.Module):
         self.conv1 = nn.Sequential(
             nn.Conv2d(input_channels, 32, kernel_size=7, stride=1, padding=3, bias=False),
             nn.BatchNorm2d(32),
-            nn.ReLU(inplace=True),
+            nn.GELU(),
             nn.MaxPool2d(kernel_size=2, stride=2)  # 256→128
         )
         
@@ -74,7 +74,7 @@ class SimpleLatentConditionerImg(nn.Module):
         self.conv2 = nn.Sequential(
             nn.Conv2d(32, 64, kernel_size=5, stride=1, padding=2, bias=False),
             nn.BatchNorm2d(64),
-            nn.ReLU(inplace=True),
+            nn.GELU(),
             nn.MaxPool2d(kernel_size=2, stride=2)  # 128→64
         )
         
@@ -82,7 +82,7 @@ class SimpleLatentConditionerImg(nn.Module):
         self.conv3 = nn.Sequential(
             nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1, bias=False),
             nn.BatchNorm2d(128),
-            nn.ReLU(inplace=True),
+            nn.GELU(),
             nn.MaxPool2d(kernel_size=2, stride=2)  # 64→32
         )
         
@@ -93,10 +93,10 @@ class SimpleLatentConditionerImg(nn.Module):
         self.feature_processor = nn.Sequential(
             nn.Dropout(dropout_rate),
             nn.Linear(128, 256),
-            nn.ReLU(inplace=True),
+            nn.GELU(),
             nn.Dropout(dropout_rate),
             nn.Linear(256, 128),
-            nn.ReLU(inplace=True),
+            nn.GELU(),
             nn.Dropout(dropout_rate * 0.5)  # Slightly less dropout before final outputs
         )
         
@@ -104,19 +104,16 @@ class SimpleLatentConditionerImg(nn.Module):
         self.latent_main_head = nn.Linear(128, latent_dim_end)
         self.xs_head = nn.Linear(128, latent_dim * size2)
         
-        # Initialize weights properly for ReLU
+        # Initialize weights properly for GELU
         self.apply(self._init_weights)
     
     def _init_weights(self, module):
-        """Initialize weights using Kaiming initialization for ReLU."""
+        """Initialize weights using Xavier initialization for GELU."""
         if isinstance(module, nn.Conv2d):
-            nn.init.kaiming_normal_(module.weight, mode='fan_out', nonlinearity='relu')
+            nn.init.xavier_uniform_(module.weight, gain=1.0)
         elif isinstance(module, nn.Linear):
-            # Xavier for output layers, Kaiming for intermediate
-            if module.out_features in [self.latent_dim_end, self.latent_dim * self.size2]:
-                nn.init.xavier_normal_(module.weight, gain=1.0)
-            else:
-                nn.init.kaiming_normal_(module.weight, mode='fan_out', nonlinearity='relu')
+            # Xavier initialization for all linear layers with GELU
+            nn.init.xavier_uniform_(module.weight, gain=1.0)
             if module.bias is not None:
                 nn.init.constant_(module.bias, 0)
         elif isinstance(module, nn.BatchNorm2d):
@@ -136,15 +133,9 @@ class SimpleLatentConditionerImg(nn.Module):
                 - latent_main: Main latent predictions [batch, latent_dim_end]
                 - xs: Hierarchical latent predictions [batch, size2, latent_dim]
         """
-        # Handle input reshaping - same as complex model for compatibility
-        if x.dim() == 2:  # Flattened input
-            batch_size = x.shape[0]
-            spatial_dim = int(math.sqrt(x.shape[-1]))
-            x = x.reshape(batch_size, 1, spatial_dim, spatial_dim)
-        
-        # Ensure input is in expected range [0, 1]
-        if x.min() < -0.1:  # Likely in [-1, 1] range
-            x = (x + 1) / 2  # Convert to [0, 1]
+        batch_size = x.shape[0]
+        spatial_dim = int(math.sqrt(x.shape[-1]))
+        x = x.reshape(batch_size, 1, spatial_dim, spatial_dim)
         
         # Simple CNN forward pass
         x = self.conv1(x)    # [batch, 32, 128, 128]
