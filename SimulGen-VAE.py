@@ -416,8 +416,8 @@ def main():
     
     if latent_conditioner_data_type == 'image':
         print("Initializing LatentConditioner CNN image model...")
-        #latent_conditioner = LatentConditionerImg(latent_conditioner_filter, latent_dim_end, input_shape, latent_dim, size2, latent_conditioner_data_shape, dropout_rate=latent_conditioner_dropout_rate, use_attention=bool(use_spatial_attention)).to(device)
-        latent_conditioner = SimpleLatentConditionerImg(latent_conditioner_filter, latent_dim_end, input_shape, latent_dim, size2, latent_conditioner_data_shape, dropout_rate=latent_conditioner_dropout_rate, use_attention=bool(use_spatial_attention)).to(device)
+        latent_conditioner = LatentConditionerImg(latent_conditioner_filter, latent_dim_end, input_shape, latent_dim, size2, latent_conditioner_data_shape, dropout_rate=latent_conditioner_dropout_rate, use_attention=bool(use_spatial_attention)).to(device)
+        #latent_conditioner = SimpleLatentConditionerImg(latent_conditioner_filter, latent_dim_end, input_shape, latent_dim, size2, latent_conditioner_data_shape, dropout_rate=latent_conditioner_dropout_rate, use_attention=bool(use_spatial_attention)).to(device)
     elif latent_conditioner_data_type == 'csv':
         print("Initializing LatentConditioner MLP CSV model...")
         latent_conditioner = LatentConditioner(latent_conditioner_filter, latent_dim_end, input_shape, latent_dim, size2, dropout_rate=latent_conditioner_dropout_rate).to(device)
@@ -456,7 +456,7 @@ def main():
             _ = train_latent_conditioner_e2e(
                 latent_conditioner_epoch=latent_conditioner_epoch, e2e_dataloader=e2e_dataloader, e2e_validation_dataloader=e2e_validation_dataloader, latent_conditioner=latent_conditioner, latent_conditioner_lr=latent_conditioner_lr, weight_decay=latent_conditioner_weight_decay, is_image_data=image, image_size=256, config=config)
         
-        # Use enhanced training if enabled for CNN models, otherwise use original training
+        # Use enhanced training if e nabled for CNN models, otherwise use original training
         else:
             print(f"Using enhanced CNN latent conditioner training")
             _ = train_latent_conditioner_with_enhancements(
