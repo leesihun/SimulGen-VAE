@@ -313,7 +313,10 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
                 
                 print(f"🔍 Model Input Analysis:")
                 print(f"   Input shape: {x.shape}, range: [{x.min():.4f}, {x.max():.4f}]")
-                print(f"   Target shape: {target_data.shape}")
+                print(f"   Target shape: {target_data.shape}, range: [{target_data.min():.4f}, {target_data.max():.4f}]")
+                print(f"   Predicted latent range: y1[{y_pred1.min():.4f}, {y_pred1.max():.4f}], y2[{y_pred2.min():.4f}, {y_pred2.max():.4f}]")
+                print(f"   Descaled latent range: y1[{y_pred1_descaled.min():.4f}, {y_pred1_descaled.max():.4f}], y2[{y_pred2_descaled.min():.4f}, {y_pred2_descaled.max():.4f}]")
+                print(f"   Reconstructed range: [{reconstructed_data.min():.4f}, {reconstructed_data.max():.4f}]")
                 print(f"   Image size: {img_size}x{img_size} ({input_features} pixels)")
                 
                 summary(latent_conditioner, (batch_size, 1, input_features))
