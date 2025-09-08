@@ -329,7 +329,9 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
             
             # Diagnostic prints (every 100 epochs, first batch only)
             if i == 0 and epoch % 100 == 0:
-                print(f"🔧 Epoch {epoch} - Latent Predictions - y1: [{y_pred1.min():.4f}, {y_pred1.max():.4f}], y2: [{y_pred2.min():.4f}, {y_pred2.max():.4f}]")
+                print(f"🔧 Epoch {epoch} - CNN vs Target Latents:")
+                print(f"   y1 - CNN: [{y_pred1.min():.4f}, {y_pred1.max():.4f}], Target: [{y1.min():.4f}, {y1.max():.4f}]")
+                print(f"   y2 - CNN: [{y_pred2.min():.4f}, {y_pred2.max():.4f}], Target: [{y2.min():.4f}, {y2.max():.4f}]")
             
             # Descale predictions for VAE decoder
             y_pred1_descaled, y_pred2_descaled = descale_latent_predictions(y_pred1, y_pred2, latent_vectors_scaler, xs_scaler)
