@@ -314,9 +314,6 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
                 print(f"🔍 Model Input Analysis:")
                 print(f"   Input shape: {x.shape}, range: [{x.min():.4f}, {x.max():.4f}]")
                 print(f"   Target shape: {target_data.shape}, range: [{target_data.min():.4f}, {target_data.max():.4f}]")
-                print(f"   Predicted latent range: y1[{y_pred1.min():.4f}, {y_pred1.max():.4f}], y2[{y_pred2.min():.4f}, {y_pred2.max():.4f}]")
-                print(f"   Descaled latent range: y1[{y_pred1_descaled.min():.4f}, {y_pred1_descaled.max():.4f}], y2[{y_pred2_descaled.min():.4f}, {y_pred2_descaled.max():.4f}]")
-                print(f"   Reconstructed range: [{reconstructed_data.min():.4f}, {reconstructed_data.max():.4f}]")
                 print(f"   Image size: {img_size}x{img_size} ({input_features} pixels)")
                 
                 summary(latent_conditioner, (batch_size, 1, input_features))
@@ -330,8 +327,16 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
             
             y_pred1, y_pred2 = latent_conditioner(x)
             
+            # Diagnostic prints (first batch only)
+            if i == 0 and epoch == 0:
+                print(f"🔧 Latent Predictions - y1: [{y_pred1.min():.4f}, {y_pred1.max():.4f}], y2: [{y_pred2.min():.4f}, {y_pred2.max():.4f}]")
+            
             # Descale predictions for VAE decoder
             y_pred1_descaled, y_pred2_descaled = descale_latent_predictions(y_pred1, y_pred2, latent_vectors_scaler, xs_scaler)
+            
+            # Diagnostic prints (first batch only)
+            if i == 0 and epoch == 0:
+                print(f"🔧 Descaled Latents - y1: [{y_pred1_descaled.min():.4f}, {y_pred1_descaled.max():.4f}], y2: [{y_pred2_descaled.min():.4f}, {y_pred2_descaled.max():.4f}]")
             
             # Prepare hierarchical latents for VAE decoder
             y_pred2_tensor = y_pred2  # Keep original for regularization
@@ -348,6 +353,11 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
             
             # VAE decoder forward pass
             reconstructed_data, _ = vae_model.decoder(y_pred1_descaled, y_pred2_for_decoder)
+            
+            # Diagnostic prints (first batch only)
+            if i == 0 and epoch == 0:
+                print(f"🔧 Reconstructed Data - range: [{reconstructed_data.min():.4f}, {reconstructed_data.max():.4f}]")
+                print(f"🔧 Target vs Reconstructed - Target: [{target_data.min():.4f}, {target_data.max():.4f}], Recon: [{reconstructed_data.min():.4f}, {reconstructed_data.max():.4f}]")
             
             # Compute reconstruction loss
             recon_loss = reconstruction_loss_fn(reconstructed_data, target_data)
