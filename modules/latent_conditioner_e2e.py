@@ -338,7 +338,11 @@ def train_latent_conditioner_e2e(latent_conditioner_epoch, e2e_dataloader, e2e_v
             
             # Diagnostic prints (every 100 epochs, first batch only)
             if i == 0 and epoch % 100 == 0:
-                print(f"🔧 Epoch {epoch} - Descaled Latents - y1: [{y_pred1_descaled.min():.4f}, {y_pred1_descaled.max():.4f}], y2: [{y_pred2_descaled.min():.4f}, {y_pred2_descaled.max():.4f}]")
+                # Get target descaled latents for comparison
+                y1_target_descaled, y2_target_descaled = descale_latent_predictions(y1, y2, latent_vectors_scaler, xs_scaler)
+                print(f"🔧 Epoch {epoch} - Descaled Latents Comparison:")
+                print(f"   y1 - CNN: [{y_pred1_descaled.min():.4f}, {y_pred1_descaled.max():.4f}], Target: [{y1_target_descaled.min():.4f}, {y1_target_descaled.max():.4f}]")
+                print(f"   y2 - CNN: [{y_pred2_descaled.min():.4f}, {y_pred2_descaled.max():.4f}], Target: [{y2_target_descaled.min():.4f}, {y2_target_descaled.max():.4f}]")
             
             # Prepare hierarchical latents for VAE decoder
             y_pred2_tensor = y_pred2  # Keep original for regularization

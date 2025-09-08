@@ -30,10 +30,10 @@ Dim3_end		95008
 num_param	1
 param_dir	/images
 n_epoch	20000
-latent_conditioner_lr	0.0005	# Increased to learn full latent range
-latent_conditioner_batch	4	# Reduced for more gradient noise (regularization)
-latent_conditioner_weight_decay	1e-6	# Reduced to allow fuller range learning
-latent_conditioner_dropout_rate	0.3	# High dropout to prevent overfitting on small dataset
+latent_conditioner_lr	0.0002	# Increased to learn full latent range
+latent_conditioner_batch	64	# Reduced for more gradient noise (regularization)
+latent_conditioner_weight_decay	1e-5	# Reduced to allow fuller range learning
+latent_conditioner_dropout_rate	0.01	# High dropout to prevent overfitting on small dataset
 use_spatial_attention	0	# 1=on - enable spatial attention for better features
 input_type	image	#image, csvs
 param_data_type .png
