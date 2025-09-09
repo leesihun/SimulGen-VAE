@@ -151,8 +151,8 @@ def data_augmentation(x, target_data, y1, y2, is_image_data, device, use_latent_
     """
     
     # 1. Very light Gaussian noise (reduced from 0.5% to 0.2%)
-    if torch.rand(1, device=device) < 0.4:
-        noise_std = 0.02  # 0.2% of input range
+    if torch.rand(1, device=device) < 1:
+        noise_std = 0.1 # 0.2% of input range
         noise = torch.randn_like(x) * noise_std
         x = x + noise
     
