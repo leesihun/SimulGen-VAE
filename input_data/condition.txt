@@ -29,7 +29,7 @@ Dim3_end		95008
 %LatentConditioner
 num_param	1
 param_dir	/images
-n_epoch	10000
+n_epoch	20000
 latent_conditioner_lr	0.0002	# Increased to learn full latent range
 latent_conditioner_batch	32	# Reduced for more gradient noise (regularization)
 latent_conditioner_weight_decay	1e-5	# Reduced to allow fuller range learning
