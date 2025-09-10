@@ -200,7 +200,7 @@ def data_augmentation(x, target_data, y1, y2, is_image_data, device, use_latent_
 
     # Implement output augmentation as well
     if torch.rand(1, device=device) < 1:
-        noise_std = 0.01 # 1% of input range
+        noise_std = 0.05 # 1% of input range
         noise = torch.randn_like(target_data) * noise_std
         target_data = target_data + noise
         noise = torch.randn_like(y1) * noise_std
