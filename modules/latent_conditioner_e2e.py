@@ -197,6 +197,14 @@ def data_augmentation(x, target_data, y1, y2, is_image_data, device, use_latent_
     #     brightness_factor = 1.0 + (torch.rand(1, device=device) - 0.5) * 0.06  # ±3%
     #     contrast_factor = 1.0 + (torch.rand(1, device=device) - 0.5) * 0.06
     #     x = torch.clamp(x * contrast_factor + (brightness_factor - 1.0), 0, 1)
+
+    # Implement output augmentation as well
+    if torch.rand(1, device=device) < 1:
+        noise_std = 0.1 # 0.2% of input range
+        noise = torch.randn_like(x) * noise_std
+        target_data = target_data + noise
+        y1 = y1 + noise
+        y2 = y2 + noise
     
     return x, target_data, y1, y2
 
