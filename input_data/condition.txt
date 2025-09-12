@@ -33,15 +33,15 @@ n_epoch	20000
 latent_conditioner_lr	0.001	# Increased to learn full latent range
 latent_conditioner_batch	32	# Reduced for more gradient noise (regularization)
 latent_conditioner_weight_decay	1e-5	# Reduced to allow fuller range learning
-latent_conditioner_dropout_rate	0.3	# High dropout to prevent overfitting on small dataset
+latent_conditioner_dropout_rate	0.1	# High dropout to prevent overfitting on small dataset
 use_spatial_attention	0	# 1=on - enable spatial attention for better features
 input_type	image	#image, csvs
 param_data_type .png
 '
 %End-to-End Training Configuration
 use_e2e_training	1	# 0=disabled, 1=enabled - use end-to-end training
-e2e_loss_function	MSE   #MSE, MAE, Huber, SmoothL1 - loss function for reconstruction
+e2e_loss_function	Huber   #MSE, MAE, Huber, SmoothL1 - loss function for reconstruction
 e2e_vae_model_path	model_save/SimulGen-VAE	# path to pre-trained VAE model
 use_latent_regularization	1	# 0=disabled, 1=enabled - add latent space regularization
 LC_alpha    1000000
-latent_reg_weight	1   #increased from 0.001 for better latent guidance
+latent_reg_weight	1000   #increased from 0.001 for better latent guidance
