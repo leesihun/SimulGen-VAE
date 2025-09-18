@@ -1,6 +1,6 @@
 Common params
-Dim1		484 # number of parameters
-Dim2		200 # number of timesteps
+Dim1		2000 # number of parameters
+Dim2		50 # number of timesteps
 Dim3		95008 # num nodes
 num_var 1
 RESERVED	0
@@ -22,7 +22,7 @@ RESERVED	0
 RESERVED	0
 Recon_iter	1
 % For shortend_dataset(GPU_RAM_OUT)
-Dim2_red		200
+Dim2_red		50
 Dim3_start      0
 Dim3_end		95008
 '
