@@ -40,6 +40,7 @@ def read_latent_conditioner_dataset_img(param_dir, param_data_type):
         
         for i, file in enumerate(files):
             file_path = os.path.join(file_dir, file)
+            print(file_path)
             im = cv2.imread(file_path, 0)
             resized_im = cv2.resize(im, (im_size, im_size), interpolation=INTERPOLATION_METHOD)
 
